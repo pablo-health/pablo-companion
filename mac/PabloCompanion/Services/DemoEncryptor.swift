@@ -1,6 +1,6 @@
+import AudioCaptureKit
 import Crypto
 import Foundation
-import AudioCaptureKit
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  WARNING: DEMO ONLY — DO NOT USE IN PRODUCTION                         ║
@@ -18,7 +18,7 @@ import AudioCaptureKit
 
 /// A demonstration encryptor that uses AES-256-GCM with a hardcoded key.
 struct DemoEncryptor: CaptureEncryptor {
-    // WARNING: Hardcoded demo key — NOT for production use.
+    /// WARNING: Hardcoded demo key — NOT for production use.
     private static let demoKeyBytes: [UInt8] = [
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
         0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
@@ -32,7 +32,9 @@ struct DemoEncryptor: CaptureEncryptor {
         self.key = SymmetricKey(data: Self.demoKeyBytes)
     }
 
-    var algorithm: String { "AES-256-GCM" }
+    var algorithm: String {
+        "AES-256-GCM"
+    }
 
     func encrypt(_ data: Data) throws -> Data {
         do {
@@ -70,11 +72,11 @@ struct DemoEncryptor: CaptureEncryptor {
 
         let header = fileData.prefix(headerSize)
         var offset = headerSize
-        let encryptor = DemoEncryptor()
+        let encryptor = Self()
         var pcmData = Data()
 
         while offset + 4 <= fileData.count {
-            let lengthBytes = fileData[offset..<offset + 4]
+            let lengthBytes = fileData[offset ..< offset + 4]
             let chunkLength = lengthBytes.withUnsafeBytes { $0.load(as: UInt32.self) }
             let length = Int(UInt32(littleEndian: chunkLength))
             offset += 4
@@ -83,7 +85,7 @@ struct DemoEncryptor: CaptureEncryptor {
                 throw CaptureError.encryptionFailed("Encrypted chunk exceeds file bounds")
             }
 
-            let chunkData = fileData[offset..<offset + length]
+            let chunkData = fileData[offset ..< offset + length]
             let decrypted = try encryptor.decrypt(Data(chunkData))
             pcmData.append(decrypted)
             offset += length
@@ -94,9 +96,9 @@ struct DemoEncryptor: CaptureEncryptor {
         let dataSize = UInt32(pcmData.count)
         let fileSize = UInt32(36 + pcmData.count)
         // Update RIFF chunk size (bytes 4-7)
-        wav.replaceSubrange(4..<8, with: withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
+        wav.replaceSubrange(4 ..< 8, with: withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
         // Update data sub-chunk size (bytes 40-43)
-        wav.replaceSubrange(40..<44, with: withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
+        wav.replaceSubrange(40 ..< 44, with: withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
         wav.append(pcmData)
 
         return wav

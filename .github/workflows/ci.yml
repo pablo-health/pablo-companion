@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      mac: ${{ github.event_name == 'push' || steps.filter.outputs.mac }}
+      core: ${{ github.event_name == 'push' || steps.filter.outputs.core }}
+      has-cargo: ${{ steps.cargo-check.outputs.exists }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
+        id: filter
+        with:
+          filters: |
+            mac:
+              - 'mac/**'
+            core:
+              - 'core/**'
+      - name: Check for core/Cargo.toml
+        id: cargo-check
+        run: |
+          if [ -f core/Cargo.toml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  swift-lint:
+    name: Swift Lint
+    needs: changes
+    if: needs.changes.outputs.mac == 'true'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Install SwiftLint
+        run: |
+          SWIFTLINT_VERSION=0.63.2
+          curl -sL "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/portable_swiftlint.zip" -o swiftlint.zip
+          unzip -q swiftlint.zip -d swiftlint
+          echo "$PWD/swiftlint" >> "$GITHUB_PATH"
+
+      - name: Install SwiftFormat
+        run: |
+          SWIFTFORMAT_VERSION=0.59.1
+          curl -sL "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat.zip" -o swiftformat.zip
+          unzip -q swiftformat.zip
+          chmod +x swiftformat
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: SwiftLint
+        run: swiftlint lint --strict --config mac/.swiftlint.yml mac/PabloCompanion/
+
+      - name: SwiftFormat
+        run: swiftformat --lint --config mac/.swiftformat mac/PabloCompanion/
+
+  swift-build:
+    name: Swift Build
+    needs: changes
+    if: needs.changes.outputs.mac == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Cache SPM dependencies
+        id: spm-cache
+        uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4
+        with:
+          path: mac/SourcePackages
+          key: ${{ runner.os }}-spm-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Build
+        run: |
+          DISABLE_PKGS=${{ steps.spm-cache.outputs.cache-hit == 'true' && '-disableAutomaticPackageResolution' || '' }}
+          xcodebuild -project mac/PabloCompanion.xcodeproj \
+            -scheme PabloCompanion \
+            -destination 'platform=macOS' \
+            -clonedSourcePackagesDirPath mac/SourcePackages \
+            $DISABLE_PKGS \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build | xcpretty
+
+  rust-lint:
+    name: Rust Lint
+    needs: changes
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.has-cargo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Check formatting
+        working-directory: core
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        working-directory: core
+        run: cargo clippy -- -D warnings -W clippy::undocumented_unsafe_blocks
+
+  rust-test:
+    name: Rust Test
+    needs: changes
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.has-cargo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Test
+        working-directory: core
+        run: cargo test
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+      - uses: actions/dependency-review-action@05fe4576374b728f0c523d6a13d64c25081e0803 # v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0

@@ -1,18 +1,18 @@
 import Foundation
-import SwiftUI
 import os
+import SwiftUI
 
 /// Manages fetching and displaying the patient list from the backend.
 @MainActor
 @Observable
 final class PatientViewModel {
     var patients: [Patient] = []
-    var isLoading: Bool = false
+    var isLoading = false
     var errorMessage: String?
-    var showError: Bool = false
-    var searchText: String = ""
+    var showError = false
+    var searchText = ""
 
-    var backendURL: String = "http://localhost:8000" {
+    var backendURL = "http://localhost:8000" {
         didSet { apiClient = APIClient(baseURL: backendURL) }
     }
 
@@ -30,7 +30,7 @@ final class PatientViewModel {
     }
 
     /// Debug status visible in the UI during development.
-    var debugStatus: String = ""
+    var debugStatus = ""
 
     func loadPatients() async {
         guard apiClient.getToken != nil else {

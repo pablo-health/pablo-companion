@@ -23,93 +23,9 @@ struct ContentView: View {
 
     private var authenticatedContent: some View {
         TabView(selection: $selectedTab) {
-            // Recording tab
-            VStack(spacing: 0) {
-                RecordingControlsView(
-                    state: recordingVM.recordingState,
-                    duration: recordingVM.duration,
-                    micLevel: recordingVM.micLevel,
-                    systemLevel: recordingVM.systemLevel,
-                    systemAudioActive: recordingVM.systemAudioActive,
-                    onStart: {
-                        Task { await recordingVM.startRecording() }
-                    },
-                    onPause: { recordingVM.pauseRecording() },
-                    onResume: { recordingVM.resumeRecording() },
-                    onStop: {
-                        Task { await recordingVM.stopRecording() }
-                    }
-                )
-
-                Divider()
-
-                RecordingListView(
-                    recordings: recordingVM.recordings,
-                    uploadProgress: uploadVM.uploadProgress,
-                    uploadingIDs: uploadVM.uploadingRecordingIDs,
-                    playingRecordingID: recordingVM.playingRecordingID,
-                    onUpload: { recording in
-                        Task {
-                            await uploadVM.uploadRecording(recording) { uploadedID in
-                                if let index = recordingVM.recordings.firstIndex(
-                                    where: { $0.id == uploadedID })
-                                {
-                                    recordingVM.recordings[index].isUploaded = true
-                                }
-                            }
-                        }
-                    },
-                    onPlay: { recording in
-                        recordingVM.playRecording(recording)
-                    },
-                    onStopPlayback: {
-                        recordingVM.stopPlayback()
-                    }
-                )
-            }
-            .tabItem {
-                Label("Recorder", systemImage: "waveform")
-            }
-            .tag(0)
-
-            // Patients tab
-            PatientListView(viewModel: patientVM)
-                .tabItem {
-                    Label("Patients", systemImage: "person.2")
-                }
-                .tag(1)
-
-            // Settings tab
-            SettingsView(
-                backendURL: $uploadVM.backendURL,
-                authServerURL: $authVM.authServerURL,
-                firebaseAPIKey: $authVM.firebaseAPIKey,
-                selectedMicID: $recordingVM.selectedMicID,
-                encryptionEnabled: $recordingVM.encryptionEnabled,
-                debugEnableMic: $recordingVM.debugEnableMic,
-                debugEnableSystem: $recordingVM.debugEnableSystem,
-                userEmail: authVM.authenticatedEmail,
-                availableMics: recordingVM.availableMics,
-                isBackendReachable: uploadVM.isBackendReachable,
-                bluetoothRoutingConflict: recordingVM.bluetoothRoutingConflict,
-                bluetoothRecommendation: recordingVM.bluetoothRecommendation,
-                systemAudioPermitted: recordingVM.systemAudioPermitted,
-                recordingState: recordingVM.recordingState,
-                diagnostics: recordingVM.debugDiagnostics,
-                onCheckHealth: {
-                    Task { await uploadVM.checkBackendHealth() }
-                },
-                onGenerateTestTone: {
-                    recordingVM.generateTestTone()
-                },
-                onSignOut: {
-                    authVM.signOut()
-                }
-            )
-            .tabItem {
-                Label("Settings", systemImage: "gear")
-            }
-            .tag(2)
+            recorderTab
+            patientsTab
+            settingsTab
         }
         .frame(minWidth: 500, minHeight: 600)
         .task {
@@ -178,5 +94,100 @@ struct ContentView: View {
         .onChange(of: uploadVM.backendURL) { _, newURL in
             patientVM.backendURL = newURL
         }
+    }
+
+    private var recorderTab: some View {
+        VStack(spacing: 0) {
+            RecordingControlsView(
+                state: recordingVM.recordingState,
+                duration: recordingVM.duration,
+                micLevel: recordingVM.micLevel,
+                systemLevel: recordingVM.systemLevel,
+                systemAudioActive: recordingVM.systemAudioActive,
+                onStart: {
+                    Task { await recordingVM.startRecording() }
+                },
+                onPause: { recordingVM.pauseRecording() },
+                onResume: { recordingVM.resumeRecording() },
+                onStop: {
+                    Task { await recordingVM.stopRecording() }
+                }
+            )
+
+            Divider()
+
+            recordingList
+        }
+        .tabItem {
+            Label("Recorder", systemImage: "waveform")
+        }
+        .tag(0)
+    }
+
+    private var recordingList: some View {
+        RecordingListView(
+            recordings: recordingVM.recordings,
+            uploadProgress: uploadVM.uploadProgress,
+            uploadingIDs: uploadVM.uploadingRecordingIDs,
+            playingRecordingID: recordingVM.playingRecordingID,
+            onUpload: { recording in
+                Task {
+                    await uploadVM.uploadRecording(recording) { uploadedID in
+                        if let index = recordingVM.recordings.firstIndex(
+                            where: { $0.id == uploadedID }
+                        ) {
+                            recordingVM.recordings[index].isUploaded = true
+                        }
+                    }
+                }
+            },
+            onPlay: { recording in
+                recordingVM.playRecording(recording)
+            },
+            onStopPlayback: {
+                recordingVM.stopPlayback()
+            }
+        )
+    }
+
+    private var patientsTab: some View {
+        PatientListView(viewModel: patientVM)
+            .tabItem {
+                Label("Patients", systemImage: "person.2")
+            }
+            .tag(1)
+    }
+
+    private var settingsTab: some View {
+        SettingsView(
+            backendURL: $uploadVM.backendURL,
+            authServerURL: $authVM.authServerURL,
+            firebaseAPIKey: $authVM.firebaseAPIKey,
+            selectedMicID: $recordingVM.selectedMicID,
+            encryptionEnabled: $recordingVM.encryptionEnabled,
+            debugEnableMic: $recordingVM.debugEnableMic,
+            debugEnableSystem: $recordingVM.debugEnableSystem,
+            userEmail: authVM.authenticatedEmail,
+            availableMics: recordingVM.availableMics,
+            isBackendReachable: uploadVM.isBackendReachable,
+            bluetoothRoutingConflict: recordingVM.bluetoothRoutingConflict,
+            bluetoothRecommendation: recordingVM.bluetoothRecommendation,
+            systemAudioPermitted: recordingVM.systemAudioPermitted,
+            recordingState: recordingVM.recordingState,
+            diagnostics: recordingVM.debugDiagnostics,
+            onCheckHealth: {
+                Task { await uploadVM.checkBackendHealth() }
+            },
+            onGenerateTestTone: {
+                recordingVM.generateTestTone()
+            },
+            onSignOut: {
+                authVM.signOut()
+            }
+        )
+        .tabItem {
+            Label("Settings", systemImage: "gear")
+        }
+        .tag(2)
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
-import Security
 import os
+import Security
 
 /// Provides CRUD access to the macOS Keychain for auth tokens.
 struct KeychainManager: Sendable {
@@ -20,13 +20,13 @@ struct KeychainManager: Sendable {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key.rawValue
+            kSecAttrAccount as String: key.rawValue,
         ]
 
         // Try updating first; add if not found.
         let updateAttributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
@@ -51,7 +51,7 @@ struct KeychainManager: Sendable {
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key.rawValue,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
         var result: AnyObject?
@@ -67,11 +67,11 @@ struct KeychainManager: Sendable {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key.rawValue
+            kSecAttrAccount as String: key.rawValue,
         ]
 
         let status = SecItemDelete(query as CFDictionary)
-        if status != errSecSuccess && status != errSecItemNotFound {
+        if status != errSecSuccess, status != errSecItemNotFound {
             logger.error("Keychain delete failed for \(key.rawValue): \(status)")
         }
     }

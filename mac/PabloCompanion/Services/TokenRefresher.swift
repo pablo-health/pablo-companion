@@ -18,16 +18,16 @@ struct TokenRefresher: Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .networkError(let error):
-                return "Network error: \(error.localizedDescription)"
+            case let .networkError(error):
+                "Network error: \(error.localizedDescription)"
             case .invalidResponse:
-                return "Invalid response from token service."
+                "Invalid response from token service."
             case .tokenRevoked:
-                return "Your session has expired. Please sign in again."
+                "Your session has expired. Please sign in again."
             case .userDisabled:
-                return "This account has been disabled."
-            case .serverError(let message):
-                return "Token refresh failed: \(message)"
+                "This account has been disabled."
+            case let .serverError(message):
+                "Token refresh failed: \(message)"
             }
         }
     }
@@ -48,8 +48,12 @@ struct TokenRefresher: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = "grant_type=refresh_token&refresh_token=\(refreshToken)"
-            .data(using: .utf8)
+        var formComponents = URLComponents()
+        formComponents.queryItems = [
+            URLQueryItem(name: "grant_type", value: "refresh_token"),
+            URLQueryItem(name: "refresh_token", value: refreshToken),
+        ]
+        request.httpBody = formComponents.percentEncodedQuery.map { Data($0.utf8) }
 
         let data: Data
         let response: URLResponse
@@ -63,18 +67,8 @@ struct TokenRefresher: Sendable {
             throw RefreshError.invalidResponse
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
-            let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let errorMessage = (body?["error"] as? [String: Any])?["message"] as? String ?? "Unknown"
-
-            switch errorMessage {
-            case "TOKEN_EXPIRED", "INVALID_REFRESH_TOKEN":
-                throw RefreshError.tokenRevoked
-            case "USER_DISABLED":
-                throw RefreshError.userDisabled
-            default:
-                throw RefreshError.serverError(message: errorMessage)
-            }
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
+            throw classifyRefreshError(from: data)
         }
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -92,5 +86,15 @@ struct TokenRefresher: Sendable {
             refreshToken: newRefreshToken,
             expiresIn: expiresIn
         )
+    }
+
+    func classifyRefreshError(from data: Data) -> RefreshError {
+        let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let errorMessage = (body?["error"] as? [String: Any])?["message"] as? String ?? "Unknown"
+        switch errorMessage {
+        case "TOKEN_EXPIRED", "INVALID_REFRESH_TOKEN": return .tokenRevoked
+        case "USER_DISABLED": return .userDisabled
+        default: return .serverError(message: errorMessage)
+        }
     }
 }

@@ -20,20 +20,20 @@ final class AuthViewModel {
     var errorMessage: String?
 
     @ObservationIgnored
-    @AppStorage("authServerURL") var authServerURL: String = "http://localhost:3000"
+    @AppStorage("authServerURL") var authServerURL = "http://localhost:3000"
 
     @ObservationIgnored
-    @AppStorage("backendAPIURL") var backendAPIURL: String = "http://localhost:8000"
+    @AppStorage("backendAPIURL") var backendAPIURL = "http://localhost:8000"
 
     @ObservationIgnored
-    @AppStorage("firebaseAPIKey") var firebaseAPIKey: String = ""
+    @AppStorage("firebaseAPIKey") var firebaseAPIKey = ""
 
     @ObservationIgnored
     @AppStorage("tokenExpiry") private var tokenExpiryTimestamp: Double = 0
 
     /// Convenience accessor for the email when authenticated.
     var authenticatedEmail: String {
-        if case .authenticated(let email) = authState {
+        if case let .authenticated(email) = authState {
             return email
         }
         return ""
@@ -137,7 +137,7 @@ final class AuthViewModel {
         return URL(string: "\(base)/native-auth?redirect_uri=\(redirectURI)")
     }
 
-    fileprivate func handleAuthCallback(callbackURL: URL?, error: (any Error)?) {
+    func handleAuthCallback(callbackURL: URL?, error: (any Error)?) {
         if let error {
             if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
                 logger.info("User cancelled sign in")
@@ -223,37 +223,14 @@ final class AuthViewModel {
 
     // MARK: - JWT Helpers
 
+    private let jwtDecoder = JWTDecoder()
+
     func extractExpiry(from idToken: String) -> Date? {
-        guard let payload = decodeJWTPayload(idToken),
-              let exp = payload["exp"] as? TimeInterval
-        else { return nil }
-        return Date(timeIntervalSince1970: exp)
+        jwtDecoder.extractExpiry(from: idToken)
     }
 
     private func extractEmail(from idToken: String) -> String? {
-        guard let payload = decodeJWTPayload(idToken) else { return nil }
-        return payload["email"] as? String
-    }
-
-    private func decodeJWTPayload(_ jwt: String) -> [String: Any]? {
-        let parts = jwt.split(separator: ".")
-        guard parts.count >= 2 else { return nil }
-
-        var base64 = String(parts[1])
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-
-        // Pad to multiple of 4
-        let remainder = base64.count % 4
-        if remainder > 0 {
-            base64 += String(repeating: "=", count: 4 - remainder)
-        }
-
-        guard let data = Data(base64Encoded: base64),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return nil }
-
-        return json
+        jwtDecoder.extractEmail(from: idToken)
     }
 }
 
@@ -267,12 +244,41 @@ enum TokenError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noToken:
-            return "No authentication token found. Please sign in."
+            "No authentication token found. Please sign in."
         case .noRefreshToken:
-            return "Session expired. Please sign in again."
+            "Session expired. Please sign in again."
         case .noAPIKey:
-            return "Firebase API key not configured."
+            "Firebase API key not configured."
         }
+    }
+}
+
+// MARK: - JWT Decoder
+
+struct JWTDecoder {
+    func decodePayload(_ jwt: String) -> [String: Any]? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var base64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = base64.count % 4
+        if remainder > 0 { base64 += String(repeating: "=", count: 4 - remainder) }
+        guard let data = Data(base64Encoded: base64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return json
+    }
+
+    func extractExpiry(from jwt: String) -> Date? {
+        guard let payload = decodePayload(jwt),
+              let exp = payload["exp"] as? TimeInterval
+        else { return nil }
+        return Date(timeIntervalSince1970: exp)
+    }
+
+    func extractEmail(from jwt: String) -> String? {
+        decodePayload(jwt)?["email"] as? String
     }
 }
 
@@ -306,7 +312,7 @@ private func launchWebAuthSession(url: URL, viewModel: AuthViewModel) {
 // MARK: - ASWebAuthenticationPresentationContextProviding
 
 private final class WebAuthContextProvider: NSObject, @preconcurrency ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
         // swiftlint:disable:next force_unwrapping
         NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first!
     }

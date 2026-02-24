@@ -1,0 +1,27 @@
+version: 2
+
+updates:
+  # Swift (SPM — mac/)
+  - package-ecosystem: swift
+    directory: /mac
+    schedule:
+      interval: weekly
+      day: monday
+
+  # Rust core (core/ — when it exists)
+  - package-ecosystem: cargo
+    directory: /core
+    schedule:
+      interval: weekly
+      day: monday
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+    groups:
+      actions:
+        patterns:
+          - "*"

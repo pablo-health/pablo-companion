@@ -3,21 +3,20 @@ import os
 
 /// A simple URLSession wrapper for communicating with the sample backend.
 @MainActor
-final class APIClient: Sendable {
+final class APIClient {
     private let logger = Logger(subsystem: "com.macos-sample", category: "APIClient")
 
-    nonisolated var baseURL: URL {
-        URL(string: _baseURLString)!
-    }
-
-    private let _baseURLString: String
+    nonisolated let baseURL: URL
     private let clientType = "therapyrecorder-macos/1.0"
 
     /// Optional closure to provide a Bearer token for authenticated requests.
     var getToken: (@Sendable () async throws -> String)?
 
     init(baseURL: String = "http://localhost:8000") {
-        self._baseURLString = baseURL
+        guard let url = URL(string: baseURL) else {
+            preconditionFailure("APIClient initialized with invalid base URL: \(baseURL)")
+        }
+        self.baseURL = url
     }
 
     /// Checks if the backend is reachable.
@@ -75,7 +74,7 @@ final class APIClient: Sendable {
             throw APIError.invalidResponse
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "Unknown error"
             logger.error("Upload failed: \(httpResponse.statusCode) — \(body)")
             throw APIError.serverError(statusCode: httpResponse.statusCode, message: body)
@@ -92,17 +91,22 @@ final class APIClient: Sendable {
         page: Int = 1,
         pageSize: Int = 50
     ) async throws -> PatientListResponse {
-        var components = URLComponents(
+        guard var components = URLComponents(
             url: baseURL.appendingPathComponent("api/patients"),
             resolvingAgainstBaseURL: false
-        )!
+        ) else {
+            throw APIError.invalidResponse
+        }
         components.queryItems = [
             URLQueryItem(name: "search", value: search),
             URLQueryItem(name: "page", value: String(page)),
             URLQueryItem(name: "page_size", value: String(pageSize)),
         ]
 
-        var request = URLRequest(url: components.url!)
+        guard let requestURL = components.url else {
+            throw APIError.invalidResponse
+        }
+        var request = URLRequest(url: requestURL)
         request.setValue(clientType, forHTTPHeaderField: "X-Client-Type")
 
         if let getToken {
@@ -116,7 +120,7 @@ final class APIClient: Sendable {
             throw APIError.invalidResponse
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "Unknown error"
             logger.error("Fetch patients failed: \(httpResponse.statusCode) — \(body)")
             throw APIError.serverError(statusCode: httpResponse.statusCode, message: body)
@@ -127,20 +131,17 @@ final class APIClient: Sendable {
         return try decoder.decode(PatientListResponse.self, from: data)
     }
 
-    private func createMultipartBody(
+    func createMultipartBody(
         fileData: Data,
         fileName: String,
         boundary: String
     ) -> Data {
         var body = Data()
-
-        body.append("--\(boundary)\r\n")
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n")
-        body.append("Content-Type: application/octet-stream\r\n\r\n")
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".utf8))
+        body.append(Data("Content-Type: application/octet-stream\r\n\r\n".utf8))
         body.append(fileData)
-        body.append("\r\n")
-        body.append("--\(boundary)--\r\n")
-
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         return body
     }
 }
@@ -152,9 +153,9 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            return "Invalid response from server."
-        case .serverError(let code, let message):
-            return "Server error (\(code)): \(message)"
+            "Invalid response from server."
+        case let .serverError(code, message):
+            "Server error (\(code)): \(message)"
         }
     }
 }
@@ -180,17 +181,9 @@ func fetchServerConfig(authServerURL: String) async throws -> ServerConfig {
     }
     let (data, response) = try await URLSession.shared.data(from: url)
     guard let httpResponse = response as? HTTPURLResponse,
-          (200...299).contains(httpResponse.statusCode)
+          (200 ... 299).contains(httpResponse.statusCode)
     else {
         throw APIError.invalidResponse
     }
     return try JSONDecoder().decode(ServerConfig.self, from: data)
-}
-
-private extension Data {
-    mutating func append(_ string: String) {
-        if let data = string.data(using: .utf8) {
-            append(data)
-        }
-    }
 }

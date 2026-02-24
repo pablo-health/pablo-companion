@@ -6,45 +6,9 @@ struct PatientListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search patients...", text: $viewModel.searchText)
-                    .textFieldStyle(.plain)
-                if !viewModel.searchText.isEmpty {
-                    Button {
-                        viewModel.searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
-            .padding(8)
-            .background(.bar)
-
+            searchBar
             Divider()
-
-            if viewModel.isLoading && viewModel.patients.isEmpty {
-                Spacer()
-                ProgressView("Loading patients...")
-                Spacer()
-            } else if viewModel.patients.isEmpty {
-                ContentUnavailableView(
-                    "No Patients",
-                    systemImage: "person.2",
-                    description: Text(
-                        viewModel.searchText.isEmpty
-                            ? "No patients found."
-                            : "No patients match \"\(viewModel.searchText)\"."
-                    )
-                )
-            } else {
-                List(viewModel.patients) { patient in
-                    PatientRow(patient: patient)
-                }
-            }
+            patientContent
         }
         .safeAreaInset(edge: .bottom) {
             if !viewModel.debugStatus.isEmpty {
@@ -63,6 +27,49 @@ struct PatientListView: View {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             await viewModel.loadPatients()
+        }
+    }
+
+    private var searchBar: some View {
+        HStack {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search patients...", text: $viewModel.searchText)
+                .textFieldStyle(.plain)
+            if !viewModel.searchText.isEmpty {
+                Button {
+                    viewModel.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(8)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var patientContent: some View {
+        if viewModel.isLoading, viewModel.patients.isEmpty {
+            Spacer()
+            ProgressView("Loading patients...")
+            Spacer()
+        } else if viewModel.patients.isEmpty {
+            ContentUnavailableView(
+                "No Patients",
+                systemImage: "person.2",
+                description: Text(
+                    viewModel.searchText.isEmpty
+                        ? "No patients found."
+                        : "No patients match \"\(viewModel.searchText)\"."
+                )
+            )
+        } else {
+            List(viewModel.patients) { patient in
+                PatientRow(patient: patient)
+            }
         }
     }
 }
@@ -108,10 +115,10 @@ struct PatientRow: View {
 
     private var statusColor: Color {
         switch patient.status.lowercased() {
-        case "active": return .green
-        case "inactive": return .gray
-        case "discharged": return .orange
-        default: return .secondary
+        case "active": .green
+        case "inactive": .gray
+        case "discharged": .orange
+        default: .secondary
         }
     }
 }

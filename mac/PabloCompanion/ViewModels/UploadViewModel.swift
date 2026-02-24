@@ -5,14 +5,15 @@ import os
 @MainActor
 @Observable
 final class UploadViewModel {
-    var backendURL: String = "http://localhost:8000" {
+    var backendURL = "http://localhost:8000" {
         didSet { apiClient = APIClient(baseURL: backendURL) }
     }
-    var isBackendReachable: Bool = false
+
+    var isBackendReachable = false
     var uploadProgress: [UUID: Double] = [:]
     var uploadingRecordingIDs: Set<UUID> = []
     var errorMessage: String?
-    var showError: Bool = false
+    var showError = false
 
     private var apiClient: APIClient
     private let logger = Logger(subsystem: "com.macos-sample", category: "UploadViewModel")
@@ -47,7 +48,7 @@ final class UploadViewModel {
         logger.info("Starting upload for \(recording.id)")
 
         do {
-            let _ = try await apiClient.uploadRecording(
+            _ = try await apiClient.uploadRecording(
                 fileURL: recording.fileURL
             ) { [weak self] progress in
                 Task { @MainActor in

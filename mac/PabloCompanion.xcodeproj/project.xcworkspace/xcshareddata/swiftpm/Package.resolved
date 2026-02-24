@@ -1,13 +1,13 @@
 {
-  "originHash" : "5b7b7281b8f715c5153ae0e5f1c13d22928c2dfddae7958775bcb2c0ebd356e4",
+  "originHash" : "e71ea9f2650b31f95daa0954c1ed5f9e34ccd898b920b8b1da1a47509e653963",
   "pins" : [
     {
       "identity" : "audiocapturekit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/lll-solutions/AudioCaptureKit.git",
+      "location" : "https://github.com/pablo-health/AudioCaptureKit.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "e378e950ca05cf8c6dc56167fb34b21ebf34e1f7"
+        "revision" : "9aff31d844d858fad388303efaf42662081ab5cc",
+        "version" : "1.0.0"
       }
     },
     {

@@ -15,18 +15,15 @@ struct RecordingControlsView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // Duration display
             Text(formattedDuration)
                 .font(.system(size: 48, weight: .light, design: .monospaced))
                 .foregroundStyle(state == .recording ? .primary : .secondary)
 
-            // State label
             Text(stateLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
-            // Audio level meters
             HStack(spacing: 24) {
                 LevelMeter(label: "Mic", level: micLevel)
                 LevelMeter(label: "System", level: systemLevel)
@@ -34,65 +31,83 @@ struct RecordingControlsView: View {
             .frame(height: 100)
             .padding(.vertical, 8)
 
-            // System audio status (visible while recording)
-            if state == .recording || state == .paused {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(systemAudioActive ? .green : .red)
-                        .frame(width: 8, height: 8)
-                    Text(systemAudioActive ? "System Audio: Active" : "System Audio: Unavailable")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            // Control buttons
-            HStack(spacing: 20) {
-                switch state {
-                case .idle:
-                    Button(action: onStart) {
-                        Label("Record", systemImage: "record.circle")
-                            .font(.title2)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .controlSize(.large)
-
-                case .recording:
-                    Button(action: onPause) {
-                        Label("Pause", systemImage: "pause.circle")
-                            .font(.title2)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-
-                    Button(action: onStop) {
-                        Label("Stop", systemImage: "stop.circle")
-                            .font(.title2)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                    .controlSize(.large)
-
-                case .paused:
-                    Button(action: onResume) {
-                        Label("Resume", systemImage: "play.circle")
-                            .font(.title2)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-
-                    Button(action: onStop) {
-                        Label("Stop", systemImage: "stop.circle")
-                            .font(.title2)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                    .controlSize(.large)
-                }
-            }
+            systemAudioStatus
+            controlButtons
         }
         .padding()
+    }
+
+    @ViewBuilder
+    private var systemAudioStatus: some View {
+        if state == .recording || state == .paused {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(systemAudioActive ? .green : .red)
+                    .frame(width: 8, height: 8)
+                Text(systemAudioActive ? "System Audio: Active" : "System Audio: Unavailable")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var controlButtons: some View {
+        HStack(spacing: 20) {
+            switch state {
+            case .idle:
+                idleButtons
+            case .recording:
+                recordingButtons
+            case .paused:
+                pausedButtons
+            }
+        }
+    }
+
+    private var idleButtons: some View {
+        Button(action: onStart) {
+            Label("Record", systemImage: "record.circle")
+                .font(.title2)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.red)
+        .controlSize(.large)
+    }
+
+    private var recordingButtons: some View {
+        Group {
+            Button(action: onPause) {
+                Label("Pause", systemImage: "pause.circle")
+                    .font(.title2)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+
+            stopButton
+        }
+    }
+
+    private var pausedButtons: some View {
+        Group {
+            Button(action: onResume) {
+                Label("Resume", systemImage: "play.circle")
+                    .font(.title2)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+
+            stopButton
+        }
+    }
+
+    private var stopButton: some View {
+        Button(action: onStop) {
+            Label("Stop", systemImage: "stop.circle")
+                .font(.title2)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.orange)
+        .controlSize(.large)
     }
 
     private var formattedDuration: String {
@@ -103,9 +118,9 @@ struct RecordingControlsView: View {
 
     private var stateLabel: String {
         switch state {
-        case .idle: return "Ready"
-        case .recording: return "Recording"
-        case .paused: return "Paused"
+        case .idle: "Ready"
+        case .recording: "Recording"
+        case .paused: "Paused"
         }
     }
 }
@@ -146,11 +161,11 @@ struct LevelMeter: View {
 
     private var levelColor: Color {
         if clampedLevel > 0.8 {
-            return .red
+            .red
         } else if clampedLevel > 0.5 {
-            return .yellow
+            .yellow
         } else {
-            return .green
+            .green
         }
     }
 }

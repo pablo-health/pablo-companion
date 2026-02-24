@@ -72,24 +72,29 @@ struct RecordingRow: View {
 
             Spacer()
 
-            if recording.isUploaded {
-                Label("Uploaded", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.caption)
-            } else if isUploading {
-                VStack(spacing: 2) {
-                    ProgressView(value: uploadProgress ?? 0)
-                        .frame(width: 80)
-                    Text("\(Int((uploadProgress ?? 0) * 100))%")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Button("Upload", action: onUpload)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            }
+            uploadStatus
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var uploadStatus: some View {
+        if recording.isUploaded {
+            Label("Uploaded", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.caption)
+        } else if isUploading {
+            VStack(spacing: 2) {
+                ProgressView(value: uploadProgress ?? 0)
+                    .frame(width: 80)
+                Text("\(Int((uploadProgress ?? 0) * 100))%")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Button("Upload", action: onUpload)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
     }
 }
