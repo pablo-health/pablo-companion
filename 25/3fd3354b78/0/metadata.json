@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "253fd3354b78",
+  "session_id": "979aebde-b309-471c-82aa-f59ad7a050e3",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-24T23:47:33.480555Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/codeql.yml",
+    "mac/.swiftlint.yml",
+    "mac/PabloCompanion.xcodeproj/project.pbxproj",
+    "mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "mac/PabloCompanion/Services/APIClient.swift",
+    "mac/PabloCompanion/Views/SettingsView.swift"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "11bed396834e",
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 49949,
+    "cache_read_tokens": 2613523,
+    "output_tokens": 11200,
+    "api_call_count": 49
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-24T23:47:33.349461Z",
+    "agent_lines": 57,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 57,
+    "agent_percentage": 100
+  }
+}

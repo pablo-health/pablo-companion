@@ -1,0 +1,28 @@
+# Session Context
+
+## User Prompts
+
+### Prompt 1
+
+let's do SPM caching fix / also explain why we have swift lint and swift format in CI - swift format is failing (i'd expect we'd run format locally before checkin gin )
+
+### Prompt 2
+
+what version are wer using for AudioCaptureKit?  v1.0.0 correct.   and what about these warnings i saw - ⎿  warning: 'unused_import' should be listed in the 'analyzer_rules' configuration section for more clarity as it is on     
+     ly run by 'swiftlint analyze'.                         
+     warning: Found a configuration for 'force_unwrapping' rule, but it is not enabled in 'opt_in_rules'.                     
+     … +23 lines (ctrl+o to expand)
+
+### Prompt 3
+
+⏺ That's a transient SourceKit diagnostic during active editing — not a real error. Let me verify with SwiftLint:
+- do we need a new version of sourcekit
+
+### Prompt 4
+
+ok so are we good to push, and should we maybe squash these last 4 or 5 commits???
+
+### Prompt 5
+
+let's do that - and force push is ok for the moment
+

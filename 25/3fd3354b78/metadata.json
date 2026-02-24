@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "253fd3354b78",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/codeql.yml",
+    "mac/.swiftlint.yml",
+    "mac/PabloCompanion.xcodeproj/project.pbxproj",
+    "mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "mac/PabloCompanion/Services/APIClient.swift",
+    "mac/PabloCompanion/Views/SettingsView.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/3fd3354b78/0/metadata.json",
+      "transcript": "/25/3fd3354b78/0/full.jsonl",
+      "context": "/25/3fd3354b78/0/context.md",
+      "content_hash": "/25/3fd3354b78/0/content_hash.txt",
+      "prompt": "/25/3fd3354b78/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 49949,
+    "cache_read_tokens": 2613523,
+    "output_tokens": 11200,
+    "api_call_count": 49
+  }
+}
