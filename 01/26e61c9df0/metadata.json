@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "0126e61c9df0",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/codeql.yml",
+    ".github/workflows/rust-security.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/01/26e61c9df0/0/metadata.json",
+      "transcript": "/01/26e61c9df0/0/full.jsonl",
+      "context": "/01/26e61c9df0/0/context.md",
+      "content_hash": "/01/26e61c9df0/0/content_hash.txt",
+      "prompt": "/01/26e61c9df0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 19884,
+    "cache_read_tokens": 2000925,
+    "output_tokens": 5496,
+    "api_call_count": 26
+  }
+}

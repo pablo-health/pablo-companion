@@ -1,0 +1,251 @@
+Implement the following plan:
+
+# Plan: CI/CD, Make Repo Public, Windows Epics
+
+## Context
+
+AudioCaptureKit (the reference repo) has a full production CI/CD setup with 5 GitHub Actions workflows, dependabot, and CODEOWNERS. The user wants pablo-companion to match that setup. The repo is currently a skeleton — the macOS app builds, but there are no tests and no Rust core yet. We'll mirror the AudioCaptureKit structure, using path filters so Rust jobs only trigger once `core/` exists.
+
+Additionally: make the repo public, and create Windows platform epics in beads.
+
+---
+
+## Task 1: Code Quality Config (from audiotake2)
+
+Copy verbatim from audiotake2 (they apply to the Swift code we have now):
+
+| File | Action |
+|------|--------|
+| `.editorconfig` | Create (UTF-8, LF, 4-space Swift, 2-space YAML) |
+| `.swiftlint.yml` | Create (Swift 6, no-print HIPAA rule, force_unwrap/cast/try = error) |
+| `.swiftformat` | Create (4-space, 120 char max, K&R, Swift 6.0) |
+| `.pre-commit-config.yaml` | Create (file hygiene + SwiftLint + SwiftFormat + detect-secrets; drop Python hooks) |
+| `.secrets.baseline` | Generate via `detect-secrets scan > .secrets.baseline` |
+
+---
+
+## Task 2: GitHub Actions Workflows (matching AudioCaptureKit)
+
+### `.github/workflows/ci.yml` — Main CI
+- **Triggers**: push to `main`, PR to `main`, `workflow_dispatch`
+- **Concurrency**: cancel in-progress on PR
+- **Jobs**:
+  1. **detect-changes** — `dorny/paths-filter` to detect `mac/**` and `core/**` changes
+  2. **swift-lint** — macOS 15, SwiftLint 0.58.0 + SwiftFormat 0.55.3 on `mac/`
+  3. **swift-build** — `xcodebuild build` on `mac/` (conditional: mac changes or manual)
+  4. **rust-lint** — rustfmt + clippy on `core/` (conditional: `core/Cargo.toml` exists AND core changes)
+  5. **rust-test** — `cargo test` on `core/` (same condition)
+  6. **dependency-review** — PRs only; deny HIGH/CRITICAL, deny GPL-2/3 and AGPL-3
+
+Note: Swift test job omitted for now (no tests yet); add when `make test-mac` is ready.
+
+### `.github/workflows/codeql.yml` — CodeQL Security
+- **Triggers**: push to `main`, PR to `main`, weekly (Wednesday 8AM UTC)
+- **Jobs**: analyze Swift (`mac/`) + analyze JS if any web assets added later
+
+### `.github/workflows/security.yml` — Trivy Scanning
+- **Triggers**: push to `main`, PR to `main`, weekly (Monday 6AM UTC), `workflow_dispatch`
+- **Jobs**: filesystem vulnerability scan (HIGH/CRITICAL) + config/secrets scan
+- Upload results as SARIF to GitHub Security tab
+
+### `.github/workflows/rust-security.yml` — Rust Security
+- **Triggers**: push to `main`, PR to `main`, weekly (Tuesday 7AM UTC), `workflow_dispatch`
+- **Condition**: only runs if `core/Cargo.toml` exists
+- **Jobs**: cargo-audit + cargo-deny
+
+### `.github/workflows/scorecard.yml` — OpenSSF Scorecard
+- **Triggers**: push to `main`, weekly (Thursday 9AM UTC), `workflow_dispatch`
+- Publishes SARIF to Security tab
+
+### `.github/dependabot.yml`
+```yaml
+version: 2
+updates:
+  - package-ecosystem: swift          # mac/ SPM dependencies
+    directory: "/mac"
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: cargo          # core/ when it exists
+    directory: "/core"
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly, day: wednesday }
+    groups:
+      actions: { patterns: ["*"] }
+```
+
+### `.github/CODEOWNERS`
+```
+* @kurtn718
+```
+
+---
+
+## Task 3: Makefile
+
+Referenced throughout CLAUDE.md; mirrors what AudioCaptureKit CI calls:
+
+```makefile
+.PHONY: check build-mac test-mac build-core test-core lint-swift
+
+check: lint-swift build-mac build-core test-core
+
+lint-swift:
+	swiftlint --strict mac/
+	swiftformat --lint mac/
+
+build-mac:
+	xcodebuild -project mac/PabloCompanion.xcodeproj \
+	  -scheme PabloCompanion \
+	  -destination 'platform=macOS' \
+	  build | xcpretty
+
+test-mac:
+	xcodebuild -project mac/PabloCompanion.xcodeproj \
+	  -scheme PabloCompanion \
+	  -destination 'platform=macOS' \
+	  test | xcpretty
+
+build-core:
+	@if [ -f core/Cargo.toml ]; then cargo build --manifest-path core/Cargo.toml; fi
+
+test-core:
+	@if [ -f core/Cargo.toml ]; then cargo test --manifest-path core/Cargo.toml; fi
+```
+
+---
+
+## Task 4: Make Repo Public
+
+```bash
+gh repo edit pablo-health/pablo-companion --visibility public --accept-visibility-change-consequences
+```
+
+> **Irreversible action** — once public, all commit history, issues, and code are visible. Confirm repo is clean (no secrets, no sensitive data) before running.
+
+---
+
+## Task 5: Windows Epics in Beads
+
+Mirror the macOS epic structure in the 100s range (all created as `--type=task --priority=3` backlog):
+
+| Range | Epic | Key Tasks |
+|-------|------|-----------|
+| PABLO-D-100–104 | **Windows Foundation** | WinUI 3 project init; Rust→C# UniFFI bindings setup; dev environment (Visual Studio + WinAppSDK); CI stub for `windows/`; CODEOWNERS update |
+| PABLO-D-110–113 | **Windows Audio Capture** | WASAPI device enumeration; recording service (C# `RecordingService`); audio format handling; permission prompts |
+| PABLO-D-120–124 | **Windows Session UI** | Day view (WinUI 3 XAML); session list + start session button; session detail; Pablo Bear empty state |
+| PABLO-D-140–143 | **Windows Video Launch** | URL scheme launch (zoommtg://, msteams://) via `ShellExecute`; Google Meet browser fallback; deep link detection |
+| PABLO-D-150–157 | **Windows Onboarding** | Pablo Bear first-run guide; mic permission prompt; screen recording permission; video platform detection; test recording; "You're ready" celebration |
+
+Backend sync (PABLO-D-030–033) is shared Rust core — Windows consumes the same API client. FFI binding setup is covered in PABLO-D-100–104.
+
+---
+
+## Files Changed
+
+| File | Action |
+|------|--------|
+| `.editorconfig` | Create |
+| `.swiftlint.yml` | Create |
+| `.swiftformat` | Create |
+| `.pre-commit-config.yaml` | Create |
+| `.secrets.baseline` | Generate |
+| `.github/workflows/ci.yml` | Create |
+| `.github/workflows/codeql.yml` | Create |
+| `.github/workflows/security.yml` | Create |
+| `.github/workflows/rust-security.yml` | Create |
+| `.github/workflows/scorecard.yml` | Create |
+| `.github/dependabot.yml` | Create |
+| `.github/CODEOWNERS` | Create |
+| `Makefile` | Create |
+| beads tasks | Create PABLO-D-100–157 (~20 tasks) |
+
+---
+
+## Verification
+
+1. `pre-commit run --all-files` — passes on current Swift code
+2. `make lint-swift` — SwiftLint/SwiftFormat clean
+3. `make build-mac` — Xcode build succeeds
+4. GitHub Actions tab shows all 5 workflows; none run automatically until a push to main
+5. `gh repo view pablo-health/pablo-companion --json visibility` — returns `"PUBLIC"`
+6. `bd ls` — shows Windows epics PABLO-D-100 through PABLO-D-157
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/kurtn/.claude/projects/-Users-kurtn-Developer-pablo-companion/3d666dbd-2912-4b0e-911f-fdecc7e312d4.jsonl
+
+If this plan can be broken down into multiple independent tasks, consider using the TeamCreate tool to create a team and parallelize the work.
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+let's get it right from the start :-)
+
+---
+
+can you create pr and push it
+
+---
+
+ci failed - /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion.xcodeproj: error: No signing certificate "Mac Development" found: No "Mac Development" signing certificate matching team ID "L8KG4FA2R9" with a private key was found. (in target 'PabloCompanion' from project 'PabloCompanion')
+** BUILD FAILED **
+
+
+The following build commands failed:
+    Building project PabloCompanion with scheme PabloCompanion
+(1 failure)
+
+---
+
+look at the build errors on ci - how come it built and ran locally fine
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+wait wait - maybe that's necessary but why am i getting these errors in codeql:     SwiftCompile normal x86_64 /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/ViewModels/AuthViewModel.swift (in target 'PabloCompanion' from project 'PabloCompanion')
+/Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/PabloCompanionApp.swift:24:46: error: non-sendable result type 'SCShareableContent' cannot be sent from nonisolated context in call to class method 'excludingDesktopWindows(_:onScreenWindowsOnly:)'
+    SwiftCompile normal x86_64 /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/PabloCompanionApp.swift (in target 'PabloCompanion' from project 'PabloCompanion')
+            _ = try await SCShareableContent.excludingDesktopWindows(
+    Building project PabloCompanion with scheme PabloCompanion
+                                             ^
+(4 failures)
+/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/ScreenCaptureKit.framework/Headers/SCShareableContent.h:140:12: note: class 'SCShareableContent' does not conform to the 'Sendable' protocol
+@interface SCShareableContent : NSObject
+           ^
+/Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/PabloCompanionApp.swift:1:1: warning: add '@preconcurrency' to treat 'Sendable'-related errors from module 'ScreenCaptureKit' as warnings
+import ScreenCaptureKit
+^
+@preconcurrency 
+
+SwiftCompile normal x86_64 /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/ViewModels/PatientViewModel.swift (in target 'PabloCompanion' from project 'PabloCompanion')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac
+    
+
+SwiftCompile normal x86_64 /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/ViewModels/RecordingViewModel.swift (in target 'PabloCompanion' from project 'PabloCompanion')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac
+    
+
+SwiftCompile normal x86_64 /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/ViewModels/UploadViewModel.swift (in target 'PabloCompanion' from project 'PabloCompanion')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac
+    
+
+SwiftCompile normal x86_64 /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/Models/LocalRecording.swift (in target 'PabloCompanion' from project 'PabloCompanion')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac
+    
+
+SwiftCompile normal x86_64 /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion/Views/ContentView.swift (in target 'PabloCompanion' from project 'PabloCompanion')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+we can't use macOS26?
