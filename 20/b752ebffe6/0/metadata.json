@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "20b752ebffe6",
+  "session_id": "9e69ef63-4a06-4b0e-96ff-4b85eb4d4778",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-24T23:23:26.437207Z",
+  "branch": "main",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "mac/PabloCompanion/Services/APIClient.swift",
+    "mac/PabloCompanion/Services/TokenRefresher.swift"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "9a23ad983891",
+  "token_usage": {
+    "input_tokens": 101,
+    "cache_creation_tokens": 108893,
+    "cache_read_tokens": 6681916,
+    "output_tokens": 13761,
+    "api_call_count": 73
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-24T23:23:26.058089Z",
+    "agent_lines": 0,
+    "human_added": 505,
+    "human_modified": 114,
+    "human_removed": 0,
+    "total_committed": 523,
+    "agent_percentage": 0
+  }
+}

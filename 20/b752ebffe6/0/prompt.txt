@@ -1,0 +1,538 @@
+i want you to review all of the code and fix all linting errors
+
+---
+
+[Request interrupted by user]
+
+---
+
+can you spin up a unit test analysis team - don't want unit tests just for unit tests
+agent team
+
+---
+
+<teammate-message teammate_id="code-reviewer" color="blue">
+{"type":"idle_notification","from":"code-reviewer","timestamp":"2026-02-24T23:08:56.246Z","idleReason":"available","summary":"[to manager] Unit testing candidates identified across 8 files"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="researcher" color="green">
+{"type":"idle_notification","from":"researcher","timestamp":"2026-02-24T23:10:22.100Z","idleReason":"available","summary":"[to manager] Swift unit testing research findings for all 6 areas"}
+</teammate-message>
+
+<teammate-message teammate_id="researcher" color="green">
+{"type":"idle_notification","from":"researcher","timestamp":"2026-02-24T23:10:29.796Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="code-reviewer" color="blue">
+{"type":"idle_notification","from":"code-reviewer","timestamp":"2026-02-24T23:11:04.335Z","idleReason":"available","summary":"[to manager] Comprehensive codebase analysis: logic, testability, and risk areas"}
+</teammate-message>
+
+<teammate-message teammate_id="researcher" color="green">
+{"type":"idle_notification","from":"researcher","timestamp":"2026-02-24T23:11:33.213Z","idleReason":"available","summary":"[to manager] Detailed findings on all 4 requested areas including UniFFI"}
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple" summary="Final unit test analysis report with prioritized recommendations">
+Here is my synthesized analysis of what's worth unit testing in the Pablo Companion codebase. I've read every Swift file and formed my own assessment, supplemented by what code-reviewer and researcher have been investigating.
+
+---
+
+## Unit Test Analysis: Pablo Companion (macOS)
+
+### What's Worth Testing (Prioritized)
+
+**1. `AuthViewModel.handleAuthCallback(callbackURL:error:)` — HIGH VALUE, MEDIUM EFFORT**
+
+Why it earns its keep: This is the most complex pure-logic function in the app. It parses a callback URL, extracts query parameters, validates required tokens, stores them in Keychain, extracts email from JWT, and sets auth state. A bug here means users can't sign in or lose their session. The function has 5+ distinct code paths (cancelled login, error, missing callback, missing tokens, happy path). This is exactly the kind of branching logic where real bugs hide.
+
+Real bugs it catches:
+- Missing `id_token` or `refresh_token` silently fails instead of showing error
+- JWT email extraction returns nil and falls through incorrectly
+- Auth state gets stuck in `.authenticating` if error path is incomplete
+
+**2. `AuthViewModel.decodeJWTPayload(_:)` and `extractExpiry(from:)` — HIGH VALUE, LOW EFFORT**
+
+Why it earns its keep: Base64 URL-safe decoding with padding is notoriously fiddly. The function handles `-` to `+`, `_` to `/` replacements and padding to multiples of 4. This is pure logic, no dependencies, trivially testable.
+
+Real bugs it catches:
+- Tokens with unusual padding lengths decode incorrectly
+- JWT with non-standard characters fail silently
+- Expiry extraction returns nil for valid tokens
+
+**3. `AuthViewModel.getValidToken()` — token expiry/refresh logic — HIGH VALUE, MEDIUM EFFORT**
+
+Why it earns its keep: The 5-minute buffer calculation determines whether a token refresh happens. Off-by-one in the time comparison means either unnecessary refreshes (perf hit) or expired tokens hitting the API (auth failures).
+
+Real bugs it catches:
+- Token refresh triggered too early or too late
+- Missing token returns wrong error type
+- State transitions (`.tokenExpired`) happen at wrong time
+
+**4. `DemoEncryptor.decryptFile(at:)` — MEDIUM VALUE, LOW EFFORT**
+
+Why it earns its keep: Binary format parsing with chunk length prefixes and WAV header reconstruction. The offset arithmetic (`offset + 4`, little-endian UInt32) is exactly the kind of code that breaks silently with corrupt data. Plus it updates WAV header byte ranges (4-7, 40-43) which is easy to get wrong.
+
+Real bugs it catches:
+- Off-by-one in chunk boundary parsing
+- WAV header size fields incorrect after reconstruction
+- Truncated file crashes instead of throwing
+
+**5. `APIClient.createMultipartBody(fileData:fileName:boundary:)` — MEDIUM VALUE, LOW EFFORT**
+
+Why it earns its keep: Multipart form data construction must have exact `\r\n` placement and boundary formatting. If the boundary or content disposition is wrong, uploads silently fail server-side.
+
+Real bugs it catches:
+- Missing `\r\n` terminators
+- Boundary not matching Content-Type header format
+- Special characters in filename breaking the form data
+
+**6. `RecordingViewModel.checkBluetoothRoutingConflict()` — MEDIUM VALUE, LOW EFFORT**
+
+Why it earns its keep: String comparison logic that determines if a Bluetooth mic is also the output device. The UID prefix extraction (`components(separatedBy: ":")`) and comparison is easy to get wrong, and a false positive/negative directly affects the user experience (wrong warning shown, or no warning when HFP mode is active).
+
+Real bugs it catches:
+- UIDs without ":" separator cause crash or wrong comparison
+- Prefix match too loose (unrelated devices matching)
+
+**7. `LocalRecording.formattedDuration` — LOW VALUE, LOW EFFORT**
+
+Only worth testing as a freebie since it's pure logic with no dependencies. Could catch edge cases like durations over 59:59 not displaying hours.
+
+---
+
+### What's NOT Worth Testing (and Why)
+
+**All SwiftUI Views** — `ContentView`, `LoginView`, `PatientListView`, `RecordingListView`, `RecordingControlsView`, `SettingsView`
+Why skip: These are pure presentation. SwiftUI views are notoriously hard to unit test and provide almost no value. Any visual regression should be caught by manual testing or snapshot tests (a separate effort).
+
+**`UploadViewModel` and `PatientViewModel`** — thin orchestration
+Why skip: These are thin wrappers around `APIClient`. Their logic is: call API, set state, log result. The branching is trivial (success vs error). Testing them requires mocking `APIClient` and the tests would basically assert "did you call the API and set the bool?" — not catching real bugs.
+
+**`RecordingViewModel` — recording lifecycle methods** (`startRecording`, `stopRecording`, `pauseRecording`, `resumeRecording`)
+Why skip: These are pure delegation to `CompositeCaptureSession` (AudioCaptureKit). They'd require mocking the entire capture framework, and the tests would only verify "did you call start/stop on the session?" — not catching real bugs. The framework itself should have its own tests.
+
+**`KeychainManager`** — direct Security framework wrapper
+Why skip: All static methods, thin wrapper around `SecItem*` C functions. Testing this properly requires either running on a real Keychain (integration test, not unit test) or mocking the Security framework (massive effort, low value). The Keychain either works or it doesn't — there's no interesting logic to verify.
+
+**`TokenRefresher.refresh(using:)`** — network call
+Why skip: It's a straightforward URL request + JSON parsing. Testing it requires URLProtocol mocking for one function with simple branching. The error mapping (TOKEN_EXPIRED, USER_DISABLED, etc.) is mildly interesting but not worth the mocking investment given this is a Firebase API contract that rarely changes.
+
+**`PabloCompanionApp`** — app entry point
+Why skip: Just SwiftUI app lifecycle, nothing testable.
+
+---
+
+### Recommended Approach
+
+**Framework: Swift Testing (not XCTest)**
+
+Rationale:
+- The project already targets macOS 14+ and Swift 6.0, so Swift Testing is fully supported
+- `@Test` and `#expect` are cleaner than `XCTestCase` + `XCTAssert`
+- Parameterized tests (`@Test(arguments:)`) are perfect for JWT decode edge cases and callback URL variations
+- Better async support out of the box
+- It's the direction Apple is going — no reason to start new test suites in XCTest
+
+**Mocking strategy: Don't mock URLSession. Don't mock Keychain.**
+
+The functions worth testing are all pure logic or near-pure logic:
+- `decodeJWTPayload` — pure function, takes string, returns dictionary
+- `handleAuthCallback` — takes a URL, produces state changes. The only dependency is `KeychainManager` which uses static methods.
+- `createMultipartBody` — pure function, takes data, returns data
+- `DemoEncryptor.decryptFile` — takes file data, returns WAV data
+- `checkBluetoothRoutingConflict` — reads from in-memory state
+
+For `handleAuthCallback` and `getValidToken`, KeychainManager IS a testability problem. But rather than adding a protocol + DI just for tests, I recommend:
+- **Test `decodeJWTPayload` and `extractExpiry` directly** (make them `internal` instead of `private` so tests can access them, or test via the public `extractExpiry(from:)` which is already non-private)
+- **Test `handleAuthCallback` by observing the resulting `authState` and `errorMessage`** — the Keychain writes are side effects we don't need to verify in unit tests
+- Skip testing `getValidToken` and `refreshToken` which are tightly coupled to Keychain + network — they'll be covered by integration tests later
+
+**No protocol abstraction needed for Keychain.** The effort to make KeychainManager injectable isn't justified by the test value gained. Revisit when the Rust core takes over auth logic.
+
+---
+
+### Rough Scope
+
+| Test Target | Functions | Estimated Test Cases | Effort |
+|---|---|---|---|
+| JWT Decoding | `decodeJWTPayload`, `extractExpiry`, `extractEmail` | 8-10 (valid JWT, expired JWT, malformed, missing fields, URL-safe chars, padding variants) | Small |
+| Auth Callback | `handleAuthCallback` | 6-8 (happy path, cancelled, error, missing tokens, missing callback, email extraction) | Medium |
+| Multipart Body | `createMultipartBody` | 3-4 (basic, empty file, special chars in filename) | Small |
+| DemoEncryptor | `encrypt`/`decrypt` round-trip, `decryptFile` | 5-6 (round-trip, corrupt data, truncated file, empty file, multi-chunk) | Small |
+| Bluetooth Conflict | `checkBluetoothRoutingConflict` | 4-5 (no BT, BT mic + same output, BT mic + different output, no colon in UID) | Small |
+| LocalRecording | `formattedDuration` | 2-3 (zero, normal, edge) | Trivial |
+
+**Total: ~28-36 test cases across 2-3 test files**
+
+Suggested file organization:
+- `AuthViewModelTests.swift` — JWT + callback tests (~16-18 cases)
+- `DemoEncryptorTests.swift` — encryption round-trip + file decryption (~5-6 cases)
+- `APIClientTests.swift` — multipart body construction (~3-4 cases)
+- `RecordingViewModelTests.swift` — Bluetooth conflict logic (~4-5 cases)
+
+**Testability changes required:**
+1. Make `decodeJWTPayload` and `extractEmail` `internal` (remove `private`) so `@testable import` can access them
+2. Make `createMultipartBody` `internal` (remove `private`)
+3. Make `checkBluetoothRoutingConflict` callable with injected state (or test via setting `selectedMicID` and `availableMics` directly, which is already possible since they're `var`)
+
+These are minimal, non-invasive changes — no protocol abstractions, no DI containers, no architecture changes.
+
+---
+
+### Bottom Line
+
+The app has ~30 test-worthy cases concentrated in auth/JWT handling and binary format parsing. These are the areas where real bugs would cause real user-facing failures (can't sign in, corrupted recordings). Everything else is either pure UI or thin delegation that doesn't justify test investment at this stage.
+
+The Rust core will eventually absorb the API client, auth logic, and data models — so keep the Swift test suite lean and focused on what stays Swift-native.
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"idle_notification","from":"manager","timestamp":"2026-02-24T23:11:52.757Z","idleReason":"available","summary":"[to researcher] Requesting testing best practices findings from researcher"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="manager" color="purple" summary="Addendum: two items upgraded after code-reviewer findings">
+Quick addendum based on code-reviewer's detailed findings, which I now have:
+
+**Two items I'd upgrade from my original report:**
+
+1. **TokenRefresher error parsing (lines 66-76)** -- I originally said "not worth testing" because it requires URLSession mocking. Code-reviewer correctly identified the string-matching switch (`"TOKEN_EXPIRED"`, `"USER_DISABLED"`, etc.) as fragile. The fix: extract the error-classification logic into a pure function like `classifyRefreshError(statusCode: Int, responseBody: [String: Any]?) -> RefreshError`. Then it becomes trivially testable with ~4 cases and zero mocking. Add this to the scope: +4 test cases in a new section or in `AuthViewModelTests.swift`.
+
+2. **`AuthViewModel.buildAuthURL()`** -- The trailing-slash handling (line 135) and empty-string edge case are worth 2-3 quick tests. Pure logic, no dependencies. Add to `AuthViewModelTests.swift`.
+
+**Items code-reviewer flagged that I'd still skip:**
+- `LevelMeter.clampedLevel` -- it's literally `max(0, min(1, value))`. Not worth a test file.
+- `Data.append(_ string:)` -- UTF-8 encoding wrapper. Foundation handles this.
+- `isMicStillAvailable` and `defaultOutputDeviceUID` -- CoreAudio mocking is prohibitive for unit tests.
+
+**Revised total: ~35-42 test cases across 4-5 files.** The two additions are low-effort and catch real bugs (wrong error type returned, malformed auth URL).
+
+Everything else in my original report stands. Code-reviewer and I are aligned on the top priorities: JWT decoding, auth callback, multipart body, DemoEncryptor file parsing.
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"idle_notification","from":"manager","timestamp":"2026-02-24T23:12:26.646Z","idleReason":"available","summary":"[to code-reviewer] Acknowledging findings, report sent to team-lead"}
+</teammate-message>
+
+<teammate-message teammate_id="code-reviewer" color="blue">
+{"type":"idle_notification","from":"code-reviewer","timestamp":"2026-02-24T23:12:29.803Z","idleReason":"available","summary":"[to manager] Code review complete, standing by for next phase"}
+</teammate-message>
+
+<teammate-message teammate_id="codeql-investigator" color="orange" summary="CodeQL slowness investigation complete with findings and fixes">
+## CodeQL Slowness Investigation: Complete Findings
+
+### 1. What Specifically Causes CodeQL to Hang on Package Checking
+
+The root cause is **SPM package resolution running from scratch on every CI run**, compounded by two specific issues in this project:
+
+**A. AudioCaptureKit is pinned to `branch = main` (not a version tag)**
+
+In `mac/PabloCompanion.xcodeproj/project.pbxproj` (lines 351-358):
+```
+XCRemoteSwiftPackageReference "AudioCaptureKit" = {
+    repositoryURL = "https://github.com/lll-solutions/AudioCaptureKit.git";
+    requirement = {
+        branch = main;
+        kind = branch;
+    };
+};
+```
+
+Branch-based pins are the worst case for CI because SPM must **check the remote every single build** to see if `main` has new commits. Version-pinned packages can skip the network check if the resolved version matches. The `Package.resolved` file records a specific revision (`e378e950ca05cf8c6dc56167fb34b21ebf34e1f7`), but SPM still needs to verify `main` hasn't moved.
+
+**B. SPM fetches full git history by default.** When SPM resolves, it clones the full repository (all branches, full history). AudioCaptureKit pulls in transitive dependencies: `swift-crypto` and `swift-asn1` (both Apple packages). Apple packages are known to be especially slow to clone due to large git histories.
+
+**C. No SPM caching in any workflow.** The CodeQL workflow (`codeql.yml`) does a bare `xcodebuild build` with no caching step. Every run does a full fresh SPM resolution + clone. The CI workflow (`ci.yml`) has the same problem.
+
+**D. Known GitHub Actions issue.** There's a documented issue (actions/runner-images#6233) where SPM hangs on xcodebuild in GitHub Actions due to `.netrc`/Keychain interaction, particularly for HTTPS-based packages on macOS runners.
+
+### 2. Does the Current Workflow Already Cache SPM Packages?
+
+**No.** Neither `codeql.yml` nor `ci.yml` has any `actions/cache` step for SPM. The Rust jobs (`ci.yml` lines 106, 126) correctly use `Swatinem/rust-cache@v2`, but the Swift jobs have zero caching.
+
+### 3. Is AudioCaptureKit Local or Remote?
+
+**Remote.** It's an `XCRemoteSwiftPackageReference` pointing to `https://github.com/lll-solutions/AudioCaptureKit.git` with `kind = branch` pinned to `main`.
+
+The `Package.resolved` file confirms three remote dependencies:
+- `audiocapturekit` from `https://github.com/lll-solutions/AudioCaptureKit.git` (branch: main, revision: e378e950)
+- `swift-asn1` from `https://github.com/apple/swift-asn1.git` (version 1.5.1)
+- `swift-crypto` from `https://github.com/apple/swift-crypto.git` (version 4.2.0)
+
+Since it's remote and branch-pinned, **caching will absolutely help** but won't eliminate the network check entirely due to the branch pin.
+
+### 4. Concrete Workflow YAML Changes
+
+#### Recommended Fix for `codeql.yml`:
+
+```yaml
+jobs:
+  analyze-swift:
+    name: CodeQL (swift)
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      # NEW: Cache SPM packages
+      - name: Cache SPM packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            mac/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      # NEW: Resolve packages separately (with timeout protection)
+      - name: Resolve SPM dependencies
+        run: |
+          xcodebuild -project mac/PabloCompanion.xcodeproj \
+            -scheme PabloCompanion \
+            -clonedSourcePackagesDirPath mac/SourcePackages \
+            -resolvePackageDependencies
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4
+        with:
+          languages: swift
+          queries: security-extended
+
+      - name: Build
+        run: |
+          xcodebuild -project mac/PabloCompanion.xcodeproj \
+            -scheme PabloCompanion \
+            -destination 'platform=macOS' \
+            -clonedSourcePackagesDirPath mac/SourcePackages \
+            -disableAutomaticPackageResolution \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4
+        with:
+          category: /language:swift
+```
+
+#### Same fix for the `swift-build` job in `ci.yml`:
+
+```yaml
+  swift-build:
+    name: Swift Build
+    needs: changes
+    if: needs.changes.outputs.mac == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Cache SPM packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            mac/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Resolve SPM dependencies
+        run: |
+          xcodebuild -project mac/PabloCompanion.xcodeproj \
+            -scheme PabloCompanion \
+            -clonedSourcePackagesDirPath mac/SourcePackages \
+            -resolvePackageDependencies
+
+      - name: Build
+        run: |
+          xcodebuild -project mac/PabloCompanion.xcodeproj \
+            -scheme PabloCompanion \
+            -destination 'platform=macOS' \
+            -clonedSourcePackagesDirPath mac/SourcePackages \
+            -disableAutomaticPackageResolution \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build | xcpretty
+```
+
+### Key Design Decisions in the Fix
+
+1. **`-clonedSourcePackagesDirPath mac/SourcePackages`** — Directs SPM to clone packages into a known, cacheable path instead of DerivedData (which is ephemeral).
+
+2. **Separate `-resolvePackageDependencies` step** — Isolates network-dependent package resolution from the build. If it hangs, the step times out cleanly rather than blocking the entire build+analysis.
+
+3. **`-disableAutomaticPackageResolution` on the build step** — After resolution, tells xcodebuild to use only already-resolved packages. Prevents a second resolution attempt during build.
+
+4. **Cache key uses `Package.resolved`** — Cache invalidates only when dependencies actually change.
+
+5. **`restore-keys: spm-${{ runner.os }}-`** — Falls back to any previous SPM cache if Package.resolved changed, so at least some packages are pre-cloned.
+
+### Bonus Recommendation: Pin AudioCaptureKit to a Tag
+
+The `branch = main` pin is the single biggest contributor to resolution slowness. Every build must check if `main` has moved. If AudioCaptureKit can publish semver tags, switching from `kind = branch` to `kind = upToNextMajorVersion` would:
+- Allow SPM to skip the network check when the cached version matches
+- Make builds more reproducible
+- Reduce the chance of a surprise breaking change in CI
+
+This would require a change in the Xcode project settings (the `XCRemoteSwiftPackageReference` section) and is a separate task from the workflow changes.
+
+### Files Analyzed
+
+- `/Users/kurtn/Developer/pablo-companion/.github/workflows/codeql.yml` — CodeQL workflow, no SPM caching
+- `/Users/kurtn/Developer/pablo-companion/.github/workflows/ci.yml` — CI workflow, no SPM caching for Swift jobs (Rust jobs do have caching)
+- `/Users/kurtn/Developer/pablo-companion/mac/PabloCompanion.xcodeproj/project.pbxproj` — AudioCaptureKit is remote, branch-pinned to `main`
+- `/Users/kurtn/Developer/pablo-companion/mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` — 3 remote packages (AudioCaptureKit, swift-asn1, swift-crypto)
+
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple" summary="Final addendum with researcher findings: Keychain mock needed, extract JWTDecoder">
+Second addendum — researcher's findings are in. Three refinements to my recommendations:
+
+**1. Keychain: Protocol + in-memory fake IS needed (revising my "no protocol abstraction" stance)**
+
+Researcher confirmed a critical constraint I underweighted: the real macOS Keychain is **not accessible from SPM/Xcode test runner contexts** without entitlements. This isn't about test purity — it's a practical blocker. If we want to test `handleAuthCallback` end-to-end (including verifying tokens get stored), we need a `KeychainStorable` protocol with an in-memory fake.
+
+However, this doesn't change the scope much. It's ~30 lines of code (protocol + dictionary-backed mock), and it only affects `AuthViewModel` tests. I'd still skip testing `KeychainManager` itself — we're testing the auth logic that *uses* it, not the Keychain wrapper.
+
+**2. Extract JWT decoding into its own type (not just `internal` access)**
+
+Researcher + Apple's guidance both say: if a private method is complex enough to test, extract it into its own type with a public interface. Instead of making `decodeJWTPayload` `internal` via `@testable import`, extract a small `JWTDecoder` struct (~20 lines). This is cleaner, follows Apple's testing philosophy, and makes the tests independent of `AuthViewModel`.
+
+**3. URLSession mocking: Protocol abstraction over URLProtocol**
+
+For the TokenRefresher error parsing tests I added in my first addendum, researcher confirms: use a `NetworkSession` protocol, not `URLProtocol` subclassing. URLProtocol has `Sendable` violations in Swift 6 strict concurrency mode (global mutable state in static properties). The protocol approach is ~15 lines and fully Swift 6 safe. This applies if we decide to test TokenRefresher's `refresh()` method directly rather than just extracting the error classification logic.
+
+**My recommendation: extract the error classification as a pure function (my first addendum) rather than mock the network layer.** Less setup, same bug-catching value. But if the team later wants broader API client testing, the protocol approach is the right foundation.
+
+---
+
+**Final revised scope (incorporating all three agents' input):**
+
+| Change from original | Impact |
+|---|---|
+| Add `KeychainStorable` protocol + mock | +30 lines of setup, enables proper `handleAuthCallback` testing |
+| Extract `JWTDecoder` struct | +20 lines, replaces `@testable import` for JWT tests |
+| Extract `classifyRefreshError()` pure function | +10 lines, enables error parsing tests without mocking |
+| Add `buildAuthURL()` tests | +3 test cases |
+| Add TokenRefresher error classification tests | +4 test cases |
+
+**Revised total: ~35-42 test cases, 4 test files, ~3 small refactors to production code.**
+
+All three agents are aligned. This is the complete picture.
+</teammate-message>
+
+<teammate-message teammate_id="codeql-investigator" color="orange">
+{"type":"idle_notification","from":"codeql-investigator","timestamp":"2026-02-24T23:12:50.111Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="researcher" color="green">
+{"type":"idle_notification","from":"researcher","timestamp":"2026-02-24T23:13:01.500Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"idle_notification","from":"manager","timestamp":"2026-02-24T23:13:05.709Z","idleReason":"available","summary":"[to researcher] Acknowledging research, three findings changed final recommendations"}
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"idle_notification","from":"manager","timestamp":"2026-02-24T23:13:09.228Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="manager" color="purple" summary="New finding: refresh token URL encoding bug in TokenRefresher">
+One more finding from code-reviewer's expanded analysis worth flagging:
+
+**TokenRefresher line 51 — refresh token not URL-encoded:**
+```swift
+request.httpBody = Data("grant_type=refresh_token&refresh_token=\(refreshToken)".utf8)
+```
+
+If a refresh token contains `=`, `&`, or `+` characters (which Firebase tokens can), this breaks the URL-encoded form body. The token value gets split at the `&` or `=`, and the server receives a truncated or malformed token.
+
+This is a real latent bug, not just a theoretical concern. Firebase refresh tokens are opaque strings and their character set isn't guaranteed. The fix is to percent-encode the token value before interpolation.
+
+I'd add this as a test case in the TokenRefresher error classification tests: pass a refresh token with special URL characters and verify the request body is correctly formed. This bumps the TokenRefresher test count from 4 to 5-6 cases.
+
+Everything else in the expanded code-reviewer report confirms what's already in my three prior messages. No other changes to scope or priorities.
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"idle_notification","from":"manager","timestamp":"2026-02-24T23:13:40.553Z","idleReason":"available","summary":"[to code-reviewer] Escalated URL encoding bug, all reports delivered"}
+</teammate-message>
+
+<teammate-message teammate_id="code-reviewer" color="blue">
+{"type":"idle_notification","from":"code-reviewer","timestamp":"2026-02-24T23:13:42.326Z","idleReason":"available","summary":"[to manager] Acknowledged. Token URL encoding bug escalated correctly"}
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple" summary="UniFFI testing strategy for future Rust core integration">
+One final note from researcher's full findings — a forward-looking item for when the Rust core is integrated:
+
+**UniFFI generates testable protocols automatically.** When `pablo-core` exposes an `interface T` in the `.udl` file, UniFFI generates both a `TProtocol` and a concrete class `T` in Swift. This means Swift ViewModel tests can mock the Rust core without any extra abstraction work — just conform a `MockPabloCore` to the generated `PabloCoreProtocol`.
+
+**Recommended testing layers once Rust core exists:**
+1. **Rust unit tests** (`cargo test`) — all business logic tested here
+2. **Swift ViewModel tests against mock core protocols** — test orchestration, state mapping, error handling
+3. **Integration smoke tests** (CI only) — load real Rust dylib, catch FFI boundary issues
+
+This doesn't change the current scope (no Rust core yet), but it's good to know the architecture naturally supports testability. No need to design extra abstractions — UniFFI gives us protocols for free.
+
+All researcher findings are now incorporated. My full analysis across all four messages is the complete picture. Standing by for questions or next steps.
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"idle_notification","from":"manager","timestamp":"2026-02-24T23:13:56.697Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"idle_notification","from":"manager","timestamp":"2026-02-24T23:13:59.653Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"idle_notification","from":"manager","timestamp":"2026-02-24T23:14:03.095Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="system">
+{"type":"teammate_terminated","message":"code-reviewer has shut down."}
+</teammate-message>
+
+<teammate-message teammate_id="system">
+{"type":"teammate_terminated","message":"manager has shut down."}
+</teammate-message>
+
+<teammate-message teammate_id="system">
+{"type":"teammate_terminated","message":"codeql-investigator has shut down."}
+</teammate-message>
+
+<teammate-message teammate_id="system">
+{"type":"teammate_terminated","message":"researcher has shut down."}
+</teammate-message>
+
+<teammate-message teammate_id="code-reviewer" color="blue">
+{"type":"shutdown_approved","requestId":"shutdown-1771974861997@code-reviewer","from":"code-reviewer","timestamp":"2026-02-24T23:14:23.252Z","paneId":"in-process","backendType":"in-process"}
+</teammate-message>
+
+<teammate-message teammate_id="manager" color="purple">
+{"type":"shutdown_approved","requestId":"shutdown-1771974861451@manager","from":"manager","timestamp":"2026-02-24T23:14:25.431Z","paneId":"in-process","backendType":"in-process"}
+</teammate-message>
+
+<teammate-message teammate_id="codeql-investigator" color="orange">
+{"type":"shutdown_approved","requestId":"shutdown-1771974862893@codeql-investigator","from":"codeql-investigator","timestamp":"2026-02-24T23:14:25.903Z","paneId":"in-process","backendType":"in-process"}
+</teammate-message>
+
+<teammate-message teammate_id="researcher" color="green">
+{"type":"shutdown_approved","requestId":"shutdown-1771974862572@researcher","from":"researcher","timestamp":"2026-02-24T23:14:27.216Z","paneId":"in-process","backendType":"in-process"}
+</teammate-message>
+
+---
+
+does everything build?   and spin up an worker agent to add unit tests
