@@ -40,21 +40,7 @@ struct TokenRefresher: Sendable {
     }
 
     func refresh(using refreshToken: String) async throws -> TokenResponse {
-        let urlString = "https://securetoken.googleapis.com/v1/token"
-        guard let url = URL(string: urlString) else {
-            throw RefreshError.invalidResponse
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        var formComponents = URLComponents()
-        formComponents.queryItems = [
-            URLQueryItem(name: "grant_type", value: "refresh_token"),
-            URLQueryItem(name: "refresh_token", value: refreshToken),
-        ]
-        request.httpBody = formComponents.percentEncodedQuery.map { Data($0.utf8) }
+        let request = try buildRefreshRequest(refreshToken: refreshToken)
 
         let data: Data
         let response: URLResponse
@@ -87,6 +73,23 @@ struct TokenRefresher: Sendable {
             refreshToken: newRefreshToken,
             expiresIn: expiresIn
         )
+    }
+
+    private func buildRefreshRequest(refreshToken: String) throws -> URLRequest {
+        guard let url = URL(string: "https://securetoken.googleapis.com/v1/token") else {
+            throw RefreshError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        var formComponents = URLComponents()
+        formComponents.queryItems = [
+            URLQueryItem(name: "grant_type", value: "refresh_token"),
+            URLQueryItem(name: "refresh_token", value: refreshToken),
+        ]
+        request.httpBody = formComponents.percentEncodedQuery.map { Data($0.utf8) }
+        return request
     }
 
     func classifyRefreshError(from data: Data) -> RefreshError {
