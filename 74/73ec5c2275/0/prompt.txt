@@ -1,0 +1,41 @@
+hi ya when i did the force push - did i mess up the entire.io reporting?
+
+---
+
+i think it creates like a branch
+
+---
+
+yeah whats in entire/checkpoints/v1 - does it reference individual commits which would be affected
+
+---
+
+is it normal for codeql to appear hung on resolve package graph
+
+---
+
+and be like 16 minutes running
+
+---
+
+oh ok it just finished that part :-)
+
+---
+
+is there a eason we don't have a .beads/issues.jsonl?
+
+---
+
+ok but why isn't it source control?
+
+---
+
+ok can you do that for me
+
+---
+
+ok, so let's say i have a colloborator on a different computer how would they get the issues
+
+---
+
+that seams like a lot - could you read what we have and then use new bd commands to populate the issues
