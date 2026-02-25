@@ -6,8 +6,9 @@ import SwiftUI
 struct SettingsView: View {
     @Binding var backendURL: String
     @Binding var authServerURL: String
-    @Binding var firebaseAPIKey: String
     @Binding var selectedMicID: String?
+    @State private var backendURLError: String?
+    @State private var authServerURLError: String?
     @Binding var encryptionEnabled: Bool
     @Binding var debugEnableMic: Bool
     @Binding var debugEnableSystem: Bool
@@ -83,27 +84,44 @@ struct SettingsView: View {
         Section("Backend") {
             TextField("Backend URL", text: $backendURL)
                 .textFieldStyle(.roundedBorder)
+                .onChange(of: backendURL) { _, newValue in
+                    backendURLError = URLValidator.validateScheme(newValue)
+                }
+            if let error = backendURLError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
 
             TextField("Auth Server URL", text: $authServerURL)
                 .textFieldStyle(.roundedBorder)
-
-            TextField("Firebase API Key", text: $firebaseAPIKey)
-                .textFieldStyle(.roundedBorder)
-
-            HStack {
-                Circle()
-                    .fill(isBackendReachable ? .green : .red)
-                    .frame(width: 8, height: 8)
-                Text(isBackendReachable ? "Connected" : "Not connected")
+                .onChange(of: authServerURL) { _, newValue in
+                    authServerURLError = URLValidator.validateScheme(newValue)
+                }
+            if let error = authServerURLError {
+                Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Button("Check", action: onCheckHealth)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .foregroundStyle(.red)
             }
+
+            connectionStatus
+        }
+    }
+
+    private var connectionStatus: some View {
+        HStack {
+            Circle()
+                .fill(isBackendReachable ? .green : .red)
+                .frame(width: 8, height: 8)
+            Text(isBackendReachable ? "Connected" : "Not connected")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Button("Check", action: onCheckHealth)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
         }
     }
 
@@ -140,6 +158,8 @@ struct SettingsView: View {
         }
     }
 
+    @AppStorage("deleteAfterUpload") private var deleteAfterUpload = true
+
     private var audioFormatSection: some View {
         Section("Audio Format") {
             LabeledContent("Sample Rate", value: "48,000 Hz")
@@ -147,8 +167,9 @@ struct SettingsView: View {
             LabeledContent("Channels", value: "Stereo (Mic+System mixed)")
             Toggle("Encrypt recordings", isOn: $encryptionEnabled)
             if encryptionEnabled {
-                LabeledContent("Algorithm", value: "AES-256-GCM (Demo Key)")
+                LabeledContent("Algorithm", value: "AES-256-GCM")
             }
+            Toggle("Delete recording from device after upload", isOn: $deleteAfterUpload)
         }
     }
 

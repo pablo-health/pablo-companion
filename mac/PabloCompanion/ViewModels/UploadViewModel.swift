@@ -6,7 +6,11 @@ import os
 @Observable
 final class UploadViewModel {
     var backendURL = "http://localhost:8000" {
-        didSet { apiClient = APIClient(baseURL: backendURL) }
+        didSet {
+            if URLValidator.validateScheme(backendURL) == nil {
+                apiClient = APIClient(baseURL: backendURL)
+            }
+        }
     }
 
     var isBackendReachable = false
@@ -16,7 +20,7 @@ final class UploadViewModel {
     var showError = false
 
     private var apiClient: APIClient
-    private let logger = Logger(subsystem: "com.macos-sample", category: "UploadViewModel")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "UploadViewModel")
 
     init() {
         self.apiClient = APIClient()

@@ -45,7 +45,7 @@ final class RecordingViewModel {
     private var session: CompositeCaptureSession?
     private var audioPlayer: AVAudioPlayer?
     private let playerDelegate = AudioPlayerDelegateAdapter()
-    private let logger = Logger(subsystem: "com.macos-sample", category: "RecordingViewModel")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "RecordingViewModel")
     private let delegateAdapter = CaptureDelegateAdapter()
     private var deviceChangeListenerInstalled = false
     private var systemAudioAvailableAtStart = false
@@ -145,7 +145,7 @@ final class RecordingViewModel {
     func startRecording() async {
         logger.info("Starting recording – system audio: \(self.systemAudioAvailableAtStart)")
 
-        let encryptor: DemoEncryptor? = encryptionEnabled ? DemoEncryptor() : nil
+        let encryptor: RecordingEncryptor? = encryptionEnabled ? RecordingEncryptor() : nil
         let config = CaptureConfiguration(
             sampleRate: 48000,
             bitDepth: 16,
@@ -320,7 +320,7 @@ final class RecordingViewModel {
         do {
             let player: AVAudioPlayer
             if recording.isEncrypted {
-                let wavData = try DemoEncryptor.decryptFile(at: recording.fileURL)
+                let wavData = try RecordingEncryptor.decryptFile(at: recording.fileURL)
                 player = try AVAudioPlayer(data: wavData)
             } else {
                 player = try AVAudioPlayer(contentsOf: recording.fileURL)

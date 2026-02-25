@@ -26,9 +26,6 @@ final class AuthViewModel {
     @AppStorage("backendAPIURL") var backendAPIURL = "http://localhost:8000"
 
     @ObservationIgnored
-    @AppStorage("firebaseAPIKey") var firebaseAPIKey = ""
-
-    @ObservationIgnored
     @AppStorage("tokenExpiry") private var tokenExpiryTimestamp: Double = 0
 
     /// Convenience accessor for the email when authenticated.
@@ -39,7 +36,7 @@ final class AuthViewModel {
         return ""
     }
 
-    private let logger = Logger(subsystem: "com.macos-sample", category: "AuthViewModel")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "AuthViewModel")
 
     // MARK: - Init
 
@@ -132,6 +129,10 @@ final class AuthViewModel {
     }
 
     private func buildAuthURL() -> URL? {
+        if let error = URLValidator.validateScheme(authServerURL) {
+            errorMessage = error
+            return nil
+        }
         let base = authServerURL.trimmingCharacters(in: .init(charactersIn: "/"))
         let redirectURI = "therapyrecorder://callback"
         return URL(string: "\(base)/native-auth?redirect_uri=\(redirectURI)")
@@ -196,7 +197,9 @@ final class AuthViewModel {
             throw TokenError.noRefreshToken
         }
 
-        guard !firebaseAPIKey.isEmpty else {
+        guard let firebaseAPIKey = KeychainManager.getToken(forKey: .firebaseAPIKey),
+              !firebaseAPIKey.isEmpty
+        else {
             throw TokenError.noAPIKey
         }
 

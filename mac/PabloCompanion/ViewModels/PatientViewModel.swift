@@ -13,11 +13,15 @@ final class PatientViewModel {
     var searchText = ""
 
     var backendURL = "http://localhost:8000" {
-        didSet { apiClient = APIClient(baseURL: backendURL) }
+        didSet {
+            if URLValidator.validateScheme(backendURL) == nil {
+                apiClient = APIClient(baseURL: backendURL)
+            }
+        }
     }
 
     private var apiClient: APIClient
-    private let logger = Logger(subsystem: "com.macos-sample", category: "PatientViewModel")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PatientViewModel")
 
     init() {
         self.apiClient = APIClient()

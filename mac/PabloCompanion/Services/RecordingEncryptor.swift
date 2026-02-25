@@ -1,35 +1,18 @@
 import AudioCaptureKit
-import Crypto
+import CryptoKit
 import Foundation
 
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  WARNING: DEMO ONLY — DO NOT USE IN PRODUCTION                         ║
-// ║                                                                        ║
-// ║  This encryptor uses a hardcoded key for demonstration purposes.       ║
-// ║  In a production application, encryption keys must be:                 ║
-// ║    - Generated per-user or per-session                                 ║
-// ║    - Stored securely in the macOS Keychain                             ║
-// ║    - Never committed to source control                                 ║
-// ║    - Rotated on a regular schedule                                     ║
-// ║                                                                        ║
-// ║  This exists solely to demonstrate the AudioCaptureKit encryption      ║
-// ║  pipeline in the sample app.                                           ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-
-/// A demonstration encryptor that uses AES-256-GCM with a hardcoded key.
-struct DemoEncryptor: CaptureEncryptor {
-    /// WARNING: Hardcoded demo key — NOT for production use.
-    private static let demoKeyBytes: [UInt8] = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
-        0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-        0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20,
-    ]
-
+/// Production AES-256-GCM encryptor using a per-device key stored in Keychain.
+struct RecordingEncryptor: CaptureEncryptor {
     private let key: SymmetricKey
 
-    init() {
-        self.key = SymmetricKey(data: Self.demoKeyBytes)
+    init?() {
+        guard let keyData = KeychainManager.deviceEncryptionKey()
+            ?? KeychainManager.getOrCreateDeviceEncryptionKey()
+        else {
+            return nil
+        }
+        self.key = SymmetricKey(data: keyData)
     }
 
     var algorithm: String {
@@ -72,7 +55,11 @@ struct DemoEncryptor: CaptureEncryptor {
 
         let header = fileData.prefix(headerSize)
         var offset = headerSize
-        let encryptor = Self()
+
+        guard let encryptor = Self() else {
+            throw CaptureError.encryptionFailed("Device encryption key not available")
+        }
+
         var pcmData = Data()
 
         while offset + 4 <= fileData.count {
@@ -106,9 +93,8 @@ struct DemoEncryptor: CaptureEncryptor {
 
     func keyMetadata() -> [String: String] {
         [
-            "keyId": "demo-key-v1",
+            "keyId": "device-key-v1",
             "algorithm": algorithm,
-            "warning": "DEMO KEY — NOT FOR PRODUCTION",
         ]
     }
 }
