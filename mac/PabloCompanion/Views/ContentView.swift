@@ -39,10 +39,10 @@ struct ContentView: View {
             ) {
                 uploadVM.backendURL = config.apiUrl
                 patientVM.backendURL = config.apiUrl
-                if KeychainManager.getToken(forKey: .firebaseAPIKey) == nil,
-                   let key = config.firebaseApiKey, !key.isEmpty
-                {
-                    KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
+                if KeychainManager.getToken(forKey: .firebaseAPIKey) == nil {
+                    if let key = config.firebaseApiKey, !key.isEmpty {
+                        KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
+                    }
                 }
             }
 
