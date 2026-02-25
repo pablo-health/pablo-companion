@@ -13,6 +13,9 @@ final class APIClient {
     var getToken: (@Sendable () async throws -> String)?
 
     init(baseURL: String = "http://localhost:8000") {
+        if let error = URLValidator.validateScheme(baseURL) {
+            preconditionFailure("APIClient: \(error)")
+        }
         guard let url = URL(string: baseURL) else {
             preconditionFailure("APIClient initialized with invalid base URL: \(baseURL)")
         }
@@ -176,6 +179,7 @@ struct ServerConfig: Codable, Sendable {
 /// This discovers the backend API URL so the user doesn't have to enter it manually.
 func fetchServerConfig(authServerURL: String) async throws -> ServerConfig {
     let base = authServerURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    try URLValidator.throwIfInvalid(base)
     guard let url = URL(string: "\(base)/api/config") else {
         throw APIError.invalidResponse
     }

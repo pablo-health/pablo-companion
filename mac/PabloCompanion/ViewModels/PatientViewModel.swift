@@ -13,7 +13,11 @@ final class PatientViewModel {
     var searchText = ""
 
     var backendURL = "http://localhost:8000" {
-        didSet { apiClient = APIClient(baseURL: backendURL) }
+        didSet {
+            if URLValidator.validateScheme(backendURL) == nil {
+                apiClient = APIClient(baseURL: backendURL)
+            }
+        }
     }
 
     private var apiClient: APIClient

@@ -129,6 +129,10 @@ final class AuthViewModel {
     }
 
     private func buildAuthURL() -> URL? {
+        if let error = URLValidator.validateScheme(authServerURL) {
+            errorMessage = error
+            return nil
+        }
         let base = authServerURL.trimmingCharacters(in: .init(charactersIn: "/"))
         let redirectURI = "therapyrecorder://callback"
         return URL(string: "\(base)/native-auth?redirect_uri=\(redirectURI)")

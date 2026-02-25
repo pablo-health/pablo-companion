@@ -6,7 +6,11 @@ import os
 @Observable
 final class UploadViewModel {
     var backendURL = "http://localhost:8000" {
-        didSet { apiClient = APIClient(baseURL: backendURL) }
+        didSet {
+            if URLValidator.validateScheme(backendURL) == nil {
+                apiClient = APIClient(baseURL: backendURL)
+            }
+        }
     }
 
     var isBackendReachable = false
