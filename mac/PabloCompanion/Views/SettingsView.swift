@@ -154,6 +154,8 @@ struct SettingsView: View {
         }
     }
 
+    @AppStorage("deleteAfterUpload") private var deleteAfterUpload: Bool = true
+
     private var audioFormatSection: some View {
         Section("Audio Format") {
             LabeledContent("Sample Rate", value: "48,000 Hz")
@@ -161,8 +163,9 @@ struct SettingsView: View {
             LabeledContent("Channels", value: "Stereo (Mic+System mixed)")
             Toggle("Encrypt recordings", isOn: $encryptionEnabled)
             if encryptionEnabled {
-                LabeledContent("Algorithm", value: "AES-256-GCM (Demo Key)")
+                LabeledContent("Algorithm", value: "AES-256-GCM")
             }
+            Toggle("Delete recording from device after upload", isOn: $deleteAfterUpload)
         }
     }
 

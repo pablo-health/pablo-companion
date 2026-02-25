@@ -145,7 +145,7 @@ final class RecordingViewModel {
     func startRecording() async {
         logger.info("Starting recording – system audio: \(self.systemAudioAvailableAtStart)")
 
-        let encryptor: DemoEncryptor? = encryptionEnabled ? DemoEncryptor() : nil
+        let encryptor: ProductionEncryptor? = encryptionEnabled ? ProductionEncryptor() : nil
         let config = CaptureConfiguration(
             sampleRate: 48000,
             bitDepth: 16,
@@ -320,7 +320,7 @@ final class RecordingViewModel {
         do {
             let player: AVAudioPlayer
             if recording.isEncrypted {
-                let wavData = try DemoEncryptor.decryptFile(at: recording.fileURL)
+                let wavData = try ProductionEncryptor.decryptFile(at: recording.fileURL)
                 player = try AVAudioPlayer(data: wavData)
             } else {
                 player = try AVAudioPlayer(contentsOf: recording.fileURL)
