@@ -1,6 +1,6 @@
 import Foundation
 
-struct URLValidator {
+enum URLValidator {
     /// Returns nil if valid, error string if invalid.
     static func validateScheme(_ urlString: String) -> String? {
         let trimmed = urlString.trimmingCharacters(in: .whitespaces)
