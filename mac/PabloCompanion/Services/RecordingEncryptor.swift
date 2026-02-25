@@ -15,7 +15,9 @@ struct RecordingEncryptor: CaptureEncryptor {
         self.key = SymmetricKey(data: keyData)
     }
 
-    var algorithm: String { "AES-256-GCM" }
+    var algorithm: String {
+        "AES-256-GCM"
+    }
 
     func encrypt(_ data: Data) throws -> Data {
         do {

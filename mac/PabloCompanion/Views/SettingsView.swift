@@ -158,7 +158,7 @@ struct SettingsView: View {
         }
     }
 
-    @AppStorage("deleteAfterUpload") private var deleteAfterUpload: Bool = true
+    @AppStorage("deleteAfterUpload") private var deleteAfterUpload = true
 
     private var audioFormatSection: some View {
         Section("Audio Format") {

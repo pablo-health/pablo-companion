@@ -8,7 +8,7 @@ enum URLValidator {
         guard let url = URL(string: trimmed) else { return "Invalid URL format" }
         #if DEBUG
         if url.scheme == "https" { return nil }
-        if url.scheme == "http" && url.host == "localhost" { return nil }
+        if url.scheme == "http", url.host == "localhost" { return nil }
         return "URL must use HTTPS (or http://localhost in debug builds)"
         #else
         if url.scheme == "https" { return nil }
@@ -29,7 +29,7 @@ enum URLValidationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .invalidScheme(msg):
-            return msg
+            msg
         }
     }
 }
