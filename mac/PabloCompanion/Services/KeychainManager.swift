@@ -115,8 +115,9 @@ struct KeychainManager: Sendable {
 
         // Generate a cryptographically random 32-byte key (AES-256)
         var keyData = Data(count: 32)
-        let result = keyData.withUnsafeMutableBytes { buffer in
-            SecRandomCopyBytes(kSecRandomDefault, 32, buffer.baseAddress!)
+        let result = keyData.withUnsafeMutableBytes { buffer -> OSStatus in
+            guard let baseAddress = buffer.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, 32, baseAddress)
         }
         guard result == errSecSuccess else {
             logger.error("Failed to generate random device encryption key")
