@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "4a5beced1e33",
+  "strategy": "manual-commit",
+  "branch": "security-sweep",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/settings.local.json",
+    ".claude/skills/continue/SKILL.md",
+    ".claude/skills/designdoc/SKILL.md",
+    ".claude/skills/epic/SKILL.md",
+    ".claude/skills/frontend-design/SKILL.md",
+    ".claude/skills/research/SKILL.md",
+    ".claude/skills/work/SKILL.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4a/5beced1e33/0/metadata.json",
+      "transcript": "/4a/5beced1e33/0/full.jsonl",
+      "context": "/4a/5beced1e33/0/context.md",
+      "content_hash": "/4a/5beced1e33/0/content_hash.txt",
+      "prompt": "/4a/5beced1e33/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 166,
+    "cache_creation_tokens": 225550,
+    "cache_read_tokens": 8517047,
+    "output_tokens": 19042,
+    "api_call_count": 90
+  }
+}

@@ -1,0 +1,1713 @@
+Base directory for this skill: /Users/kurtn/Developer/pablo-companion/.claude/skills/epic
+
+# Epic Skill
+
+Orchestrate an entire beads epic through a 4-phase workflow: analyze dependencies, design review, implement with HIPAA gates, and deliver a PR.
+
+## Usage
+
+```
+/epic EPIC-ID
+/epic search terms for epic title
+```
+
+## Examples
+
+```
+/epic THERAPY-z2q
+/epic SOAP note improvements
+/epic authentication overhaul
+```
+
+## What This Does
+
+The orchestrator (Claude Code) acts as epic manager and coordinates a team of specialized agents through 4 phases:
+
+1. **Analyze** — Planner maps dependency DAG into execution batches, flags HIPAA touchpoints
+2. **Design Review** — Reads or creates design doc, presents for user approval
+3. **Implement** — Coder + HIPAA reviewer work through batches with quality gates
+4. **Deliver** — Creates PR with full traceability (design doc, tasks, HIPAA checklist)
+
+Every phase has a **user approval gate**. No work proceeds without your sign-off.
+
+## Instructions
+
+When the user invokes this skill:
+
+### Step 1: Resolve the Epic
+
+1. Parse the input to determine if it's an epic ID or search term
+2. If it looks like an ID (e.g., `THERAPY-z2q`), run `bd show <id>`
+3. If it's a search term, run `bd search <term>` to find matching epics
+4. If multiple matches, ask the user to select one
+5. If no matches, suggest creating a new epic with `bd create`
+
+### Step 2: Check for Resume
+
+1. Read all child tasks of the epic via `bd show`
+2. If some tasks are already closed, report: "Resuming epic — N of M tasks already completed"
+3. Show which tasks remain open
+
+### Step 3: Launch Epic Team Workflow
+
+**CRITICAL**: Read `.claude/agents/epic-team.md` FIRST before doing anything else. That file defines the full 4-phase workflow, team structure, and agent roles. Execute it as written.
+
+From this point forward, you are the **coordinator, not the doer**. Delegate all research and analysis to agents — do NOT perform deep codebase analysis, file reading, or scoping yourself. Your job is to:
+- Create the team (`TeamCreate`)
+- Spawn agents with clear prompts
+- Present agent findings to the user at each gate
+- Manage task status in beads
+
+The 4 phases (all defined in `epic-team.md`):
+
+- **Phase 1: Analyze** — Spawn **planner** (Explore type) to map execution batches, flag HIPAA touchpoints → present findings to user → **Gate 1**
+- **Phase 2: Design Review** — Read/create design doc → present to user → **Gate 2**
+- **Phase 3: Implement** — Create branch, spawn **coder** + **hipaa-reviewer** → work through batches → **Gate 3**
+- **Phase 4: Deliver** — Push, create PR, close tasks, shut down team
+
+### Key Behaviors
+
+- **Orchestrator ≠ researcher**: Spawn agents for analysis. Your inline work should be limited to beads commands, team management, and gate presentations.
+- **Session resilience**: If re-invoked on a partially-completed epic, skip closed tasks and resume
+- **Scope discipline**: New work discovered during implementation becomes new beads tasks, not scope creep
+- **HIPAA non-negotiable**: Any security concern blocks the PR
+- **User is always in control**: Every gate requires explicit approval before proceeding
+
+
+ARGUMENTS: want to work on all the security issues created create a team to do the design and then another agent team to do the work
+
+---
+
+<teammate-message teammate_id="code-explorer" color="green" summary="Security gap analysis complete: 7 issues, specific line refs">
+# Security Sweep Gap Analysis
+
+## Summary
+Read all 11 source files. Identified exact gaps for each of the 7 security issues. Current state: **substantial placeholder code** (hardcoded Firebase API key in @AppStorage, demo encryption, insecure URLs in localhost defaults, placeholder Keychain service name, placeholder bundle IDs).
+
+---
+
+## PABLO-D-96: Encryption Key Management
+
+**Current State:**
+- `DemoEncryptor.swift` (entire file): Hardcoded demo key embedded in source, wrapped in `// WARNING` comments but **NOT wrapped in `#if DEBUG`**
+- `RecordingViewModel.swift:148`: Instantiates `DemoEncryptor()` directly without conditional compilation
+- `SettingsView.swift:150`: Shows "AES-256-GCM (Demo Key)" label unconditionally
+- No per-session key generation; no Keychain storage of encryption keys
+- `KeychainManager.swift` does NOT have methods for `saveEncryptionKey()` or `getEncryptionKey()`
+
+**Gap:**
+1. Wrap `DemoEncryptor` struct definition + usage in `#if DEBUG ... #endif`
+2. Create production path: `SecRandomCopyBytes()` → generate 32-byte AES-256 key per session
+3. Add `KeychainManager.TokenKey` case: `.encryptionKey = "encryption_key"` (or extend to support arbitrary keys)
+4. Implement `KeychainManager.saveEncryptionKey(_:forSessionID:)` and `getEncryptionKey(forSessionID:)`
+5. Remove Firebase API key toggle from `SettingsView.swift:150` in production builds
+6. Update `RecordingViewModel.startRecording()` to: generate key → save to Keychain → pass to `CaptureConfiguration`
+
+**Complexity:** Medium (5-20 lines per change; multiple files)
+
+**Risk:** 
+- If `#if DEBUG` wraps entire `DemoEncryptor.swift`, xcode must recompile on scheme change or stale dylib is used
+- Borrow checker: must ensure session ID stays alive long enough to fetch key from Keychain
+- Test token refresh logic: keys generated per-session must survive app restart and token refresh
+
+---
+
+## PABLO-D-97: HTTPS Enforcement
+
+**Current State:**
+- `APIClient.swift:15`: Default init uses `"http://localhost:8000"` hardcoded
+- `APIClient.init()` does NOT validate scheme; will silently accept `http://` URLs
+- `AuthViewModel.swift:23, 26`: @AppStorage defaults use `http://localhost:...`
+- `AuthViewModel.buildAuthURL()` (lines 134-138): Constructs URL from `authServerURL` without checking scheme
+- `fetchServerConfig()` (APIClient.swift:177-189): Constructs URL from `authServerURL` without validation
+- `SettingsView.TextField("Auth Server URL")` and `"Backend URL"` (lines 87-88, 84): Show TextFields but provide NO inline validation feedback
+- `LoginView.TextField("https://app.example.com")` (line 34): Placeholder text shows `https://` but field will accept `http://`
+
+**Gap:**
+1. Add HTTPS validation in `APIClient.init()` before storing baseURL:
+   ```swift
+   guard url.scheme == "https" else { throw APIError.requiresHTTPS }
+   // except in DEBUG: allow http://localhost:
+   #if DEBUG
+   guard url.scheme == "https" || (url.scheme == "http" && url.host == "localhost") else {
+       throw APIError.requiresHTTPS
+   }
+   #else
+   guard url.scheme == "https" else { throw APIError.requiresHTTPS }
+   #endif
+   ```
+2. Add same validation to `buildAuthURL()` in `AuthViewModel`
+3. Add validation to `fetchServerConfig()` 
+4. Add @State var for validation error in both `LoginView` and `SettingsView`
+5. Show inline error label if URL does not start with `https://` (or `http://localhost` in DEBUG)
+
+**Complexity:** Medium (10-15 lines per validation check)
+
+**Risk:**
+- Dev convenience: hardcoding localhost http:// breaks in release builds unless detection is perfect
+- Validation timing: must happen at field blur/submit, not live keystroke (UX)
+- Need to test that invalid URLs are caught before network call
+
+---
+
+## PABLO-D-98: Firebase API Key Storage
+
+**Current State:**
+- `AuthViewModel.swift:29`: `@AppStorage("firebaseAPIKey") var firebaseAPIKey = ""`
+- **Firebase API key stored in cleartext in UserDefaults** (insecure)
+- `SettingsView.swift:90`: TextField to edit key manually — **exposes key in UI and logs**
+- `ContentView.swift:42-44`: Fetches Firebase API key from `/api/config` response, writes to `authVM.firebaseAPIKey` (which stores in @AppStorage)
+- `TokenRefresher.swift:35-40`: Reads `firebaseAPIKey` from `AuthViewModel`, uses as URL query param
+- No Keychain storage of API key
+
+**Gap:**
+1. Remove `@AppStorage("firebaseAPIKey")` from `AuthViewModel.swift:29`
+2. Add `KeychainManager.TokenKey.firebaseAPIKey = "firebase_api_key"`
+3. In `ContentView.swift:42-44`, after fetching config, call:
+   ```swift
+   if let key = config.firebaseApiKey, !key.isEmpty {
+       KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
+   }
+   ```
+   (Remove the line that sets `authVM.firebaseAPIKey`)
+4. In `AuthViewModel.refreshToken()` (line 199), change:
+   ```swift
+   guard !firebaseAPIKey.isEmpty else { throw TokenError.noAPIKey }
+   ```
+   to:
+   ```swift
+   guard let apiKey = KeychainManager.getToken(forKey: .firebaseAPIKey), !apiKey.isEmpty else {
+       throw TokenError.noAPIKey
+   }
+   let refresher = TokenRefresher(apiKey: apiKey)
+   ```
+5. Remove Firebase API Key TextField from `SettingsView.swift:90-91`
+6. Ensure no logging includes the API key (check `logger.` calls in `TokenRefresher`, `AuthViewModel`)
+
+**Complexity:** Medium (6-8 changes across 4 files)
+
+**Risk:**
+- If user was relying on manually entering key in SettingsView, this breaks that workflow (now key comes only from `/api/config`)
+- Must ensure refresh token call doesn't fail if Keychain is empty (same error handling as before)
+- Verify API key never appears in system logs (grep for `firebaseAPIKey` in log calls)
+
+---
+
+## PABLO-D-99: Backend Config Fetch (INFO ONLY — Backend Task)
+
+**Current State:**
+- `APIClient.fetchServerConfig()` (lines 177-189): Fetches from `"{authServerURL}/api/config"`
+- Currently does NOT require HTTPS (see PABLO-D-97)
+- Response type: `ServerConfig` (lines 169-173) with `apiUrl`, `firebaseApiKey`, `firebaseProjectId`
+
+**What app expects:**
+- `fetchServerConfig()` to return JSON: `{ "apiUrl": "...", "firebaseApiKey": "...", "firebaseProjectId": "..." }`
+- Example call in `ContentView.swift:37-45`: reads `config.apiUrl` and `config.firebaseApiKey`
+
+**Note for backend team:**
+- Endpoint must return HTTPS URLs (enforced client-side in PABLO-D-97)
+- Response should include Firebase API key (not user-entered; server-managed)
+- Response should be served over HTTPS only
+
+---
+
+## PABLO-D-100: Firebase API Key in Header (Not URL Query)
+
+**Current State:**
+- `TokenRefresher.swift:43`: Constructs URL with API key in query string:
+  ```swift
+  let urlString = "https://securetoken.googleapis.com/v1/token?key=\(apiKey)"
+  ```
+- API key exposed in URL, potentially logged by proxies/CDN/server logs
+
+**Gap:**
+1. Remove `?key=\(apiKey)` from line 43; change to:
+   ```swift
+   let urlString = "https://securetoken.googleapis.com/v1/token"
+   ```
+2. Add HTTP header after line 50:
+   ```swift
+   request.setValue(apiKey, forHTTPHeaderField: "X-Firebase-API-Key")
+   ```
+   OR check if Firebase's API accepts standard Authorization header
+
+**Complexity:** Simple (2-line change)
+
+**Risk:**
+- Verify Google's Firebase token endpoint actually accepts this header (may require specific header name)
+- Test token refresh still works after moving key to header
+
+---
+
+## PABLO-D-101: URL Validation with Inline Errors
+
+**Current State:**
+- `LoginView.serverURLField` (lines 29-37): TextField accepts any text; no validation feedback
+- `SettingsView.backendSection` (lines 82-107): Two TextFields without inline validation
+- User can enter invalid URLs; errors only appear after attempting to sign in
+
+**Gap:**
+1. Add `@State var authURLValidationError: String?` to `LoginView`
+2. Add `.onChange(of: authViewModel.authServerURL)` to update validation state
+3. Show validation error label below TextField:
+   ```swift
+   if let error = authURLValidationError {
+       Label(error, systemImage: "exclamationmark.triangle")
+           .foregroundStyle(.red)
+           .font(.caption)
+   }
+   ```
+4. Repeat for `SettingsView` backend URL fields
+5. Validation logic: check if URL starts with `https://` (allow `http://localhost` in DEBUG)
+
+**Complexity:** Medium (10-15 lines per form)
+
+**Risk:**
+- Validation on every keystroke can be slow; consider `.onBlur` instead
+- Multiple validation errors (malformed URL vs. wrong scheme) — keep simple for now
+
+---
+
+## PABLO-D-102: Bundle ID in Logging & Keychain
+
+**Current State:**
+
+**Logger subsystem (7 occurrences):**
+- `APIClient.swift:7`: `Logger(subsystem: "com.macos-sample", category: "APIClient")`
+- `TokenRefresher.swift:36`: `Logger(subsystem: "com.macos-sample", category: "TokenRefresher")`
+- `KeychainManager.swift:15`: `Logger(subsystem: "com.macos-sample", category: "KeychainManager")`
+- `RecordingViewModel.swift:48`: `Logger(subsystem: "com.macos-sample", category: "RecordingViewModel")`
+- `AuthViewModel.swift:42`: `Logger(subsystem: "com.macos-sample", category: "AuthViewModel")`
+- `PatientViewModel.swift:20`: `Logger(subsystem: "com.macos-sample", category: "PatientViewModel")`
+- `UploadViewModel.swift:19`: `Logger(subsystem: "com.macos-sample", category: "UploadViewModel")`
+
+**Keychain service name:**
+- `KeychainManager.swift:14`: `private static let serviceName = "com.therapyrecorder.auth"`
+
+**Gap:**
+1. Define a constant in a shared location (e.g., `App.swift` or `Constants.swift`):
+   ```swift
+   let appBundleID = Bundle.main.bundleIdentifier ?? "com.pablo-health.companion"
+   ```
+2. Replace all 7 `Logger(subsystem: "com.macos-sample",...)`  with `Logger(subsystem: appBundleID, ...)`
+3. Update `KeychainManager.serviceName` to use bundle ID instead of hardcoded `"com.therapyrecorder.auth"`
+
+**Complexity:** Simple (3 changes: 1 constant definition + update 7-8 references)
+
+**Risk:**
+- Bundle ID must be set correctly in Xcode build settings (verify `PabloCompanion.xcodeproj`)
+- Keychain items stored under old service name won't migrate; on first run, user must log in again
+
+---
+
+## Summary Table
+
+| Issue | Current State | Gap | Complexity | Blockers |
+|-------|---------------|-----|------------|----------|
+| **D-96** | DemoEncryptor always active; no key storage | Wrap in #if DEBUG; generate + store per-session key | Medium | Need Keychain API extension |
+| **D-97** | No HTTPS validation; http:// defaults accepted | Add URL scheme checks; show inline errors | Medium | Localhost exception for dev |
+| **D-98** | @AppStorage("firebaseAPIKey") in cleartext | Move to Keychain; fetch from /api/config only | Medium | Remove UI for manual entry |
+| **D-99** | Calls `/api/config` without validation | Backend responsibility; client validates HTTPS | — | BLOCKED on backend |
+| **D-100** | API key in URL query string | Move to HTTP header | Simple | Verify Google's API accepts it |
+| **D-101** | No inline validation feedback | Add error state + labels to login/settings forms | Medium | UX: validate on blur, not keystroke |
+| **D-102** | Hardcoded bundle ID + service name | Define constant, replace all 7-8 references | Simple | Keychain migration on first run |
+
+---
+
+## KeychainManager API Additions Required
+
+To support D-96 and D-98, extend `KeychainManager`:
+
+```swift
+// Add to TokenKey enum:
+case firebaseAPIKey = "firebase_api_key"
+case encryptionKey = "encryption_key_\(sessionID)"  // or separate method
+
+// Add methods:
+static func saveEncryptionKey(_ key: Data, forSessionID sessionID: UUID)
+static func getEncryptionKey(forSessionID sessionID: UUID) -> Data?
+static func deleteEncryptionKey(forSessionID sessionID: UUID)
+```
+
+---
+
+## No Additional Sensitive Patterns Found
+
+Grep confirmed:
+- `@AppStorage("firebaseAPIKey")` only in `AuthViewModel.swift:29` ✓
+- `http://` only in DOCTYPE declaration, localhost defaults, and (expected) config defaults ✓
+- `com.macos-sample` found in 7 Logger calls + `.entitlements` file (expected) ✓
+- `com.therapyrecorder.auth` found only in `KeychainManager.swift:14` ✓
+</teammate-message>
+
+<teammate-message teammate_id="code-explorer" color="green">
+{"type":"idle_notification","from":"code-explorer","timestamp":"2026-02-25T02:28:59.374Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="planner" color="blue" summary="Security plan: 7 issues → 5 batches, D-98 blocks D-99, D-96 critical (DEBUG flag), D-97 HTTPS enforced">
+## Security Execution Plan Complete
+
+I've mapped the 7 security issues into a dependency-ordered execution plan with batches, file-level conflict analysis, and HIPAA touchpoints. Here's the executive summary:
+
+### Execution Batches (in order)
+
+**Phase A: Infrastructure** (~15 min)
+- **PABLO-D-102** — Fix Logger subsystem and Keychain service name (use actual bundle ID, not "com.macos-sample")
+
+**Phase B: Auth Layer** (~90 min)
+- **PABLO-D-98** — Move Firebase API key from UserDefaults → Keychain (**BLOCKS D-99**)
+- **PABLO-D-101 + PABLO-D-97** (combined) — Enforce HTTPS-only URLs + validate auth server hostname
+- **PABLO-D-100** — Move Firebase API key from URL query param → HTTP header
+
+**Phase C: Encryption** (~20 min)
+- **PABLO-D-96** — Guard DemoEncryptor behind `#if DEBUG` flag; release builds must NOT ship hardcoded key
+
+**Phase D: Backend** (separate repo, `pablo-health/pablo`)
+- **PABLO-D-99** — Add GET `/api/config` endpoint (Python/FastAPI)
+
+### File Conflict Matrix
+
+7 files have overlapping changes:
+- **AuthViewModel.swift**: 3 issues (D-98, D-97, D-101) — sequence: D-98 → D-102 → D-97+D-101
+- **SettingsView.swift**: 4 issues (D-96, D-98, D-97, D-101) — sequence as above
+- **KeychainManager.swift**: 2 issues (D-98, D-102) — sequence: D-98 then D-102
+- **APIClient.swift**, **TokenRefresher.swift**, **RecordingViewModel.swift**, **DemoEncryptor.swift**, **LoginView.swift**, **ContentView.swift**, **UploadViewModel.swift**, **PatientViewModel.swift** — isolated or single-issue
+
+### HIPAA Touchpoints
+
+**CRITICAL (PHI / Credentials at risk):**
+- D-98: Firebase API key now in Keychain (not plaintext UserDefaults)
+- D-96: Recording encryption uses hardcoded demo key (must gate behind DEBUG)
+- D-97: HTTPS enforcement (prevents credentials + session metadata over HTTP)
+
+**HIGH (Auth flow / MITM prevention):**
+- D-99: Backend endpoint serves Firebase key (must be HTTPS)
+- D-101: Hostname validation (prevents MITM redirection)
+
+**MEDIUM (Logging / Isolation):**
+- D-100: API key moved from query param to header (prevents server logs leakage)
+- D-102: Logger/Keychain service names (affects log aggregation)
+
+### Risks & Concerns
+
+1. **D-96 Critical**: Release builds MUST NOT include DemoEncryptor. Must test with `swift build -c release`.
+2. **D-97 Breaking Change**: `http://localhost:3000` will be rejected. Add special case for localhost in dev.
+3. **D-98 Keychain Failure**: If Keychain API fails, Firebase key cannot refresh. Need error fallback.
+4. **D-100 Verification**: Confirm Google's securetoken API accepts `X-API-Key` header (not just query param).
+5. **D-99 Backend**: Ensure `/api/config` is protected (auth required) and HTTPS-only.
+
+### Full Plan Document
+
+Saved to memory: `/Users/kurtn/.claude/projects/-Users-kurtn-Developer-pablo-companion/memory/security_execution_plan.md`
+
+Includes:
+- Detailed batch breakdown (files, changes, duration, testing)
+- Parallel vs sequential groups
+- Unit test strategy
+- Definition of Done per issue
+
+**Ready for your review.** Should we proceed to Phase 1 (create beads tasks) or would you like adjustments to the plan?
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="planner" color="blue">
+{"type":"idle_notification","from":"planner","timestamp":"2026-02-25T02:29:14.633Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+do we really need DemoEncryptor at all
+
+---
+
+what do you mean key is per session?   thought we didn't need pablo-d-99 anymore - and pablo-d-100 could be in a separate resrach agent
+
+---
+
+wuold option 2 still be hippaa compliant?
+
+---
+
+do you think a therapist would want to listen to it later ever?  in the app?  or should we provide an option?  or maybe we keep it simple and have a setting that defaults to remove after upload
+
+---
+
+yes please
+
+---
+
+<teammate-message teammate_id="code-explorer" color="green" summary="Security sweep design doc: architecture, changes, implementation plan">
+# Security Sweep Design Document
+
+## Overview
+
+This document outlines the implementation approach for 6 security issues (PABLO-D-96, D-97, D-98, D-100, D-101, D-102). The changes are primarily in auth, storage, and URL validation layers, with minimal UI additions.
+
+---
+
+## 1. KeychainManager Extensions
+
+### New Keychain Keys
+
+Add two new cases to `KeychainManager.TokenKey` enum:
+
+```swift
+enum TokenKey: String, Sendable {
+    case idToken = "id_token"
+    case refreshToken = "refresh_token"
+    case userEmail = "user_email"
+    case authServerURL = "auth_server_url"
+    case firebaseAPIKey = "firebase_api_key"           // NEW: D-98
+    case deviceEncryptionKey = "device_encryption_key"  // NEW: D-96
+}
+```
+
+### New Methods
+
+Add to `KeychainManager`:
+
+```swift
+/// Generates a new 32-byte AES-256-GCM key, stores in Keychain, returns the key.
+/// Called once on first launch; subsequent calls retrieve the existing key.
+static func getOrCreateDeviceEncryptionKey() -> Data? {
+    // Try to retrieve existing key
+    if let existingKey = getToken(forKey: .deviceEncryptionKey) {
+        return existingKey.data(using: .utf8) ?? Data(base64Encoded: existingKey)
+    }
+    
+    // Generate new key: 32 bytes for AES-256
+    var keyBytes = [UInt8](repeating: 0, count: 32)
+    let status = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
+    guard status == errSecSuccess else { return nil }
+    
+    let keyData = Data(keyBytes)
+    let keyBase64 = keyData.base64EncodedString()
+    saveToken(keyBase64, forKey: .deviceEncryptionKey)
+    return keyData
+}
+
+/// Retrieves the device encryption key (must have been created via getOrCreateDeviceEncryptionKey).
+static func deviceEncryptionKey() -> Data? {
+    guard let base64String = getToken(forKey: .deviceEncryptionKey) else { return nil }
+    return Data(base64Encoded: base64String)
+}
+
+/// Deletes the device encryption key (used for "Delete after upload" feature).
+static func deleteDeviceEncryptionKey() {
+    deleteToken(forKey: .deviceEncryptionKey)
+}
+```
+
+### Service Name Update
+
+Update the service name constant to use the app's bundle ID:
+
+```swift
+private static let serviceName: String = {
+    Bundle.main.bundleIdentifier ?? "com.pablo-health.companion"
+}()
+```
+
+---
+
+## 2. Shared URL Validation (New File: `URLValidator.swift`)
+
+Create a reusable validator to avoid duplication across LoginView, SettingsView, APIClient, and fetchServerConfig.
+
+```swift
+// File: mac/PabloCompanion/Services/URLValidator.swift
+
+import Foundation
+
+struct URLValidator {
+    /// Validates that a URL string has a secure HTTPS scheme (or http://localhost in DEBUG).
+    /// Returns nil for valid URLs, error message string for invalid URLs.
+    static func validateScheme(_ urlString: String) -> String? {
+        let trimmed = urlString.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            return "URL cannot be empty"
+        }
+        
+        guard let url = URL(string: trimmed) else {
+            return "Invalid URL format"
+        }
+        
+        #if DEBUG
+        // In DEBUG: allow https:// or http://localhost
+        if url.scheme == "https" {
+            return nil  // Valid
+        }
+        if url.scheme == "http" && url.host == "localhost" {
+            return nil  // Valid for local development
+        }
+        return "URL must use HTTPS (or http://localhost in DEBUG)"
+        #else
+        // In production: HTTPS only
+        if url.scheme == "https" {
+            return nil  // Valid
+        }
+        return "URL must use HTTPS"
+        #endif
+    }
+    
+    /// Ensures a URL has HTTPS scheme (or http://localhost in DEBUG).
+    /// Throws if validation fails.
+    static func throwIfInvalid(_ urlString: String) throws {
+        if let error = validateScheme(urlString) {
+            throw URLValidationError.invalidScheme(error)
+        }
+    }
+}
+
+enum URLValidationError: LocalizedError {
+    case invalidScheme(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case let .invalidScheme(msg):
+            return msg
+        }
+    }
+}
+```
+
+---
+
+## 3. AppBundleID Constant (New File: `Constants.swift`)
+
+Create a centralized location for app-wide constants:
+
+```swift
+// File: mac/PabloCompanion/Constants.swift
+
+import Foundation
+
+struct AppConstants {
+    static let appBundleID = Bundle.main.bundleIdentifier ?? "com.pablo-health.companion"
+}
+```
+
+Update all Logger instantiations:
+
+```swift
+// Before:
+private let logger = Logger(subsystem: "com.macos-sample", category: "APIClient")
+
+// After:
+private let logger = Logger(subsystem: AppConstants.appBundleID, category: "APIClient")
+```
+
+---
+
+## 4. AuthViewModel Changes (D-98, D-101)
+
+### Remove Firebase API Key @AppStorage
+
+**Remove (line 29):**
+```swift
+@ObservationIgnored
+@AppStorage("firebaseAPIKey") var firebaseAPIKey = ""
+```
+
+### Update buildAuthURL() for HTTPS Validation (D-101)
+
+**Change (lines 134-138):**
+
+```swift
+private func buildAuthURL() -> URL? {
+    let base = authServerURL.trimmingCharacters(in: .init(charactersIn: "/"))
+    
+    // Validate HTTPS scheme
+    if let error = URLValidator.validateScheme(base) {
+        errorMessage = error
+        return nil
+    }
+    
+    let redirectURI = "therapyrecorder://callback"
+    return URL(string: "\(base)/native-auth?redirect_uri=\(redirectURI)")
+}
+```
+
+### Update refreshToken() to Read Firebase Key from Keychain (D-98)
+
+**Change (lines 193-203):**
+
+```swift
+private func refreshToken() async throws -> String {
+    guard let refreshToken = KeychainManager.getToken(forKey: .refreshToken) else {
+        authState = .tokenExpired
+        throw TokenError.noRefreshToken
+    }
+
+    guard let firebaseAPIKey = KeychainManager.getToken(forKey: .firebaseAPIKey), 
+          !firebaseAPIKey.isEmpty else {
+        throw TokenError.noAPIKey
+    }
+
+    let refresher = TokenRefresher(apiKey: firebaseAPIKey)
+    // ... rest of method unchanged
+}
+```
+
+---
+
+## 5. ContentView Changes (D-98)
+
+Update the task that fetches server config to store Firebase API key in Keychain instead of @AppStorage.
+
+**Change (lines 42-44):**
+
+```swift
+// Old:
+if let key = config.firebaseApiKey, !key.isEmpty {
+    authVM.firebaseAPIKey = key
+}
+
+// New:
+if let key = config.firebaseApiKey, !key.isEmpty {
+    KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
+}
+```
+
+Also add logic to fetch from Keychain if available (skip /api/config call if key already exists):
+
+```swift
+// Before calling fetchServerConfig:
+let cachedKey = KeychainManager.getToken(forKey: .firebaseAPIKey)
+if cachedKey == nil {
+    // Fetch from /api/config
+    if let config = try? await fetchServerConfig(authServerURL: serverURL) {
+        uploadVM.backendURL = config.apiUrl
+        patientVM.backendURL = config.apiUrl
+        if let key = config.firebaseApiKey, !key.isEmpty {
+            KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
+        }
+    }
+} else {
+    // Use cached values or just fetch apiUrl without Firebase key
+    // (Consider: should /api/config still be called to get apiUrl? Or cache that too?)
+}
+```
+
+**Decision point:** Should we also cache `apiUrl` in Keychain to avoid the /api/config call entirely? Or just cache the Firebase API key and always fetch apiUrl? **Recommendation:** Cache both. Add `authServerURL` + `cachedApiUrl` to Keychain, check on launch.
+
+---
+
+## 6. APIClient Changes (D-97, D-100)
+
+### Add HTTPS Validation to init() (D-97)
+
+**Change (lines 15-20):**
+
+```swift
+init(baseURL: String = "http://localhost:8000") {
+    let trimmed = baseURL.trimmingCharacters(in: .whitespaces)
+    
+    // Validate HTTPS scheme
+    if let error = URLValidator.validateScheme(trimmed) {
+        preconditionFailure("APIClient: \(error)")
+    }
+    
+    guard let url = URL(string: trimmed) else {
+        preconditionFailure("APIClient initialized with invalid URL: \(trimmed)")
+    }
+    self.baseURL = url
+}
+```
+
+### Add HTTPS Validation to fetchServerConfig() (D-97)
+
+**Change (lines 177-189):**
+
+```swift
+func fetchServerConfig(authServerURL: String) async throws -> ServerConfig {
+    let base = authServerURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    
+    // Validate HTTPS
+    try URLValidator.throwIfInvalid(base)
+    
+    guard let url = URL(string: "\(base)/api/config") else {
+        throw APIError.invalidResponse
+    }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    guard let httpResponse = response as? HTTPURLResponse,
+          (200 ... 299).contains(httpResponse.statusCode)
+    else {
+        throw APIError.invalidResponse
+    }
+    return try JSONDecoder().decode(ServerConfig.self, from: data)
+}
+```
+
+### Remove Firebase API Key from URL Query (D-100)
+
+**In TokenRefresher.swift, change (lines 42-56):**
+
+**Before:**
+```swift
+func refresh(using refreshToken: String) async throws -> TokenResponse {
+    let urlString = "https://securetoken.googleapis.com/v1/token?key=\(apiKey)"
+    guard let url = URL(string: urlString) else {
+        throw RefreshError.invalidResponse
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+    var formComponents = URLComponents()
+    formComponents.queryItems = [
+        URLQueryItem(name: "grant_type", value: "refresh_token"),
+        URLQueryItem(name: "refresh_token", value: refreshToken),
+    ]
+    request.httpBody = formComponents.percentEncodedQuery.map { Data($0.utf8) }
+    // ...
+}
+```
+
+**After:**
+```swift
+func refresh(using refreshToken: String) async throws -> TokenResponse {
+    let urlString = "https://securetoken.googleapis.com/v1/token"
+    guard let url = URL(string: urlString) else {
+        throw RefreshError.invalidResponse
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+    request.setValue(apiKey, forHTTPHeaderField: "X-Firebase-API-Key")  // NEW: D-100
+    
+    var formComponents = URLComponents()
+    formComponents.queryItems = [
+        URLQueryItem(name: "grant_type", value: "refresh_token"),
+        URLQueryItem(name: "refresh_token", value: refreshToken),
+    ]
+    request.httpBody = formComponents.percentEncodedQuery.map { Data($0.utf8) }
+    // ...
+}
+```
+
+---
+
+## 7. RecordingViewModel Changes (D-96)
+
+### Remove DemoEncryptor; Use Device Key (D-96)
+
+**Change startRecording() (lines 145-177):**
+
+**Before:**
+```swift
+func startRecording() async {
+    logger.info("Starting recording – system audio: \(self.systemAudioAvailableAtStart)")
+
+    let encryptor: DemoEncryptor? = encryptionEnabled ? DemoEncryptor() : nil
+    let config = CaptureConfiguration(
+        // ...
+        encryptor: encryptor,
+        // ...
+    )
+    // ...
+}
+```
+
+**After:**
+```swift
+func startRecording() async {
+    logger.info("Starting recording – system audio: \(self.systemAudioAvailableAtStart)")
+
+    // Encryption is now always AES-256-GCM using the device key (if enabled)
+    let encryptor: CaptureEncryptor? = encryptionEnabled ? ProductionEncryptor() : nil
+    let config = CaptureConfiguration(
+        // ...
+        encryptor: encryptor,
+        // ...
+    )
+    // ...
+}
+```
+
+### Create ProductionEncryptor (New File)
+
+Create a new production encryptor that uses the device key from Keychain:
+
+```swift
+// File: mac/PabloCompanion/Services/ProductionEncryptor.swift
+
+import AudioCaptureKit
+import Crypto
+import Foundation
+
+/// Production encryptor using AES-256-GCM with device key stored in Keychain.
+struct ProductionEncryptor: CaptureEncryptor {
+    private let key: SymmetricKey
+    
+    init?() {
+        guard let keyData = KeychainManager.deviceEncryptionKey() else {
+            // Key not found; initialize it
+            guard let newKeyData = KeychainManager.getOrCreateDeviceEncryptionKey() else {
+                return nil
+            }
+            self.key = SymmetricKey(data: newKeyData)
+            return
+        }
+        self.key = SymmetricKey(data: keyData)
+    }
+    
+    var algorithm: String {
+        "AES-256-GCM"
+    }
+    
+    func encrypt(_ data: Data) throws -> Data {
+        do {
+            let sealedBox = try AES.GCM.seal(data, using: key)
+            guard let combined = sealedBox.combined else {
+                throw CaptureError.encryptionFailed("Failed to produce combined sealed box")
+            }
+            return combined
+        } catch let error as CaptureError {
+            throw error
+        } catch {
+            throw CaptureError.encryptionFailed(error.localizedDescription)
+        }
+    }
+    
+    func decrypt(_ data: Data) throws -> Data {
+        do {
+            let sealedBox = try AES.GCM.SealedBox(combined: data)
+            return try AES.GCM.open(sealedBox, using: key)
+        } catch {
+            throw CaptureError.encryptionFailed("Decryption failed: \(error.localizedDescription)")
+        }
+    }
+    
+    func keyMetadata() -> [String: String] {
+        [
+            "keyId": "device-key-v1",
+            "algorithm": algorithm,
+        ]
+    }
+}
+```
+
+### Remove DemoEncryptor Usage from Playback
+
+**Change playRecording() (lines 317-343):**
+
+```swift
+func playRecording(_ recording: LocalRecording) {
+    stopPlayback()
+
+    do {
+        let player: AVAudioPlayer
+        if recording.isEncrypted {
+            // Decrypt using ProductionEncryptor (or static method)
+            let wavData = try ProductionEncryptor.decryptFileData(at: recording.fileURL)
+            player = try AVAudioPlayer(data: wavData)
+        } else {
+            player = try AVAudioPlayer(contentsOf: recording.fileURL)
+        }
+        // ... rest unchanged
+    } catch {
+        // ...
+    }
+}
+```
+
+Add a static helper to ProductionEncryptor for decryption:
+
+```swift
+static func decryptFileData(at url: URL) throws -> Data {
+    guard let encryptor = ProductionEncryptor() else {
+        throw CaptureError.encryptionFailed("Encryption key not found")
+    }
+    
+    let fileData = try Data(contentsOf: url)
+    let headerSize = 44
+    guard fileData.count > headerSize else {
+        throw CaptureError.encryptionFailed("File too small to contain WAV header")
+    }
+
+    let header = fileData.prefix(headerSize)
+    var offset = headerSize
+    var pcmData = Data()
+
+    while offset + 4 <= fileData.count {
+        let lengthBytes = fileData[offset ..< offset + 4]
+        let chunkLength = lengthBytes.withUnsafeBytes { $0.load(as: UInt32.self) }
+        let length = Int(UInt32(littleEndian: chunkLength))
+        offset += 4
+
+        guard offset + length <= fileData.count else {
+            throw CaptureError.encryptionFailed("Encrypted chunk exceeds file bounds")
+        }
+
+        let chunkData = fileData[offset ..< offset + length]
+        let decrypted = try encryptor.decrypt(Data(chunkData))
+        pcmData.append(decrypted)
+        offset += length
+    }
+
+    var wav = Data(header)
+    let dataSize = UInt32(pcmData.count)
+    let fileSize = UInt32(36 + pcmData.count)
+    wav.replaceSubrange(4 ..< 8, with: withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
+    wav.replaceSubrange(40 ..< 44, with: withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
+    wav.append(pcmData)
+
+    return wav
+}
+```
+
+---
+
+## 8. SettingsView Changes (D-96, D-97, D-98, D-101)
+
+### Remove Firebase API Key TextField (D-98)
+
+**Remove (lines 90-91):**
+```swift
+TextField("Firebase API Key", text: $firebaseAPIKey)
+    .textFieldStyle(.roundedBorder)
+```
+
+### Add URL Validation Feedback (D-97, D-101)
+
+Update the Backend section to show inline validation errors for both URL fields:
+
+**Add state to SettingsView:**
+```swift
+@State private var backendURLError: String?
+@State private var authServerURLError: String?
+```
+
+**Update backendSection:**
+```swift
+private var backendSection: some View {
+    Section("Backend") {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField("Backend URL", text: $backendURL)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: backendURL) { _, newValue in
+                    backendURLError = URLValidator.validateScheme(newValue)
+                }
+            
+            if let error = backendURLError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+
+        VStack(alignment: .leading, spacing: 4) {
+            TextField("Auth Server URL", text: $authServerURL)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: authServerURL) { _, newValue in
+                    authServerURLError = URLValidator.validateScheme(newValue)
+                }
+            
+            if let error = authServerURLError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+
+        HStack {
+            Circle()
+                .fill(isBackendReachable ? .green : .red)
+                .frame(width: 8, height: 8)
+            Text(isBackendReachable ? "Connected" : "Not connected")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Button("Check", action: onCheckHealth)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+    }
+}
+```
+
+### Add "Delete After Upload" Toggle (D-96)
+
+**Add to SettingsView:**
+```swift
+@Binding var deleteEncryptedRecordingsAfterUpload: Bool  // New parameter
+```
+
+**Add new section:**
+```swift
+private var encryptionSection: some View {
+    Section("Encryption") {
+        Toggle("Encrypt recordings", isOn: $encryptionEnabled)
+        
+        if encryptionEnabled {
+            Toggle("Delete after upload", isOn: $deleteEncryptedRecordingsAfterUpload)
+                .font(.caption)
+            
+            Text("Encrypted recordings using the device key can be securely deleted after upload.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+```
+
+Remove the old "Audio Format" section's encryption toggle and move logic here.
+
+### Update Logger Subsystem (D-102)
+
+Update the SettingsView file's logger (if present) to use `AppConstants.appBundleID`.
+
+---
+
+## 9. LoginView Changes (D-97, D-101)
+
+### Add URL Validation Feedback
+
+**Add state:**
+```swift
+@State private var authURLValidationError: String?
+```
+
+**Update serverURLField:**
+```swift
+private var serverURLField: some View {
+    VStack(alignment: .leading, spacing: 6) {
+        Text("Server URL")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        
+        TextField("https://app.example.com", text: Bindable(authViewModel).authServerURL)
+            .textFieldStyle(.roundedBorder)
+            .onChange(of: authViewModel.authServerURL) { _, newValue in
+                authURLValidationError = URLValidator.validateScheme(newValue)
+            }
+        
+        if let error = authURLValidationError {
+            Label(error, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
+    }
+    .frame(maxWidth: 320)
+}
+```
+
+---
+
+## 10. Delete DemoEncryptor.swift (D-96)
+
+Remove the entire file:
+```
+mac/PabloCompanion/Services/DemoEncryptor.swift
+```
+
+Update any imports in RecordingViewModel.swift that reference DemoEncryptor.
+
+---
+
+## 11. Update Logger Subsystem Everywhere (D-102)
+
+Replace all 7 occurrences of:
+```swift
+private let logger = Logger(subsystem: "com.macos-sample", category: "...")
+```
+
+With:
+```swift
+private let logger = Logger(subsystem: AppConstants.appBundleID, category: "...")
+```
+
+**Files:**
+- APIClient.swift:7
+- TokenRefresher.swift:36
+- KeychainManager.swift:15
+- RecordingViewModel.swift:48
+- AuthViewModel.swift:42
+- PatientViewModel.swift:20
+- UploadViewModel.swift:19
+
+---
+
+## 12. Implementation Order (Recommended)
+
+1. **Create shared utilities** (`Constants.swift`, `URLValidator.swift`) — no dependencies
+2. **Extend KeychainManager** — add new keys + device key generation logic
+3. **Update Logger calls** — mechanical change, low risk (D-102)
+4. **Update APIClient** — add HTTPS validation (D-97, D-100)
+5. **Update TokenRefresher** — move API key to header (D-100)
+6. **Create ProductionEncryptor** — new encryption implementation (D-96)
+7. **Update RecordingViewModel** — use ProductionEncryptor, add delete logic (D-96)
+8. **Update AuthViewModel** — remove @AppStorage, read from Keychain, add URL validation (D-98, D-101)
+9. **Update ContentView** — cache Firebase key in Keychain (D-98)
+10. **Update LoginView** — add validation feedback (D-101)
+11. **Update SettingsView** — remove Firebase key field, add validation, update encryption UI (D-96, D-97, D-98, D-101)
+12. **Delete DemoEncryptor.swift** — remove demo code (D-96)
+13. **Test & verify** — all network calls, auth flow, recording, playback
+
+---
+
+## 13. Testing Plan
+
+### Unit Tests Needed
+- `KeychainManager.getOrCreateDeviceEncryptionKey()` — verify key is created once, retrieved consistently
+- `URLValidator.validateScheme()` — test HTTPS, http://localhost, invalid schemes
+- `ProductionEncryptor` — encrypt/decrypt round-trip, file decryption
+- `TokenRefresher` — token refresh with header (mock HTTP)
+
+### Integration Tests Needed
+- Auth flow: sign in → fetch /api/config → store Firebase key in Keychain → refresh token
+- Recording: start → encrypt → stop → store → playback (decrypt)
+- Settings: edit URLs → show validation errors → no network call if invalid
+
+### Manual Tests Needed
+- Fresh app install: device key created, stored in Keychain
+- Restart app: device key retrieved from Keychain, same as before
+- Change recording setting: toggle encryption on/off, recordings are encrypted/unencrypted correctly
+- Upload + delete: after upload, encrypted recording deleted if setting enabled
+- Debug build: allow http://localhost; production build: reject http://
+
+---
+
+## 14. Risk & Mitigations
+
+| Risk | Mitigation |
+|------|-----------|
+| Keychain migration (old service name) | Users re-login on first run with new bundle ID. Document in release notes. |
+| Firebase API key missing on startup | Fall back to fetching /api/config; cache with TTL. |
+| Device key loss if user resets Keychain | Key regenerated, but old encrypted files unreadable. Document in help. |
+| http://localhost accepted in DEBUG, released in PROD | Use `#if DEBUG` consistently; CI validates scheme in test scheme. |
+| Firebase token endpoint rejects X-Firebase-API-Key header | Fallback: revert to query param. Research agent to verify before coding. |
+| ProductionEncryptor returns nil if key missing | Log error, show alert, disable recording. |
+
+---
+
+## 15. Acceptance Criteria Checklist
+
+- [ ] DemoEncryptor.swift deleted
+- [ ] Device key generated on first launch, stored in Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`
+- [ ] All HTTPS validation in place; http:// rejected in production, allowed only for localhost in DEBUG
+- [ ] Firebase API key removed from @AppStorage, stored in Keychain, fetched from /api/config
+- [ ] Firebase API key moved from URL query param to HTTP header in TokenRefresher
+- [ ] Auth server URL validation with inline error feedback in LoginView and SettingsView
+- [ ] Bundle ID constant defined, all Logger calls and KeychainManager service name updated
+- [ ] "Delete after upload" toggle added to SettingsView (defaults ON)
+- [ ] Firebase API Key TextField removed from SettingsView
+- [ ] All tests pass: `make check`
+- [ ] Manual testing: fresh install, restart, encryption toggle, auth flow, token refresh, playback
+- [ ] No hardcoded secrets in logs or source
+- [ ] PR created and linked to beads tasks
+
+
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="code-explorer" color="green">
+{"type":"idle_notification","from":"code-explorer","timestamp":"2026-02-25T02:47:07.880Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="researcher" color="yellow" summary="D-100 research: Firebase header likely works, needs production test">
+## Research Findings: PABLO-D-100 — Firebase API Key in Header vs. Query Param
+
+### Summary
+
+The `X-Goog-Api-Key` header **is the standard Google Cloud method** for passing API keys to REST APIs, and the production `securetoken.googleapis.com` endpoint **very likely supports it** — but Firebase's own documentation never explicitly shows it for this endpoint, and there is no confirmed production test in public sources.
+
+### Detailed Findings
+
+**1. Google Cloud standard (documented):**
+Google's official docs at [Use API keys to access APIs](https://docs.cloud.google.com/docs/authentication/api-keys-use) say to use `X-Goog-Api-Key` header and warn that the `?key=` query param "exposes your key to theft through URL scans." Example:
+```
+curl -X POST \
+    -H "X-goog-api-key: API_KEY" \
+    -H "Content-Type: application/json" \
+    "https://translation.googleapis.com/language/translate/v2"
+```
+
+However, the same page cautions: **"Not all Google Cloud APIs accept API keys to authorize usage."** You must check each API individually.
+
+**2. Firebase Auth REST API docs (no header mention):**
+The [Firebase Auth REST API docs](https://firebase.google.com/docs/reference/rest/auth) and the [Identity Platform REST API docs](https://docs.cloud.google.com/identity-platform/docs/use-rest-api) show the token refresh endpoint exclusively with the query parameter:
+```
+https://securetoken.googleapis.com/v1/token?key=[API_KEY]
+```
+Neither page mentions `X-Goog-Api-Key` as an alternative. The only non-standard header mentioned is `X-Firebase-Locale` (for localization).
+
+**3. Firebase emulator issue (strong indirect evidence):**
+[GitHub issue #5249](https://github.com/firebase/firebase-tools/issues/5249) reported that the Firebase Auth **emulator** did not accept `X-Goog-Api-Key`. The fix (PR #5263, merged Dec 2022) added header support to the emulator. The key detail: the issue author stated the header "should work" per Google Cloud docs, and the Firebase team agreed and fixed the emulator to match production behavior. This **strongly implies the production endpoint already accepts the header**.
+
+**4. Firebase API key docs:**
+The [Firebase API keys page](https://firebase.google.com/docs/projects/api-keys) does not mention `X-Goog-Api-Key` at all and focuses on how Firebase keys are "identification only, not authorization."
+
+### Risk Assessment
+
+| Factor | Assessment |
+|--------|-----------|
+| Will it work in production? | **Very likely yes** — Google Cloud convention, emulator was patched to match production |
+| Is it documented for this endpoint? | **No** — Firebase docs only show query param |
+| What if it fails? | Token refresh breaks → user gets logged out → they have to re-login |
+| Reversibility | Easy — change one URL construction line back |
+
+### Recommendation
+
+**Implement PABLO-D-100, but with a safety net:**
+
+1. The change is small (modify `TokenRefresher.swift:43` to drop `?key=` from the URL and add `X-Goog-Api-Key` header to the URLRequest).
+2. **Test against production Firebase** before merging. This is the only way to confirm it works — no emulator test is sufficient.
+3. Keep a fallback plan: if the header approach fails in production testing, close D-100 as "won't-do — Firebase endpoint only documents query param."
+
+The security benefit is real but modest: the Firebase Web API key is already semi-public by design (embedded in client apps, not a secret), so the exposure via server logs is a low-severity issue. This is a "defense in depth" improvement, not a critical fix.
+
+### Alternative Considered
+
+If the header doesn't work, there's no other way to avoid the key in the URL for this specific endpoint. Firebase's API design requires it. The only alternative would be proxying token refresh through your own backend, which adds latency and complexity for minimal security gain (since the key isn't truly secret).
+
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="researcher" color="yellow">
+{"type":"idle_notification","from":"researcher","timestamp":"2026-02-25T02:47:39.488Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+yes lets go
+
+---
+
+<teammate-message teammate_id="system">
+{"type":"teammate_terminated","message":"code-explorer has shut down."}
+</teammate-message>
+
+<teammate-message teammate_id="code-explorer" color="green">
+{"type":"shutdown_approved","requestId":"shutdown-1771987731090@code-explorer","from":"code-explorer","timestamp":"2026-02-25T02:48:52.913Z","paneId":"in-process","backendType":"in-process"}
+</teammate-message>
+
+<teammate-message teammate_id="system">
+{"type":"teammate_terminated","message":"planner has shut down."}
+</teammate-message>
+
+<teammate-message teammate_id="system">
+{"type":"teammate_terminated","message":"researcher has shut down."}
+</teammate-message>
+
+<teammate-message teammate_id="planner" color="blue">
+{"type":"shutdown_approved","requestId":"shutdown-1771987730548@planner","from":"planner","timestamp":"2026-02-25T02:48:54.548Z","paneId":"in-process","backendType":"in-process"}
+</teammate-message>
+
+<teammate-message teammate_id="researcher" color="yellow">
+{"type":"shutdown_approved","requestId":"shutdown-1771987731806@researcher","from":"researcher","timestamp":"2026-02-25T02:48:54.766Z","paneId":"in-process","backendType":"in-process"}
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange" summary="hipaa-reviewer ready, waiting for tasks">
+hipaa-reviewer is ready. I've familiarized myself with the repo structure and `make check` pipeline. Waiting for coder to send task completion messages for review.
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:50:29.495Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:52:22.731Z","idleReason":"available","summary":"[to coder] D-102 FAIL: struct must be caseless enum"}
+</teammate-message>
+
+---
+
+what is our app bundleid - would com.pablo-health.PabloCompanion be a better one?
+
+---
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:52:39.205Z","idleReason":"available","summary":"[to coder] New files missing from Xcode project target"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:53:20.655Z","idleReason":"available","summary":"[to coder2] D-100 FAIL: function body 1 line over limit"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:54:15.813Z","idleReason":"available","summary":"[to coder] D-98 FAIL: opening brace lint violation"}
+</teammate-message>
+
+---
+
+what should the bundle be?  for the App Name displayed would Pablo be enough
+
+---
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:54:27.872Z","idleReason":"available","summary":"[to coder] Correction: Xcode auto-discovers files, ignore project membership"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:55:09.378Z","idleReason":"available","summary":"[to coder2] D-101 FAIL: closure body 2 lines over limit"}
+</teammate-message>
+
+---
+
+yes let's do that
+
+---
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange" summary="D-97 PASSED, ready to close">
+**PABLO-D-97 PASSED** — ready to close.
+
+HTTPS enforcement verified at all 5 network entry points (APIClient init, fetchServerConfig, AuthViewModel buildAuthURL, UploadViewModel didSet, PatientViewModel didSet). DEBUG allows http://localhost; RELEASE requires HTTPS only. No new lint violations introduced. HIPAA checklist all clear.
+
+Note: `make check` still fails globally due to pre-existing lint violations from D-102, D-98, D-100, D-101 — but none are attributable to D-97. D-97's own files all lint cleanly.
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:55:58.086Z","idleReason":"available","summary":"[to coder] D-97 PASS: HTTPS enforcement verified"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:56:30.258Z","idleReason":"available","summary":"[to hipaa-reviewer] D-96 done: production encryption replaces demo"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple" summary="All 6 security tasks complete, ready for Gate 3">
+All 6 security tasks are complete and committed on branch `security-sweep`. Here's a summary:
+
+**Commits (in order):**
+1. `4b8cc1f` — chore: Add AppConstants and URLValidator shared utilities
+2. `bb747d6` — fix: Replace hardcoded bundle ID in Logger and Keychain service name (PABLO-D-102)
+3. `440a5ef` — fix: Pass Firebase API key as X-Goog-Api-Key header instead of URL query param (PABLO-D-100)
+4. `348aea0` — fix: Move Firebase API key from UserDefaults to Keychain (PABLO-D-98)
+5. `8f902dc` — fix: Add inline HTTPS validation errors to login and settings URL fields (PABLO-D-101)
+6. `9d5625d` — fix: Enforce HTTPS-only for all backend and auth URLs (PABLO-D-97)
+7. `cf4df23` — fix: Replace DemoEncryptor with production AES-256-GCM device key encryption (PABLO-D-96)
+
+**Files changed across all commits:**
+- New: `Constants.swift`, `URLValidator.swift`, `ProductionEncryptor.swift`
+- Deleted: `DemoEncryptor.swift`
+- Modified: `KeychainManager.swift`, `APIClient.swift`, `TokenRefresher.swift`, `AuthViewModel.swift`, `RecordingViewModel.swift`, `UploadViewModel.swift`, `PatientViewModel.swift`, `ContentView.swift`, `LoginView.swift`, `SettingsView.swift`
+
+Ready for Gate 3 review.
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:56:51.595Z","idleReason":"available","summary":"[to hipaa-reviewer] D-97 done: HTTPS-only URL enforcement"}
+</teammate-message>
+
+---
+
+yes let sdo that
+
+---
+
+<teammate-message teammate_id="coder" color="purple" summary="My 4 tasks already committed, confirming done">
+Acknowledged the split-work message, but all my assigned tasks were already committed before it arrived:
+
+- Step 1 (prerequisites): `4b8cc1f` — Constants.swift + URLValidator.swift
+- PABLO-D-102: `bb747d6` — Logger subsystem + Keychain service name fix
+- PABLO-D-98: `348aea0` — Firebase API key moved to Keychain  
+- PABLO-D-97: `9d5625d` — HTTPS enforcement
+
+coder2 also already completed D-100, D-101, and D-96. All 6 security tasks are committed on `security-sweep`. My half is done — nothing further needed from me.
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink" summary="Xcode project auto-syncs files, no pbxproj changes needed">
+Checked the Xcode project -- no action needed for new files. The project uses `PBXFileSystemSynchronizedRootGroup` (Xcode 16+ / objectVersion 77), which means Xcode automatically picks up all files in the `mac/PabloCompanion/` directory tree without explicit file references in the pbxproj. This is confirmed by the fact that no existing `.swift` files (including the originals like TokenRefresher.swift, KeychainManager.swift, DemoEncryptor.swift) were ever listed individually in the project file.
+
+New files (Constants.swift, URLValidator.swift, ProductionEncryptor.swift) will be included in the build automatically.
+
+The SourceKit "Cannot find AppConstants in scope" errors are the expected transient noise during active editing -- `make check` will be the real validation.
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:57:07.847Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:57:11.161Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:57:14.337Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink" summary="Rename done: RecordingEncryptor committed">
+Done. Renamed ProductionEncryptor to RecordingEncryptor -- file, struct, and all references in RecordingViewModel.swift. Commit a272816.
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:57:43.292Z","idleReason":"available","summary":"[to coder2] D-96 FAIL: force unwrap lint + dead test file"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:57:45.539Z","idleReason":"available","summary":"[to hipaa-reviewer] D-96 rename: ProductionEncryptor → RecordingEncryptor"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder" color="purple" summary="No xcodeproj changes needed -- uses filesystem sync">
+Good news -- the Xcode project uses `PBXFileSystemSynchronizedRootGroup` (Xcode 16+ feature). This means the project automatically syncs with the filesystem. No individual Swift files are listed in the pbxproj -- zero existing files like `APIClient.swift` or `KeychainManager.swift` appear there either.
+
+The new files (`Constants.swift`, `URLValidator.swift`, `ProductionEncryptor.swift`) will be automatically picked up by Xcode because they live inside the `PabloCompanion/` directory which is registered as a synchronized root group (line 30-34 + line 99-100 in project.pbxproj).
+
+The SourceKit "Cannot find AppConstants in scope" errors are the transient noise mentioned in MEMORY.md -- they occur during active editing when SourceKit hasn't re-indexed yet. The real test is `make check` / `xcodebuild`, not the live SourceKit diagnostics.
+
+No project file changes needed.
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink" summary="Rename already committed, working tree clean">
+The rename is already fully committed. `git status` shows a clean working tree (no unstaged changes), and `git log` confirms commit `a272816` ("refactor: Rename ProductionEncryptor to RecordingEncryptor (PABLO-D-96)") is the latest. Both RecordingEncryptor.swift and RecordingViewModel.swift are up to date. hipaa-reviewer was already notified in my previous message.
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:58:04.291Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:58:04.505Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:58:07.950Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:58:10.694Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange" summary="All failing tasks were marked FAIL, summary of 6 violations">
+**Clarification on review status:**
+
+D-97 is the only task I marked PASS — and correctly so, because its 4 changed files introduced zero lint violations. The other 5 tasks (D-102, D-98, D-100, D-101, D-96) were all marked **FAIL** with specific fix instructions sent to the coders each time.
+
+**Current `make check` failures (6 violations total):**
+
+| Violation | File:Line | Rule | Owner | Task |
+|-----------|-----------|------|-------|------|
+| `struct` → `enum` | Constants.swift:3 | convenience_type | coder | D-102 |
+| `struct` → `enum` | URLValidator.swift:3 | convenience_type | coder | D-102 |
+| Opening brace | ContentView.swift:44 | opening_brace | coder | D-98 |
+| Function too long (41/40) | TokenRefresher.swift:42 | function_body_length | coder2 | D-100 |
+| Closure too long (32/30) | SettingsView.swift:84 | closure_body_length | coder2 | D-101 |
+| Force unwrap | KeychainManager.swift:119 | force_unwrapping | coder2 | D-96 |
+
+Plus: `DemoEncryptorTests.swift` references deleted `DemoEncryptor` (will break `make test-mac`).
+
+I've sent consolidated fix lists to both coders. All are small fixes. Once resolved, I'll re-run `make check` and confirm.
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:58:18.040Z","idleReason":"available","summary":"[to coder2] Consolidated: 3 lint fixes + 1 dead test file"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple" summary="Fixed AppConstants fallback bundle ID">
+Done. Updated AppConstants fallback from `"com.pablo-health.companion"` to `"health.pablo.companion"` to match the Xcode project PRODUCT_BUNDLE_IDENTIFIER. Committed as `8e43f9a`.
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:58:22.413Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:58:23.283Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:58:26.842Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:58:31.752Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:58:35.200Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:58:38.876Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:58:56.304Z","idleReason":"available","summary":"[to hipaa-reviewer] D-100 lint fix: extracted helper, re-submit"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:59:00.171Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:59:04.171Z","idleReason":"available","summary":"[to hipaa-reviewer] Fixed struct-to-enum lint violations, re-review"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:59:16.811Z","idleReason":"available","summary":"[to hipaa-reviewer] File membership is fine -- project uses auto-sync"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:59:19.957Z","idleReason":"available","summary":"[to hipaa-reviewer] D-101 lint fix: extracted connectionStatus, re-submit"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:59:20.682Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:59:24.497Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:59:36.472Z","idleReason":"available","summary":"[to coder2] Device key methods already in KeychainManager"}
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange" summary="D-100 PASSED, down to 3 violations remaining">
+**PABLO-D-100 PASSED** — ready to close.
+
+TokenRefresher.swift function body length fixed via extract-method refactor. HIPAA review confirmed. Required note: production Firebase verification still needed before merge (confirm `X-Goog-Api-Key` header works against the live Firebase securetoken endpoint).
+
+Also: D-102 appears fixed (Constants.swift and URLValidator.swift convenience_type violations are gone from the lint output). I haven't formally re-reviewed D-102 yet since coder didn't send a re-submission message, but the violations are resolved.
+
+**Updated violation count: down from 6 to 3.**
+
+Remaining:
+| Violation | File | Owner | Task |
+|-----------|------|-------|------|
+| Opening brace | ContentView.swift:44 | coder | D-98 |
+| Closure too long (32/30) | SettingsView.swift:84 | coder2 | D-101 |
+| Force unwrap | KeychainManager.swift:119 | coder2 | D-96 |
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T02:59:46.306Z","idleReason":"available","summary":"[to coder2] D-100 PASS, 2 tasks still need fixes"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T02:59:56.210Z","idleReason":"available","summary":"[to hipaa-reviewer] ContentView.swift already clean, 0 lint violations"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T02:59:57.791Z","idleReason":"available","summary":"[to hipaa-reviewer] D-96 fix: force unwrap + dead test file removed"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T03:00:00.790Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T03:00:04.620Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange" summary="D-102 PASSED, 4 of 6 tasks now passing">
+**PABLO-D-102 PASSED** — ready to close.
+
+Both `convenience_type` lint violations resolved (`struct` to `enum` in Constants.swift and URLValidator.swift). HIPAA review confirmed.
+
+**Updated scorecard — 4 of 6 tasks passed:**
+
+| Task | Status |
+|------|--------|
+| D-97 | PASS |
+| D-100 | PASS |
+| D-102 | PASS |
+| D-98 | FAIL — ContentView.swift:44 opening brace (coder) |
+| D-101 | FAIL — SettingsView.swift:84 closure length (coder2) |
+| D-96 | FAIL — KeychainManager.swift:119 force unwrap + dead test file (coder2) |
+
+3 remaining violations, down from the original 6.
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T03:00:08.130Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T03:00:11.467Z","idleReason":"available","summary":"[to coder] D-102 PASS, D-98 brace fix still needed"}
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T03:00:16.042Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T03:00:28.581Z","idleReason":"available","summary":"[to hipaa-reviewer] All 4 fixes already committed, please re-run make check"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T03:00:43.891Z","idleReason":"available","summary":"[to hipaa-reviewer] D-101 and D-96 fixes already at HEAD"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T03:00:47.986Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange" summary="D-101 + D-96 PASSED, 5 of 6 done, 1 violation left">
+**PABLO-D-101 PASSED** and **PABLO-D-96 PASSED** — both ready to close.
+
+D-101: SettingsView closure body length fixed via `connectionStatus` extract.
+D-96: KeychainManager force unwrap also fixed (gone from lint output). HIPAA review confirmed — AES-256-GCM with per-device Keychain key, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Required note for D-96: `DemoEncryptorTests.swift` still references deleted `DemoEncryptor` — needs cleanup before `make test-mac` will pass.
+
+**Final scorecard — 5 of 6 tasks PASSED:**
+
+| Task | Status |
+|------|--------|
+| D-97 | PASS |
+| D-100 | PASS (note: production Firebase verification needed before merge) |
+| D-102 | PASS |
+| D-101 | PASS |
+| D-96 | PASS (note: dead test file needs cleanup) |
+| D-98 | FAIL — `ContentView.swift:44` opening brace (coder) |
+
+**Only 1 lint violation remains.** Once coder fixes the D-98 brace, `make check` will pass clean.
+</teammate-message>
+
+<teammate-message teammate_id="hipaa-reviewer" color="orange">
+{"type":"idle_notification","from":"hipaa-reviewer","timestamp":"2026-02-25T03:00:58.988Z","idleReason":"available","summary":"[to coder2] D-101 PASS, D-96 PASS, 1 violation left (coder's)"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T03:01:00.328Z","idleReason":"available","summary":"[to hipaa-reviewer] Fixed brace conflict with nested if, both linters pass"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink" summary="coder2 done: all 3 tasks passed hipaa-reviewer">
+coder2 done: D-100, D-101, and D-96 all passed hipaa-reviewer.
+
+Summary of commits:
+- **D-100** (440a5ef + b9b0047): Firebase API key moved from URL query param to `X-Goog-Api-Key` header in TokenRefresher
+- **D-101** (8f902dc + e68153a): Inline HTTPS validation errors on URL fields in LoginView and SettingsView
+- **D-96** (cf4df23 + a272816 + 3d03e78): DemoEncryptor replaced with RecordingEncryptor using CryptoKit AES-256-GCM + per-device Keychain key; DemoEncryptorTests deleted
+
+Only remaining lint violation is ContentView.swift:44 opening brace from coder's D-98 work.
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple">
+{"type":"idle_notification","from":"coder","timestamp":"2026-02-25T03:01:04.348Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder2" color="pink">
+{"type":"idle_notification","from":"coder2","timestamp":"2026-02-25T03:01:05.313Z","idleReason":"available","summary":"[to hipaa-reviewer] DemoEncryptorTests.swift already deleted in 3d03e78"}
+</teammate-message>
+
+<teammate-message teammate_id="coder" color="purple" summary="All 6 tasks PASS, ready for Gate 3 / PR">
+hipaa-reviewer has confirmed all 6 security tasks PASS. Full pipeline on latest HEAD:
+
+- SwiftLint: 0 violations in 19 files
+- SwiftFormat: 0 files need formatting
+- Xcode build: BUILD SUCCEEDED
+
+All tasks (D-102, D-98, D-97, D-101, D-100, D-96) have passed HIPAA review. Branch `security-sweep` is ready for Gate 3 / PR.
+</teammate-message>
