@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "aa0c4f84db1b",
+  "session_id": "296e6683-1701-46ba-a288-95a70cdf2ce3",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-25T02:23:52.268143Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".beads/issues.jsonl",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "712f3008c313",
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 23980,
+    "cache_read_tokens": 196549,
+    "output_tokens": 377,
+    "api_call_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-25T02:23:52.182705Z",
+    "agent_lines": 0,
+    "human_added": 721,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 721,
+    "agent_percentage": 0
+  }
+}
