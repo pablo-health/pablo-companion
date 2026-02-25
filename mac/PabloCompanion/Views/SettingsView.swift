@@ -104,20 +104,24 @@ struct SettingsView: View {
                     .foregroundStyle(.red)
             }
 
-            HStack {
-                Circle()
-                    .fill(isBackendReachable ? .green : .red)
-                    .frame(width: 8, height: 8)
-                Text(isBackendReachable ? "Connected" : "Not connected")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            connectionStatus
+        }
+    }
 
-                Spacer()
+    private var connectionStatus: some View {
+        HStack {
+            Circle()
+                .fill(isBackendReachable ? .green : .red)
+                .frame(width: 8, height: 8)
+            Text(isBackendReachable ? "Connected" : "Not connected")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-                Button("Check", action: onCheckHealth)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            }
+            Spacer()
+
+            Button("Check", action: onCheckHealth)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
         }
     }
 
