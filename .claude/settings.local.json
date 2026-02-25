@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bd create:*)",
+      "Bash(sort:*)",
+      "Bash(cp:*)",
+      "Bash(cd:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh repo:*)",
+      "Bash(gh api:*)",
+      "Bash(head:*)",
+      "Bash(bd ls:*)",
+      "Bash(python3:*)",
+      "WebSearch",
+      "Bash(swiftlint lint:*)",
+      "WebFetch(domain:medium.com)",
+      "Bash(swiftformat:*)",
+      "Bash(gem list:*)",
+      "Bash(grep:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(bd list:*)",
+      "Bash(bd search:*)",
+      "Bash(bd show:*)",
+      "Bash(bd update:*)",
+      "Bash(bd update PABLO-D-99 --status=closed 2>/dev/null || bd close PABLO-D-99 2>/dev/null)",
+      "WebFetch(domain:firebase.google.com)",
+      "WebFetch(domain:docs.cloud.google.com)"
+    ]
+  }
+}
