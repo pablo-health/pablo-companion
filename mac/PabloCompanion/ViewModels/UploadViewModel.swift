@@ -16,7 +16,7 @@ final class UploadViewModel {
     var showError = false
 
     private var apiClient: APIClient
-    private let logger = Logger(subsystem: "com.macos-sample", category: "UploadViewModel")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "UploadViewModel")
 
     init() {
         self.apiClient = APIClient()

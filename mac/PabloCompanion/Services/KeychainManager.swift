@@ -11,8 +11,8 @@ struct KeychainManager: Sendable {
         case authServerURL = "auth_server_url"
     }
 
-    private static let serviceName = "com.therapyrecorder.auth"
-    private static let logger = Logger(subsystem: "com.macos-sample", category: "KeychainManager")
+    private static let serviceName = AppConstants.appBundleID
+    private static let logger = Logger(subsystem: AppConstants.appBundleID, category: "KeychainManager")
 
     static func saveToken(_ value: String, forKey key: TokenKey) {
         guard let data = value.data(using: .utf8) else { return }

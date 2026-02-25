@@ -4,7 +4,7 @@ import os
 /// A simple URLSession wrapper for communicating with the sample backend.
 @MainActor
 final class APIClient {
-    private let logger = Logger(subsystem: "com.macos-sample", category: "APIClient")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "APIClient")
 
     nonisolated let baseURL: URL
     private let clientType = "therapyrecorder-macos/1.0"

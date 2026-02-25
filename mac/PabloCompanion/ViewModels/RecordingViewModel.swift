@@ -45,7 +45,7 @@ final class RecordingViewModel {
     private var session: CompositeCaptureSession?
     private var audioPlayer: AVAudioPlayer?
     private let playerDelegate = AudioPlayerDelegateAdapter()
-    private let logger = Logger(subsystem: "com.macos-sample", category: "RecordingViewModel")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "RecordingViewModel")
     private let delegateAdapter = CaptureDelegateAdapter()
     private var deviceChangeListenerInstalled = false
     private var systemAudioAvailableAtStart = false

@@ -39,7 +39,7 @@ final class AuthViewModel {
         return ""
     }
 
-    private let logger = Logger(subsystem: "com.macos-sample", category: "AuthViewModel")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "AuthViewModel")
 
     // MARK: - Init
 

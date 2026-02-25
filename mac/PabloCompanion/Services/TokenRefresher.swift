@@ -33,7 +33,7 @@ struct TokenRefresher: Sendable {
     }
 
     private let apiKey: String
-    private let logger = Logger(subsystem: "com.macos-sample", category: "TokenRefresher")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "TokenRefresher")
 
     init(apiKey: String) {
         self.apiKey = apiKey

@@ -17,7 +17,7 @@ final class PatientViewModel {
     }
 
     private var apiClient: APIClient
-    private let logger = Logger(subsystem: "com.macos-sample", category: "PatientViewModel")
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PatientViewModel")
 
     init() {
         self.apiClient = APIClient()
