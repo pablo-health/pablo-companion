@@ -3,6 +3,7 @@ import SwiftUI
 /// Login screen shown when the user is not authenticated.
 struct LoginView: View {
     let authViewModel: AuthViewModel
+    @State private var authURLValidationError: String?
 
     var body: some View {
         VStack(spacing: 24) {
@@ -33,6 +34,14 @@ struct LoginView: View {
                 .foregroundStyle(.secondary)
             TextField("https://app.example.com", text: Bindable(authViewModel).authServerURL)
                 .textFieldStyle(.roundedBorder)
+                .onChange(of: authViewModel.authServerURL) { _, newValue in
+                    authURLValidationError = URLValidator.validateScheme(newValue)
+                }
+            if let error = authURLValidationError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
         .frame(maxWidth: 320)
     }

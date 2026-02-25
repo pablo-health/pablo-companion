@@ -7,6 +7,8 @@ struct SettingsView: View {
     @Binding var backendURL: String
     @Binding var authServerURL: String
     @Binding var selectedMicID: String?
+    @State private var backendURLError: String?
+    @State private var authServerURLError: String?
     @Binding var encryptionEnabled: Bool
     @Binding var debugEnableMic: Bool
     @Binding var debugEnableSystem: Bool
@@ -82,9 +84,25 @@ struct SettingsView: View {
         Section("Backend") {
             TextField("Backend URL", text: $backendURL)
                 .textFieldStyle(.roundedBorder)
+                .onChange(of: backendURL) { _, newValue in
+                    backendURLError = URLValidator.validateScheme(newValue)
+                }
+            if let error = backendURLError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
 
             TextField("Auth Server URL", text: $authServerURL)
                 .textFieldStyle(.roundedBorder)
+                .onChange(of: authServerURL) { _, newValue in
+                    authServerURLError = URLValidator.validateScheme(newValue)
+                }
+            if let error = authServerURLError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
 
             HStack {
                 Circle()
