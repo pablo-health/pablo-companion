@@ -3,7 +3,7 @@ import CryptoKit
 import Foundation
 
 /// Production AES-256-GCM encryptor using a per-device key stored in Keychain.
-struct ProductionEncryptor: CaptureEncryptor {
+struct RecordingEncryptor: CaptureEncryptor {
     private let key: SymmetricKey
 
     init?() {
