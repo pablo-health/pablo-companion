@@ -39,8 +39,10 @@ struct ContentView: View {
             ) {
                 uploadVM.backendURL = config.apiUrl
                 patientVM.backendURL = config.apiUrl
-                if let key = config.firebaseApiKey, !key.isEmpty {
-                    authVM.firebaseAPIKey = key
+                if KeychainManager.getToken(forKey: .firebaseAPIKey) == nil,
+                   let key = config.firebaseApiKey, !key.isEmpty
+                {
+                    KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
                 }
             }
 
@@ -162,7 +164,6 @@ struct ContentView: View {
         SettingsView(
             backendURL: $uploadVM.backendURL,
             authServerURL: $authVM.authServerURL,
-            firebaseAPIKey: $authVM.firebaseAPIKey,
             selectedMicID: $recordingVM.selectedMicID,
             encryptionEnabled: $recordingVM.encryptionEnabled,
             debugEnableMic: $recordingVM.debugEnableMic,

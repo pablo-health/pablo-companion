@@ -26,9 +26,6 @@ final class AuthViewModel {
     @AppStorage("backendAPIURL") var backendAPIURL = "http://localhost:8000"
 
     @ObservationIgnored
-    @AppStorage("firebaseAPIKey") var firebaseAPIKey = ""
-
-    @ObservationIgnored
     @AppStorage("tokenExpiry") private var tokenExpiryTimestamp: Double = 0
 
     /// Convenience accessor for the email when authenticated.
@@ -196,7 +193,9 @@ final class AuthViewModel {
             throw TokenError.noRefreshToken
         }
 
-        guard !firebaseAPIKey.isEmpty else {
+        guard let firebaseAPIKey = KeychainManager.getToken(forKey: .firebaseAPIKey),
+              !firebaseAPIKey.isEmpty
+        else {
             throw TokenError.noAPIKey
         }
 

@@ -6,7 +6,6 @@ import SwiftUI
 struct SettingsView: View {
     @Binding var backendURL: String
     @Binding var authServerURL: String
-    @Binding var firebaseAPIKey: String
     @Binding var selectedMicID: String?
     @Binding var encryptionEnabled: Bool
     @Binding var debugEnableMic: Bool
@@ -85,9 +84,6 @@ struct SettingsView: View {
                 .textFieldStyle(.roundedBorder)
 
             TextField("Auth Server URL", text: $authServerURL)
-                .textFieldStyle(.roundedBorder)
-
-            TextField("Firebase API Key", text: $firebaseAPIKey)
                 .textFieldStyle(.roundedBorder)
 
             HStack {

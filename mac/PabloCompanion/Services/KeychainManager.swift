@@ -9,6 +9,7 @@ struct KeychainManager: Sendable {
         case refreshToken = "refresh_token"
         case userEmail = "user_email"
         case authServerURL = "auth_server_url"
+        case firebaseAPIKey = "firebase_api_key"
     }
 
     private static let serviceName = AppConstants.appBundleID
@@ -77,7 +78,7 @@ struct KeychainManager: Sendable {
     }
 
     static func deleteAll() {
-        for key in [TokenKey.idToken, .refreshToken, .userEmail, .authServerURL] {
+        for key in [TokenKey.idToken, .refreshToken, .userEmail, .authServerURL, .firebaseAPIKey] {
             deleteToken(forKey: key)
         }
     }
