@@ -13,6 +13,7 @@ struct KeychainManager: Sendable {
     }
 
     private static let serviceName = AppConstants.appBundleID
+    private static let accessGroup = AppConstants.keychainAccessGroup
     private static let logger = Logger(subsystem: AppConstants.appBundleID, category: "KeychainManager")
 
     static func saveToken(_ value: String, forKey key: TokenKey) {
@@ -22,6 +23,7 @@ struct KeychainManager: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccessGroup as String: accessGroup,
         ]
 
         // Try updating first; add if not found.
@@ -51,6 +53,7 @@ struct KeychainManager: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccessGroup as String: accessGroup,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -69,6 +72,7 @@ struct KeychainManager: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccessGroup as String: accessGroup,
         ]
 
         let status = SecItemDelete(query as CFDictionary)
@@ -94,6 +98,7 @@ struct KeychainManager: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: deviceKeyAccount,
+            kSecAttrAccessGroup as String: accessGroup,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -128,6 +133,7 @@ struct KeychainManager: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: deviceKeyAccount,
+            kSecAttrAccessGroup as String: accessGroup,
             kSecValueData as String: keyData,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
@@ -147,6 +153,7 @@ struct KeychainManager: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: deviceKeyAccount,
+            kSecAttrAccessGroup as String: accessGroup,
         ]
 
         let status = SecItemDelete(query as CFDictionary)
