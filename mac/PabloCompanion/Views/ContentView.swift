@@ -19,6 +19,8 @@ struct ContentView: View {
                 authenticatedContent
             }
         }
+        .background(Color.pabloCream)
+        .preferredColorScheme(.light)
     }
 
     private var authenticatedContent: some View {
@@ -120,6 +122,7 @@ struct ContentView: View {
 
             recordingList
         }
+        .background(Color.pabloCream)
         .tabItem {
             Label("Recorder", systemImage: "waveform")
         }
