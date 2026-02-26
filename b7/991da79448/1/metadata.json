@@ -1,9 +1,11 @@
 {
   "cli_version": "0.4.7",
   "checkpoint_id": "b7991da79448",
+  "session_id": "9301b18f-dead-47f7-affd-0da28e378e11",
   "strategy": "manual-commit",
+  "created_at": "2026-02-26T03:56:05.958277Z",
   "branch": "security-sweep",
-  "checkpoints_count": 10,
+  "checkpoints_count": 9,
   "files_touched": [
     "mac/PabloCompanion.xcodeproj/project.pbxproj",
     "mac/PabloCompanion.xcodeproj/xcshareddata/xcschemes/Pablo.xcscheme",
@@ -35,27 +37,22 @@
     "mac/PabloCompanion/Views/SettingsView.swift",
     "mac/PabloCompanion/Views/StatusIndicator.swift"
   ],
-  "sessions": [
-    {
-      "metadata": "/b7/991da79448/0/metadata.json",
-      "transcript": "/b7/991da79448/0/full.jsonl",
-      "context": "/b7/991da79448/0/context.md",
-      "content_hash": "/b7/991da79448/0/content_hash.txt",
-      "prompt": "/b7/991da79448/0/prompt.txt"
-    },
-    {
-      "metadata": "/b7/991da79448/1/metadata.json",
-      "transcript": "/b7/991da79448/1/full.jsonl",
-      "context": "/b7/991da79448/1/context.md",
-      "content_hash": "/b7/991da79448/1/content_hash.txt",
-      "prompt": "/b7/991da79448/1/prompt.txt"
-    }
-  ],
+  "agent": "Claude Code",
+  "turn_id": "dde612f4c0e2",
   "token_usage": {
-    "input_tokens": 362,
-    "cache_creation_tokens": 438953,
-    "cache_read_tokens": 22610937,
-    "output_tokens": 47751,
-    "api_call_count": 238
+    "input_tokens": 148,
+    "cache_creation_tokens": 166741,
+    "cache_read_tokens": 10026557,
+    "output_tokens": 20986,
+    "api_call_count": 112
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-26T03:56:05.31033Z",
+    "agent_lines": 552,
+    "human_added": 0,
+    "human_modified": 1,
+    "human_removed": 2,
+    "total_committed": 553,
+    "agent_percentage": 99.81916817359856
   }
 }
