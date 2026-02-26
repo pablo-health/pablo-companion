@@ -16,14 +16,14 @@
 			containerPortal = 9588F2822F46BC910052AF8F /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 9588F2892F46BC910052AF8F;
-			remoteInfo = PabloCompanion;
+			remoteInfo = Pablo;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		9588F28A2F46BC910052AF8F /* PabloCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PabloCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9588F28A2F46BC910052AF8F /* Pablo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pablo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9588F2D72F46BE760052AF8F /* PabloCompanion.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = PabloCompanion.xcodeproj; sourceTree = "<group>"; };
-		AA00000000000001000000 /* PabloCompanionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PabloCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA00000000000001000000 /* PabloTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PabloTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -70,8 +70,8 @@
 		9588F28B2F46BC910052AF8F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				9588F28A2F46BC910052AF8F /* PabloCompanion.app */,
-				AA00000000000001000000 /* PabloCompanionTests.xctest */,
+				9588F28A2F46BC910052AF8F /* Pablo.app */,
+				AA00000000000001000000 /* PabloTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -84,9 +84,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		9588F2892F46BC910052AF8F /* PabloCompanion */ = {
+		9588F2892F46BC910052AF8F /* Pablo */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 9588F2952F46BC930052AF8F /* Build configuration list for PBXNativeTarget "PabloCompanion" */;
+			buildConfigurationList = 9588F2952F46BC930052AF8F /* Build configuration list for PBXNativeTarget "Pablo" */;
 			buildPhases = (
 				9588F2862F46BC910052AF8F /* Sources */,
 				9588F2872F46BC910052AF8F /* Frameworks */,
@@ -99,17 +99,17 @@
 			fileSystemSynchronizedGroups = (
 				9588F28C2F46BC910052AF8F /* PabloCompanion */,
 			);
-			name = PabloCompanion;
+			name = Pablo;
 			packageProductDependencies = (
 				9588F2B12F46BD500052AF8F /* AudioCaptureKit */,
 			);
-			productName = PabloCompanion;
-			productReference = 9588F28A2F46BC910052AF8F /* PabloCompanion.app */;
+			productName = Pablo;
+			productReference = 9588F28A2F46BC910052AF8F /* Pablo.app */;
 			productType = "com.apple.product-type.application";
 		};
-		AA00000000000006000000 /* PabloCompanionTests */ = {
+		AA00000000000006000000 /* PabloTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA00000000000009000000 /* Build configuration list for PBXNativeTarget "PabloCompanionTests" */;
+			buildConfigurationList = AA00000000000009000000 /* Build configuration list for PBXNativeTarget "PabloTests" */;
 			buildPhases = (
 				AA00000000000003000000 /* Sources */,
 				AA00000000000004000000 /* Frameworks */,
@@ -123,9 +123,9 @@
 			fileSystemSynchronizedGroups = (
 				AA00000000000002000000 /* PabloCompanionTests */,
 			);
-			name = PabloCompanionTests;
-			productName = PabloCompanionTests;
-			productReference = AA00000000000001000000 /* PabloCompanionTests.xctest */;
+			name = PabloTests;
+			productName = PabloTests;
+			productReference = AA00000000000001000000 /* PabloTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -170,8 +170,8 @@
 			);
 			projectRoot = "";
 			targets = (
-				9588F2892F46BC910052AF8F /* PabloCompanion */,
-				AA00000000000006000000 /* PabloCompanionTests */,
+				9588F2892F46BC910052AF8F /* Pablo */,
+				AA00000000000006000000 /* PabloTests */,
 			);
 		};
 /* End PBXProject section */
@@ -213,7 +213,7 @@
 /* Begin PBXTargetDependency section */
 		AA0000000000000A000000 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 9588F2892F46BC910052AF8F /* PabloCompanion */;
+			target = 9588F2892F46BC910052AF8F /* Pablo */;
 			targetProxy = AA0000000000000B000000 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -354,6 +354,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
+				INFOPLIST_KEY_CFBundleName = Pablo;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pablo Companion needs microphone access to record audio.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -384,6 +385,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
+				INFOPLIST_KEY_CFBundleName = Pablo;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pablo Companion needs microphone access to record audio.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -413,7 +415,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.2;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PabloCompanion.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PabloCompanion";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pablo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pablo";
 			};
 			name = Debug;
 		};
@@ -431,7 +433,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.2;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PabloCompanion.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PabloCompanion";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pablo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pablo";
 			};
 			name = Release;
 		};
@@ -447,7 +449,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		9588F2952F46BC930052AF8F /* Build configuration list for PBXNativeTarget "PabloCompanion" */ = {
+		9588F2952F46BC930052AF8F /* Build configuration list for PBXNativeTarget "Pablo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				9588F2962F46BC930052AF8F /* Debug */,
@@ -456,7 +458,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AA00000000000009000000 /* Build configuration list for PBXNativeTarget "PabloCompanionTests" */ = {
+		AA00000000000009000000 /* Build configuration list for PBXNativeTarget "PabloTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA00000000000007000000 /* Debug */,
