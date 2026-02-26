@@ -13,25 +13,45 @@ struct RecordingListView: View {
     var body: some View {
         Group {
             if recordings.isEmpty {
-                ContentUnavailableView(
-                    "No Recordings",
-                    systemImage: "waveform",
-                    description: Text("Start recording to see your recordings here.")
-                )
+                emptyState
             } else {
-                List(recordings) { recording in
-                    RecordingRow(
-                        recording: recording,
-                        uploadProgress: uploadProgress[recording.id],
-                        isUploading: uploadingIDs.contains(recording.id),
-                        isPlaying: playingRecordingID == recording.id,
-                        onUpload: { onUpload(recording) },
-                        onPlay: { onPlay(recording) },
-                        onStopPlayback: onStopPlayback
-                    )
-                }
+                recordingList
             }
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image("PabloBear")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 80, height: 80)
+            Text("No recordings yet")
+                .font(.pabloDisplay(17))
+                .foregroundStyle(Color.pabloBrownDeep)
+            Text("Start recording to see your sessions here.")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownSoft)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private var recordingList: some View {
+        List(recordings) { recording in
+            RecordingRow(
+                recording: recording,
+                uploadProgress: uploadProgress[recording.id],
+                isUploading: uploadingIDs.contains(recording.id),
+                isPlaying: playingRecordingID == recording.id,
+                onUpload: { onUpload(recording) },
+                onPlay: { onPlay(recording) },
+                onStopPlayback: onStopPlayback
+            )
+            .pabloListRowStyle()
+        }
+        .pabloListStyle()
     }
 }
 
@@ -55,7 +75,7 @@ struct RecordingRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(recording.fileName)
-                    .font(.headline)
+                    .font(.pabloBody(14)).fontWeight(.semibold)
                     .lineLimit(1)
 
                 HStack(spacing: 12) {
@@ -63,10 +83,10 @@ struct RecordingRow: View {
                     Label(recording.formattedDate, systemImage: "calendar")
                     if recording.isEncrypted {
                         Label("Encrypted", systemImage: "lock.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.pabloSage)
                     }
                 }
-                .font(.caption)
+                .font(.pabloBody(11))
                 .foregroundStyle(.secondary)
             }
 
@@ -81,7 +101,7 @@ struct RecordingRow: View {
     private var uploadStatus: some View {
         if recording.isUploaded {
             Label("Uploaded", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.pabloSage)
                 .font(.caption)
         } else if isUploading {
             VStack(spacing: 2) {
@@ -97,4 +117,50 @@ struct RecordingRow: View {
                 .controlSize(.small)
         }
     }
+}
+
+#Preview("Empty") {
+    RecordingListView(
+        recordings: [],
+        uploadProgress: [:],
+        uploadingIDs: [],
+        playingRecordingID: nil,
+        onUpload: { _ in },
+        onPlay: { _ in },
+        onStopPlayback: {}
+    )
+    .frame(width: 500, height: 400)
+}
+
+#Preview("With recordings") {
+    let recordings = [
+        LocalRecording(
+            id: UUID(),
+            fileURL: URL(fileURLWithPath: "/recordings/session-2026-02-25.m4a"),
+            duration: 3661,
+            createdAt: Date(),
+            isEncrypted: true,
+            checksum: "abc123",
+            isUploaded: false
+        ),
+        LocalRecording(
+            id: UUID(),
+            fileURL: URL(fileURLWithPath: "/recordings/session-2026-02-20.m4a"),
+            duration: 2820,
+            createdAt: Date().addingTimeInterval(-432_000),
+            isEncrypted: true,
+            checksum: "def456",
+            isUploaded: true
+        ),
+    ]
+    RecordingListView(
+        recordings: recordings,
+        uploadProgress: [:],
+        uploadingIDs: [],
+        playingRecordingID: nil,
+        onUpload: { _ in },
+        onPlay: { _ in },
+        onStopPlayback: {}
+    )
+    .frame(width: 500, height: 400)
 }

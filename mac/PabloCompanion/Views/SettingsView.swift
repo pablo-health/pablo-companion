@@ -34,6 +34,8 @@ struct SettingsView: View {
             debugSection
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.pabloCream)
         .frame(minWidth: 400, minHeight: 500)
     }
 
@@ -52,14 +54,12 @@ struct SettingsView: View {
     private var systemAudioSection: some View {
         Section("System Audio") {
             HStack {
-                Circle()
-                    .fill(systemAudioPermitted ? .green : .orange)
-                    .frame(width: 8, height: 8)
-                Text(systemAudioPermitted
-                    ? "Screen & System Audio Recording: Likely Granted"
-                    : "Screen & System Audio Recording: Not Granted")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                StatusIndicator(
+                    isActive: systemAudioPermitted,
+                    activeLabel: "Screen & System Audio Recording: Likely Granted",
+                    inactiveLabel: "Screen & System Audio Recording: Not Granted",
+                    inactiveColor: .pabloHoney
+                )
 
                 Spacer()
 
@@ -76,7 +76,7 @@ struct SettingsView: View {
             Text("System audio capture requires \"Screen & System Audio Recording\" permission. "
                 + "Enable this app in System Settings > Privacy & Security > Screen & System Audio Recording.")
                 .font(.caption)
-                .foregroundStyle(systemAudioPermitted ? Color.secondary : Color.orange)
+                .foregroundStyle(systemAudioPermitted ? Color.secondary : Color.pabloHoney)
         }
     }
 
@@ -88,9 +88,7 @@ struct SettingsView: View {
                     backendURLError = URLValidator.validateScheme(newValue)
                 }
             if let error = backendURLError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                ErrorMessageLabel(message: error)
             }
 
             TextField("Auth Server URL", text: $authServerURL)
@@ -99,9 +97,7 @@ struct SettingsView: View {
                     authServerURLError = URLValidator.validateScheme(newValue)
                 }
             if let error = authServerURLError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                ErrorMessageLabel(message: error)
             }
 
             connectionStatus
@@ -110,12 +106,11 @@ struct SettingsView: View {
 
     private var connectionStatus: some View {
         HStack {
-            Circle()
-                .fill(isBackendReachable ? .green : .red)
-                .frame(width: 8, height: 8)
-            Text(isBackendReachable ? "Connected" : "Not connected")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            StatusIndicator(
+                isActive: isBackendReachable,
+                activeLabel: "Connected",
+                inactiveLabel: "Not connected"
+            )
 
             Spacer()
 
@@ -136,7 +131,7 @@ struct SettingsView: View {
                         HStack(spacing: 6) {
                             if mic.transportType == .bluetooth || mic.transportType == .bluetoothLE {
                                 Image(systemName: "wave.3.right")
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(Color.pabloSky)
                             }
                             Text(mic.name)
                         }
@@ -150,9 +145,9 @@ struct SettingsView: View {
                             .font(.caption)
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.pabloHoney)
                     }
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.pabloHoney)
                 }
             }
         }
@@ -217,4 +212,26 @@ struct SettingsView: View {
             .font(.system(.caption, design: .monospaced))
         }
     }
+}
+
+#Preview {
+    SettingsView(
+        backendURL: .constant("https://api.pablo.health"),
+        authServerURL: .constant("https://auth.pablo.health"),
+        selectedMicID: .constant(nil),
+        encryptionEnabled: .constant(true),
+        debugEnableMic: .constant(true),
+        debugEnableSystem: .constant(true),
+        userEmail: "therapist@example.com",
+        availableMics: [],
+        isBackendReachable: true,
+        bluetoothRoutingConflict: false,
+        bluetoothRecommendation: nil,
+        systemAudioPermitted: true,
+        recordingState: .idle,
+        diagnostics: CaptureSessionDiagnostics(),
+        onCheckHealth: {},
+        onGenerateTestTone: {},
+        onSignOut: {}
+    )
 }

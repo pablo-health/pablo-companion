@@ -9,13 +9,13 @@ struct LoginView: View {
         VStack(spacing: 24) {
             Spacer()
 
-            Image(systemName: "waveform.badge.mic")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
+            Image("PabloBear")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 96, height: 96)
 
-            Text("Sign in to Therapy Recorder")
-                .font(.title2)
-                .fontWeight(.semibold)
+            Text("Sign in to Pablo")
+                .font(.pabloDisplay(22))
 
             serverURLField
             authStateContent
@@ -38,9 +38,7 @@ struct LoginView: View {
                     authURLValidationError = URLValidator.validateScheme(newValue)
                 }
             if let error = authURLValidationError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                ErrorMessageLabel(message: error)
             }
         }
         .frame(maxWidth: 320)
@@ -65,15 +63,20 @@ struct LoginView: View {
         if authViewModel.authState == .tokenExpired {
             Text("Your session has expired. Please sign in again.")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.pabloHoney)
         }
 
         if let error = authViewModel.errorMessage {
             Text(error)
                 .font(.caption)
-                .foregroundStyle(.red)
+                .foregroundStyle(Color.pabloBlush)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
     }
+}
+
+#Preview {
+    LoginView(authViewModel: AuthViewModel())
+        .frame(width: 500, height: 600)
 }

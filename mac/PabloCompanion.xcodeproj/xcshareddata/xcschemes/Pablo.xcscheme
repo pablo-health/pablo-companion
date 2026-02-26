@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "9588F2892F46BC910052AF8F"
-               BuildableName = "PabloCompanion.app"
-               BlueprintName = "PabloCompanion"
+               BuildableName = "Pablo.app"
+               BlueprintName = "Pablo"
                ReferencedContainer = "container:PabloCompanion.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -35,8 +35,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "AA00000000000006000000"
-               BuildableName = "PabloCompanionTests.xctest"
-               BlueprintName = "PabloCompanionTests"
+               BuildableName = "PabloTests.xctest"
+               BlueprintName = "PabloTests"
                ReferencedContainer = "container:PabloCompanion.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -57,8 +57,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "9588F2892F46BC910052AF8F"
-            BuildableName = "PabloCompanion.app"
-            BlueprintName = "PabloCompanion"
+            BuildableName = "Pablo.app"
+            BlueprintName = "Pablo"
             ReferencedContainer = "container:PabloCompanion.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -74,8 +74,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "9588F2892F46BC910052AF8F"
-            BuildableName = "PabloCompanion.app"
-            BlueprintName = "PabloCompanion"
+            BuildableName = "Pablo.app"
+            BlueprintName = "Pablo"
             ReferencedContainer = "container:PabloCompanion.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
