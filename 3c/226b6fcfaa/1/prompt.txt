@@ -1,0 +1,13 @@
+hi can you summarize what i've done yesterday Feb 24th - use the entire branch to help
+
+---
+
+specificlly what went well with my prompting/use of AI agents.   Take a look at the entire branch and files
+
+---
+
+what didn't work well
+
+---
+
+[Request interrupted by user]
