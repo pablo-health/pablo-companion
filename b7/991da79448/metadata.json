@@ -3,7 +3,7 @@
   "checkpoint_id": "b7991da79448",
   "strategy": "manual-commit",
   "branch": "security-sweep",
-  "checkpoints_count": 10,
+  "checkpoints_count": 11,
   "files_touched": [
     "mac/PabloCompanion.xcodeproj/project.pbxproj",
     "mac/PabloCompanion.xcodeproj/xcshareddata/xcschemes/Pablo.xcscheme",
@@ -49,13 +49,20 @@
       "context": "/b7/991da79448/1/context.md",
       "content_hash": "/b7/991da79448/1/content_hash.txt",
       "prompt": "/b7/991da79448/1/prompt.txt"
+    },
+    {
+      "metadata": "/b7/991da79448/2/metadata.json",
+      "transcript": "/b7/991da79448/2/full.jsonl",
+      "context": "/b7/991da79448/2/context.md",
+      "content_hash": "/b7/991da79448/2/content_hash.txt",
+      "prompt": "/b7/991da79448/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 362,
-    "cache_creation_tokens": 438953,
-    "cache_read_tokens": 22610937,
-    "output_tokens": 47751,
-    "api_call_count": 238
+    "input_tokens": 380,
+    "cache_creation_tokens": 478252,
+    "cache_read_tokens": 23130774,
+    "output_tokens": 53296,
+    "api_call_count": 250
   }
 }

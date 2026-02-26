@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "b7991da79448",
+  "session_id": "e7036d80-05ea-4866-a76a-5974e11a735a",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-26T03:56:09.173749Z",
+  "branch": "security-sweep",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon128x128.png",
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon128x128@2x.png",
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon16x16.png",
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon16x16@2x.png",
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon256x256.png",
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon256x256@2x.png",
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon32x32.png",
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon32x32@2x.png",
+    "mac/PabloCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon512x512.png",
+    "mac/PabloCompanion/Assets.xcassets/PabloBear.imageset/PabloBear.jpg"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "c98235206d48",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 39299,
+    "cache_read_tokens": 519837,
+    "output_tokens": 5545,
+    "api_call_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-26T03:56:09.066185Z",
+    "agent_lines": 0,
+    "human_added": 556,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 556,
+    "agent_percentage": 0
+  }
+}
