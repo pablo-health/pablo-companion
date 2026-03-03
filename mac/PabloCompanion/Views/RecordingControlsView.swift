@@ -20,7 +20,7 @@ struct RecordingControlsView: View {
                 .foregroundStyle(state == .recording ? .primary : .secondary)
 
             Text(stateLabel)
-                .font(.caption)
+                .font(.pabloBody(11))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
@@ -35,19 +35,17 @@ struct RecordingControlsView: View {
             controlButtons
         }
         .padding()
+        .background(Color.pabloCream)
     }
 
     @ViewBuilder
     private var systemAudioStatus: some View {
         if state == .recording || state == .paused {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(systemAudioActive ? .green : .red)
-                    .frame(width: 8, height: 8)
-                Text(systemAudioActive ? "System Audio: Active" : "System Audio: Unavailable")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            StatusIndicator(
+                isActive: systemAudioActive,
+                activeLabel: "System Audio: Active",
+                inactiveLabel: "System Audio: Unavailable"
+            )
         }
     }
 
@@ -70,7 +68,7 @@ struct RecordingControlsView: View {
                 .font(.title2)
         }
         .buttonStyle(.borderedProminent)
-        .tint(.red)
+        .tint(.pabloHoney)
         .controlSize(.large)
     }
 
@@ -106,7 +104,7 @@ struct RecordingControlsView: View {
                 .font(.title2)
         }
         .buttonStyle(.borderedProminent)
-        .tint(.orange)
+        .tint(.pabloBrownDeep)
         .controlSize(.large)
     }
 
@@ -161,11 +159,41 @@ struct LevelMeter: View {
 
     private var levelColor: Color {
         if clampedLevel > 0.8 {
-            .red
+            .pabloBlush
         } else if clampedLevel > 0.5 {
-            .yellow
+            .pabloHoney
         } else {
-            .green
+            .pabloSage
         }
     }
+}
+
+#Preview("Idle") {
+    RecordingControlsView(
+        state: .idle,
+        duration: 0,
+        micLevel: 0,
+        systemLevel: 0,
+        systemAudioActive: false,
+        onStart: {},
+        onPause: {},
+        onResume: {},
+        onStop: {}
+    )
+    .frame(width: 400)
+}
+
+#Preview("Recording") {
+    RecordingControlsView(
+        state: .recording,
+        duration: 125,
+        micLevel: 0.6,
+        systemLevel: 0.4,
+        systemAudioActive: true,
+        onStart: {},
+        onPause: {},
+        onResume: {},
+        onStop: {}
+    )
+    .frame(width: 400)
 }

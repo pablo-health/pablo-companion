@@ -1,8 +1,13 @@
+import CoreText
 import ScreenCaptureKit
 import SwiftUI
 
 @main
 struct PabloCompanionApp: App {
+    init() {
+        registerFonts()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -11,6 +16,19 @@ struct PabloCompanionApp: App {
                 }
         }
         .windowResizability(.contentMinSize)
+    }
+
+    /// Registers bundled variable fonts (DM Sans, Fraunces) so SwiftUI
+    /// Font.custom() can resolve them by family name.
+    private func registerFonts() {
+        let fontNames = ["DMSans.ttf", "Fraunces.ttf"]
+        for name in fontNames {
+            guard let url = Bundle.main.url(forResource: name, withExtension: nil) else {
+                assertionFailure("Font not found in bundle: \(name)")
+                continue
+            }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
     }
 
     /// Triggers the ScreenCaptureKit permission prompt, which reliably
