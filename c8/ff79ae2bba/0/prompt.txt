@@ -1,0 +1,137 @@
+Implement the following plan:
+
+# Plan: Close Out Both P0 Epics
+
+## Context
+
+The user asked to work on the two P0 epics. Codebase audit reveals that most of the work is **already done** but the beads tickets haven't been closed. Two tasks remain genuinely open:
+
+- **PABLO-D-b2q** (RecordingService): RecordingViewModel was built instead of a separate service. At 550 lines it violates the 300-line ViewModel guideline in CLAUDE.md. Needs extraction.
+- **PABLO-D-95o** (Sandbox debug view): No debug recording view exists yet.
+
+---
+
+## What's Already Done (just needs beads closure)
+
+| Ticket | Title | Evidence |
+|--------|-------|----------|
+| PABLO-D-4fu | Add AudioCaptureKit as SPM dep | `Package.resolved` pins `pablo-health/AudioCaptureKit@v1.0.0`; used throughout RecordingViewModel |
+| PABLO-D-06i | APIClient service | `mac/PabloCompanion/Services/APIClient.swift` — 194 lines, implements health check, upload, patient fetch with auth token injection |
+
+Action: `bd close PABLO-D-4fu` and `bd close PABLO-D-06i` before touching code.
+
+---
+
+## Task 1: Extract RecordingService (PABLO-D-b2q)
+
+**Problem:** `RecordingViewModel.swift` is 550 lines — nearly double the 300-line limit. All AudioCaptureKit orchestration lives in the ViewModel, which mixes UI state with recording lifecycle logic.
+
+**Approach:** Extract a `@MainActor` `RecordingService` class that owns the AudioCaptureKit session, then have `RecordingViewModel` delegate to it.
+
+### What moves to RecordingService
+- `CompositeCaptureSession` instance ownership
+- `startRecording()`, `pauseRecording()`, `resumeRecording()`, `stopRecording()` core logic
+- Permission checks (`requestMicrophonePermission`, `CGPreflightScreenCaptureAccess`)
+- Device enumeration (`availableAudioSources()`)
+- CoreAudio device-change listener
+- File writing / `LocalRecording` construction
+
+### What stays in RecordingViewModel
+- `@Published` / `@Observable` state properties (for SwiftUI binding)
+- UI-facing computed properties (recording duration display, level meters)
+- Delegation from `RecordingService` back to update published state
+- Test tone generation (UI-triggered smoke test)
+- Playback logic (separate concern, stays in ViewModel or extracted later)
+
+### File
+- **New:** `mac/PabloCompanion/Services/RecordingService.swift`
+- **Modified:** `mac/PabloCompanion/ViewModels/RecordingViewModel.swift` (reduce from ~550 → ~200 lines)
+
+### Interface shape
+```swift
+@MainActor
+final class RecordingService: ObservableObject {
+    func startRecording(sessionId: UUID) async throws -> URL
+    func pauseRecording()
+    func resumeRecording()
+    func stopRecording() async -> LocalRecording?
+    func requestPermissions() async -> Bool
+    func availableAudioSources() async -> [AudioSource]
+}
+```
+
+---
+
+## Task 2: Sandbox Debug View (PABLO-D-95o)
+
+**Requirement:** Temporary debug view with Start/Stop buttons that exercises RecordingService. Confirm audio captures and file written to disk. Gated behind `#if DEBUG`.
+
+### File
+- **New:** `mac/PabloCompanion/Views/DebugRecordingView.swift`
+
+### Contents
+```swift
+#if DEBUG
+struct DebugRecordingView: View {
+    // Start / Stop / Pause / Resume buttons
+    // Shows recording state, file path, duration
+    // "Open in Finder" button once file exists
+    // Includes #Preview macro
+}
+#endif
+```
+
+- Accessible from `SettingsView` behind `#if DEBUG` block (not a new nav destination in production)
+- No UI polish — this is a smoke test
+
+---
+
+## Execution Order
+
+1. `bd close PABLO-D-4fu` — AudioCaptureKit already integrated
+2. `bd close PABLO-D-06i` — APIClient already implemented
+3. Create branch: `git checkout -b PABLO-D-b2q-recording-service`
+4. Implement `RecordingService.swift` extraction
+5. Slim down `RecordingViewModel.swift`
+6. Implement `DebugRecordingView.swift` (PABLO-D-95o)
+7. Build with zero warnings, verify `make check` passes
+8. PR → close PABLO-D-b2q and PABLO-D-95o → both P0 epics done
+
+---
+
+## Verification
+
+- `make check` passes (SwiftLint strict + xcodebuild)
+- RecordingViewModel under 300 lines after extraction
+- RecordingService under 300 lines
+- DebugRecordingView accessible in Debug builds; not visible in Release
+- Manual smoke test: launch app in Debug, navigate to debug view, start recording, confirm file written to `~/Documents/MacOSSample-Recordings/`
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/kurtn/.claude/projects/-Users-kurtn-Developer-pablo-companion/898df274-b66c-43bf-b7b9-46451f06e04a.jsonl
+
+If this plan can be broken down into multiple independent tasks, consider using the TeamCreate tool to create a team and parallelize the work.
+
+---
+
+how do i see the debug view
+
+---
+
+how do i dismiss that debug view? in the ui
+
+---
+
+also did i lose the pablo branding
+
+---
+
+or did that branch not get merged
+
+---
+
+can we pull latest main and update this branch
+
+---
+
+ok then why don't i see pablobranding in this branch for anything - including the icon
