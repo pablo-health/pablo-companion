@@ -186,26 +186,23 @@ System audio (mono) ──▶ VAD ──▶ Speaker Embedding ──▶ Clusteri
 
 ### Speaker Enrollment & Identification
 
-For **couples counseling**, we need to tell CLIENT_A from CLIENT_B consistently across sessions.
+**Therapist enrollment is not needed.** The mic file is definitionally the therapist — channel identity replaces voiceprint matching entirely. This eliminates a class of PHI (biometric data) and a whole enrollment UX flow.
 
-#### Enrollment Flow
+For **couples counseling** only, we need to tell CLIENT_A from CLIENT_B consistently across sessions. Both clients arrive on the same system audio channel, so we need to diarize and then label them persistently.
 
-1. **Therapist enrollment (one-time, during onboarding):**
-   - Record **5–15 seconds** of clear therapist speech (ECAPA-TDNN's attentive pooling works well even with short utterances; recommend 3–5 samples averaged for robustness)
-   - Extract ECAPA-TDNN embedding → store as `therapist_voiceprint` (192-dim float vector, ~768 bytes)
-   - This is a backup/verification — primary labeling comes from channel separation
-   - **Important:** Store only the embedding vector, never raw enrollment audio (minimizes PHI)
+#### Enrollment Flow (Couples Only)
 
-2. **Client enrollment (per couple, optional but recommended):**
-   - First session: after diarization produces 2 clusters, play 2–3 short clips from each
-   - Therapist labels: "This is Alex" / "This is Jordan"
-   - Extract centroid embedding for each client → store per-patient record
-   - Subsequent sessions: auto-match diarized clusters to stored embeddings via cosine similarity
+1. **First couples session — "name the speakers" UX:**
+   - Run diarization on the system audio → produces 2 clusters (UNKNOWN_A, UNKNOWN_B)
+   - Play 2–3 short clips from each cluster in the transcript editor UI
+   - Therapist assigns names: "This is Alex" / "This is Jordan"
+   - Extract centroid ECAPA-TDNN embedding for each cluster → store keyed by patient ID
+   - Subsequent sessions: auto-match new clusters to stored embeddings via cosine similarity
 
-3. **No-enrollment fallback:**
-   - Diarize into 2 clusters
-   - Label as `CLIENT_A` / `CLIENT_B` (generic)
-   - Therapist can rename in the transcript editor UI
+2. **No-enrollment fallback (non-couples, or if therapist skips naming):**
+   - System audio diarizes to `CLIENT_A` / `CLIENT_B` (generic labels)
+   - Therapist can rename in the transcript editor UI at any time
+   - No embedding stored — labels are manual only
 
 #### Matching Algorithm
 
@@ -226,9 +223,9 @@ For each diarized speaker cluster C:
 
 | What | Where | Size | PHI? |
 |------|-------|------|------|
-| Therapist voiceprint | Keychain (macOS) or encrypted local DB | ~768 bytes | Biometric-adjacent — treat as sensitive |
-| Client voiceprints | Encrypted local DB, keyed by patient ID | ~768 bytes each | Yes — biometric identifier under HIPAA |
-| Raw enrollment audio | **Never stored** — process and discard | N/A | N/A |
+| ~~Therapist voiceprint~~ | ~~Not needed~~ | — | Eliminated — mic channel = therapist by definition |
+| Client voiceprints (couples only) | Encrypted local DB, keyed by patient ID + synced to backend | ~768 bytes each | Yes — biometric identifier under HIPAA |
+| Raw enrollment audio | **Never stored** — process and discard immediately | N/A | N/A |
 
 ---
 
@@ -426,7 +423,7 @@ Marcus Williams (Client)
 | **Quality preset** | Fast / Balanced / High Accuracy | Balanced | Maps to Whisper model size |
 | **Session type** | 1:1 / Couples | 1:1 | Affects diarization (2 vs 3 speakers) |
 | **Auto-transcribe** | On / Off | On | Start transcription automatically when recording stops |
-| **Speaker enrollment** | Manage voiceprints | — | Enroll therapist, view/delete client voiceprints |
+| **Speaker enrollment** | Manage voiceprints | — | View/delete client voiceprints for couples sessions (no therapist enrollment needed) |
 
 ### Hardware Detection & Guardrails
 
@@ -468,7 +465,7 @@ As of the December 2025 HIPAA rule update, **all ePHI must be encrypted — no e
 | Transcript at rest (before upload) | Encrypt with same device key; AES-256-GCM |
 | Temp files during ASR | Process in memory where possible; if temp files needed, encrypt with AES-256-GCM, securely delete (overwrite + unlink) immediately after use |
 | Model files | Not PHI (pretrained on public datasets — LibriSpeech, VoxCeleb — no patient data) |
-| Voiceprint embeddings | Biometric identifier — encrypt, store in Keychain or encrypted DB |
+| Voiceprint embeddings (couples only) | Biometric identifier — encrypt, store in encrypted SQLite keyed by patient ID |
 | Processing in RAM | Standard — no special mitigation needed (RAM is volatile) |
 | Audio never leaves device | Strongest privacy posture — document for customers |
 | Key management | Store encryption keys in platform keychain (macOS Keychain, Windows Credential Manager); consider envelope encryption (DEK encrypted by KEK in keychain) |
@@ -553,15 +550,15 @@ Following the Rust Decision Rule from CLAUDE.md: "Will the other platform need t
 
 ### Phase 2: Couples Counseling + Speaker Enrollment
 
-**Goal:** Support 3 speakers with enrollment-based labeling
+**Goal:** Support 3 speakers with enrollment-based labeling for returning couples
 
-- [ ] Speaker embedding extraction (ECAPA-TDNN via ONNX)
-- [ ] 2-speaker diarization on system audio channel
-- [ ] Therapist enrollment flow (onboarding)
-- [ ] Client enrollment flow ("name the speakers" UI)
-- [ ] Cosine similarity matching for returning clients
-- [ ] Voiceprint encrypted storage (Keychain + backend)
+- [ ] Speaker embedding extraction (ECAPA-TDNN via ONNX) in Rust core
+- [ ] 2-speaker diarization on system audio channel (VAD → embeddings → AHC clustering)
+- [ ] "Name the speakers" UI — first couples session: play clips, therapist assigns names
+- [ ] Cosine similarity matching for returning clients across sessions
+- [ ] Client voiceprint encrypted storage (SQLite local + backend sync, keyed by patient ID)
 - [ ] Session type setting (1:1 vs couples)
+- [ ] Enrollment consent dialog (biometric data collection — required before storing any voiceprint)
 
 ### Phase 3: Cloud Mode
 
@@ -597,7 +594,7 @@ Following the Rust Decision Rule from CLAUDE.md: "Will the other platform need t
 | **Diarization runtime** | ONNX via `ort` (Rust) vs Python subprocess vs Swift ONNX | ONNX via `ort` in Rust core | Best for cross-platform |
 | **Embedding model** | ECAPA-TDNN (SpeechBrain) vs pyannote's segmentation model | ECAPA-TDNN (well-understood, ONNX-exportable, 192-dim) | Affects enrollment storage |
 | **Cloud diarization** | `pyannote.audio` vs NVIDIA NeMo | `pyannote.audio` (better community, overlap support) | Backend only |
-| **Voiceprint storage location** | Keychain only vs encrypted SQLite vs backend | Keychain for therapist; encrypted local DB + backend for clients | Affects sync story |
+| **Voiceprint storage location** | Keychain vs encrypted SQLite vs backend | **✅ Decided:** encrypted SQLite (local) + backend for couples clients only. No therapist voiceprint. | Mic channel = therapist; only couples clients need embeddings |
 | **Model distribution** | Bundle in app vs download on first use | Bundle small; download medium/large on demand | Affects app size (~200 MB for small) |
 
 ---
