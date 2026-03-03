@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "2ad5e469811f",
+  "strategy": "manual-commit",
+  "branch": "claude/audio-transcription-hipaa-5n99v",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/audio-transcription-design.md",
+    "docs/audiocapturekit-separate-streams-design.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2a/d5e469811f/0/metadata.json",
+      "transcript": "/2a/d5e469811f/0/full.jsonl",
+      "context": "/2a/d5e469811f/0/context.md",
+      "content_hash": "/2a/d5e469811f/0/content_hash.txt",
+      "prompt": "/2a/d5e469811f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 662,
+    "cache_creation_tokens": 206274,
+    "cache_read_tokens": 4468165,
+    "output_tokens": 23430,
+    "api_call_count": 61
+  }
+}

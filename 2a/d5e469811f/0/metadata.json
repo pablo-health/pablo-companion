@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "2ad5e469811f",
+  "session_id": "e4c6252f-3eb7-47ee-9e22-40f51ebfe0da",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-03T15:51:49.978289Z",
+  "branch": "claude/audio-transcription-hipaa-5n99v",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/audiocapturekit-separate-streams-design.md",
+    "docs/audio-transcription-design.md"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "d2a8424f1929",
+  "token_usage": {
+    "input_tokens": 662,
+    "cache_creation_tokens": 206274,
+    "cache_read_tokens": 4468165,
+    "output_tokens": 23430,
+    "api_call_count": 61
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-03T15:51:49.348879Z",
+    "agent_lines": 358,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 358,
+    "agent_percentage": 100
+  }
+}
