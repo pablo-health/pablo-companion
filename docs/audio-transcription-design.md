@@ -141,48 +141,74 @@ All times are approximate for batch processing on Apple M1/M2+. Intel Macs will 
 - `word_timestamps = true` (needed for diarization alignment)
 - Input: **16 kHz mono PCM** (resample from 48 kHz before feeding to Whisper)
 
-### Speaker Diarization
+### Session Type Controls the Pipeline
 
-Since we have channel-separated audio, diarization is dramatically simpler:
+The therapist flags the session type before (or at the start of) a session. This is the single biggest lever for reducing laptop footprint. The session type determines exactly which pipeline components run.
 
-**Channel 1 (mic = therapist):** No diarization needed. All speech on this channel is labeled `THERAPIST`.
+#### 1:1 Mode (default) — Zero Diarization
 
-**Channel 2 (system audio = remote participants):** This is where diarization matters.
-
-#### For 1:1 Sessions (therapist + 1 client)
-
-No diarization needed on system audio either — all speech on the system channel is the single client. Label it `CLIENT`.
-
-#### For Couples Counseling (therapist + 2 clients)
-
-Run diarization on the system audio mono downmix to separate 2 speakers.
-
-**Pipeline:**
+When session type is `1:1`, **no diarization pipeline is needed at all**:
 
 ```
-System audio (mono) ──▶ VAD ──▶ Speaker Embedding ──▶ Clustering ──▶ CLIENT_A / CLIENT_B
+Mic file   ──▶ Whisper ──▶ all segments labeled THERAPIST
+System file ──▶ Whisper ──▶ all segments labeled CLIENT
+                          ──▶ merge by timestamp ──▶ canonical JSON
 ```
 
-**Components:**
+- The Silero VAD and ECAPA-TDNN models are **never loaded**
+- No embeddings, no clustering, no cosine matching
+- Just two Whisper passes and a timestamp merge
+- Whisper still uses word timestamps for clean turn segmentation
 
-| Step | Algorithm | Implementation |
-|------|-----------|----------------|
-| **VAD** (voice activity detection) | Silero VAD | ONNX model, ~2 MB, runs anywhere, very fast |
-| **Speaker embedding** | ECAPA-TDNN (`speechbrain/spkrec-ecapa-voxceleb`) | 192-dim embeddings, ~69 ms/utterance on CPU, EER 0.86% on Vox1_O |
-| **Clustering** | Agglomerative Hierarchical Clustering (AHC) | Cosine distance, threshold tuned for 2-speaker case |
-| **Smoothing** | Median filter on speaker labels | Remove rapid speaker switches (< 0.3s segments) |
+**Footprint in 1:1 mode:**
+
+| Resource | Usage |
+|----------|-------|
+| Models on disk | Whisper only (~200 MB–1.6 GB depending on preset) |
+| RAM during processing | Whisper model only (~1–6 GB) |
+| Diarization models | Not loaded |
+| Processing time | Two Whisper passes only — ~2× single-file time |
+| PHI stored | None (no voiceprints, no embeddings) |
+
+#### Couples Mode — Diarization on System Audio Only
+
+When session type is `couples`, run diarization **only on the system audio file** to separate the 2 remote clients. The mic file still needs no diarization — it's always the therapist.
+
+```
+Mic file    ──▶ Whisper ──▶ all segments labeled THERAPIST
+System file ──▶ Whisper (with word timestamps)
+            ──▶ VAD + ECAPA-TDNN embeddings + AHC clustering
+            ──▶ CLIENT_A / CLIENT_B labels
+            ──▶ merge by timestamp ──▶ canonical JSON
+```
+
+**Diarization pipeline components (couples mode only):**
+
+| Step | Algorithm | Implementation | Size |
+|------|-----------|----------------|------|
+| **VAD** | Silero VAD | ONNX via `ort` crate | ~2 MB |
+| **Speaker embedding** | ECAPA-TDNN (`speechbrain/spkrec-ecapa-voxceleb`) | ONNX via `ort` crate | ~20 MB |
+| **Clustering** | Agglomerative Hierarchical Clustering (AHC) | Pure Rust | — |
+| **Smoothing** | Median filter on speaker labels | Pure Rust | — |
+
+**Footprint in couples mode:**
+
+| Resource | Usage |
+|----------|-------|
+| Extra models on disk | +~22 MB (Silero VAD + ECAPA-TDNN ONNX) |
+| Extra RAM | +~100–200 MB when diarization models loaded |
+| PHI stored | Client voiceprints (~768 bytes × 2) — couples clients only |
+
+**Model loading strategy:** Load Silero VAD and ECAPA-TDNN **lazily**, only when a couples session is processed. Unload after processing. For therapists who never do couples work, these models are never touched.
 
 **Why not pyannote.audio end-to-end on-device?**
-- pyannote's pretrained pipeline is excellent but requires Python + PyTorch runtime
-- **pyannote community-1** (v4.0.4, Feb 2026) is now CC-BY-4.0 and **not gated** (no HF terms acceptance required) — this removes the licensing friction for the backend, but it still requires Python/PyTorch which we don't want to ship in the desktop app
-- For our constrained case (only 2 speakers on the system audio channel), a simpler pipeline with ONNX models is lighter, faster, and easier to package
-- **However:** pyannote community-1 is the clear winner for cloud mode (backend) — best open-source accuracy, new "exclusive speaker diarization" mode that assigns exactly one speaker per frame
+- Requires Python + PyTorch runtime — not acceptable for a native desktop app
+- For our constrained case (2 speakers on one channel), the lightweight ONNX pipeline is sufficient, faster, and easier to package
+- pyannote community-1 is the right choice for cloud mode (backend) — best open-source accuracy, CC-BY-4.0, no gating
 
-**Why not a Rust-native solution?**
-- No mature Rust diarization library exists today (confirmed via research — the ecosystem gap is significant)
-- Best path: use ONNX Runtime via the `ort` crate (production-ready, 3–5x faster than Python equivalents, 60–80% less memory) to run VAD + embedding models
-- Or: call whisper.cpp + ONNX models from Swift directly via C FFI (avoids Python entirely)
-- Alternative worth noting: `whisper-cpp-plus` crate adds Silero VAD preprocessing for 2–3x speedup on audio with silence (common in therapy sessions with pauses)
+**Why not a Rust-native diarization library?**
+- None exist today (confirmed via research)
+- ONNX Runtime via the `ort` crate is the right bridge: production-ready, 3–5× faster than Python, 60–80% less memory, CoreML execution provider on macOS
 
 ### Speaker Enrollment & Identification
 
@@ -421,7 +447,7 @@ Marcus Williams (Client)
 |---------|---------|---------|-------|
 | **Processing mode** | Local / Cloud | Local | Can be overridden by system-level settings |
 | **Quality preset** | Fast / Balanced / High Accuracy | Balanced | Maps to Whisper model size |
-| **Session type** | 1:1 / Couples | 1:1 | Affects diarization (2 vs 3 speakers) |
+| **Session type** | 1:1 / Couples | 1:1 | **1:1 = no diarization at all** (smallest footprint). Couples = VAD + ECAPA-TDNN loaded on demand. |
 | **Auto-transcribe** | On / Off | On | Start transcription automatically when recording stops |
 | **Speaker enrollment** | Manage voiceprints | — | View/delete client voiceprints for couples sessions (no therapist enrollment needed) |
 
@@ -540,7 +566,7 @@ Following the Rust Decision Rule from CLAUDE.md: "Will the other platform need t
 
 - [ ] Audio preprocessing in Rust: resample, channel split, mono downmix
 - [ ] Integrate `whisper.cpp` via `whisper-rs` in `core/`
-- [ ] Basic diarization: channel-based only (Ch 1 = therapist, Ch 2 = client)
+- [ ] 1:1 pipeline: transcribe mic → THERAPIST, transcribe system → CLIENT, merge by timestamp (no diarization)
 - [ ] Canonical JSON output
 - [ ] Google Meet format export
 - [ ] New API endpoint: `POST /api/sessions/{id}/transcript`
