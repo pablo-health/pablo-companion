@@ -163,19 +163,23 @@ AudioCaptureKit is currently integrated but we're open to replacing it. The key 
 - Runs fully offline — no network calls, no vendor BAA needed
 - First-class Apple Silicon support via Metal (GPU acceleration)
 - GGML quantized models — small disk footprint, fast inference
-- Rust bindings available via `whisper-rs` crate (if we go Rust core) or callable from Swift via C FFI
+- Rust bindings available via `whisper-rs` crate v0.15.1 (actively maintained, 7 releases in 2025, Unlicense) or callable from Swift via C FFI
+- Memory profile stays flat regardless of audio length — critical for long therapy sessions
+- CoreML + Metal achieves 8–12x faster than CPU-only on Apple Silicon (first run slower due to ANE compilation)
 
 **Model selection — user-configurable "Speed vs Accuracy" preset:**
 
-| Preset | Model | Disk Size (Q5_1) | RAM Usage | ~Speed on M1 (1hr audio) | WER (English) |
-|--------|-------|-------------------|-----------|--------------------------|---------------|
-| **Fast** | `whisper-small` | ~200 MB | ~1 GB | ~5–10 min | ~5–7% |
-| **Balanced** (default) | `whisper-medium` | ~500 MB | ~2 GB | ~15–25 min | ~4–5% |
-| **High Accuracy** | `whisper-large-v3` | ~1 GB | ~3–4 GB | ~30–50 min | ~3–4% |
+| Preset | Model | Params | Disk (Q5_0) | RAM | ~Speed on Apple Silicon (1hr audio) | WER (English) |
+|--------|-------|--------|-------------|-----|-------------------------------------|---------------|
+| **Fast** | `whisper-small` | 244M | ~200 MB | ~2 GB | ~5–10 min | ~5–7% |
+| **Balanced** (default) | `whisper-large-v3-turbo` | 809M | ~1.0 GB | ~6 GB | ~6–10 min | ~3–4% |
+| **High Accuracy** | `whisper-large-v3` | 1.55B | ~1.6 GB | ~10 GB | ~30–50 min | ~3% |
 
-All times are approximate for batch processing on Apple M1/M2. Intel Macs will be 2–4x slower; consider offering only Fast/Balanced on Intel.
+**Why large-v3-turbo is the Balanced default (not medium):** It's 8x faster than large-v3 with near-identical accuracy, and often faster than medium due to architectural optimizations. On an M2 MacBook, it transcribes 10 minutes of audio in ~63 seconds. It's the sweet spot for therapy sessions — near-best accuracy at fast speed. Note: it was not trained for translation tasks, but that's irrelevant for English therapy sessions.
 
-**Quantization:** Use GGML Q5_1 format. Good accuracy-to-size tradeoff; Metal-accelerated on Apple Silicon.
+All times are approximate for batch processing on Apple M1/M2+. Intel Macs will be 2–4x slower; consider offering only Fast on Intel or nudging toward Cloud mode.
+
+**Quantization:** Use GGML Q5_0 format. Best accuracy-to-size tradeoff; Metal-accelerated on Apple Silicon. The Q5_0 large-v3-turbo is roughly 1.0 GB on disk.
 
 **Key parameters for clinical audio:**
 - `language = "en"` (or auto-detect; set explicitly to avoid wasted compute)
@@ -210,19 +214,21 @@ System audio (mono) ──▶ VAD ──▶ Speaker Embedding ──▶ Clusteri
 | Step | Algorithm | Implementation |
 |------|-----------|----------------|
 | **VAD** (voice activity detection) | Silero VAD | ONNX model, ~2 MB, runs anywhere, very fast |
-| **Speaker embedding** | ECAPA-TDNN (SpeechBrain or pyannote pretrained) | 192-dim or 512-dim embeddings per segment |
+| **Speaker embedding** | ECAPA-TDNN (`speechbrain/spkrec-ecapa-voxceleb`) | 192-dim embeddings, ~69 ms/utterance on CPU, EER 0.86% on Vox1_O |
 | **Clustering** | Agglomerative Hierarchical Clustering (AHC) | Cosine distance, threshold tuned for 2-speaker case |
 | **Smoothing** | Median filter on speaker labels | Remove rapid speaker switches (< 0.3s segments) |
 
-**Why not pyannote.audio end-to-end?**
-- pyannote's pretrained pipeline is excellent but requires Python + PyTorch
-- Model weights require accepting terms on Hugging Face (licensing friction for shipping in a desktop app)
+**Why not pyannote.audio end-to-end on-device?**
+- pyannote's pretrained pipeline is excellent but requires Python + PyTorch runtime
+- **pyannote community-1** (v4.0.4, Feb 2026) is now CC-BY-4.0 and **not gated** (no HF terms acceptance required) — this removes the licensing friction for the backend, but it still requires Python/PyTorch which we don't want to ship in the desktop app
 - For our constrained case (only 2 speakers on the system audio channel), a simpler pipeline with ONNX models is lighter, faster, and easier to package
+- **However:** pyannote community-1 is the clear winner for cloud mode (backend) — best open-source accuracy, new "exclusive speaker diarization" mode that assigns exactly one speaker per frame
 
 **Why not a Rust-native solution?**
-- No mature Rust diarization library exists today
-- Best path: use ONNX Runtime (has Rust bindings via `ort` crate) to run VAD + embedding models
+- No mature Rust diarization library exists today (confirmed via research — the ecosystem gap is significant)
+- Best path: use ONNX Runtime via the `ort` crate (production-ready, 3–5x faster than Python equivalents, 60–80% less memory) to run VAD + embedding models
 - Or: call whisper.cpp + ONNX models from Swift directly via C FFI (avoids Python entirely)
+- Alternative worth noting: `whisper-cpp-plus` crate adds Silero VAD preprocessing for 2–3x speedup on audio with silence (common in therapy sessions with pauses)
 
 ### Speaker Enrollment & Identification
 
@@ -231,7 +237,7 @@ For **couples counseling**, we need to tell CLIENT_A from CLIENT_B consistently 
 #### Enrollment Flow
 
 1. **Therapist enrollment (one-time, during onboarding):**
-   - Record 15–30 seconds of therapist speaking
+   - Record **5–15 seconds** of clear therapist speech (ECAPA-TDNN's attentive pooling works well even with short utterances; recommend 3–5 samples averaged for robustness)
    - Extract ECAPA-TDNN embedding → store as `therapist_voiceprint` (192-dim float vector, ~768 bytes)
    - This is a backup/verification — primary labeling comes from channel separation
    - **Important:** Store only the embedding vector, never raw enrollment audio (minimizes PHI)
@@ -254,11 +260,13 @@ For each diarized speaker cluster C:
     centroid_embedding = mean(segment_embeddings in C)
     for each enrolled_speaker S:
         score = cosine_similarity(centroid_embedding, S.embedding)
-    assign C → argmax(score) if score > threshold (0.5–0.7)
+    assign C → argmax(score) if score > threshold (0.25–0.35)
     else → UNKNOWN
 ```
 
-**Threshold tuning:** Start at 0.6, validate on test recordings with known speakers. Voice changes (colds, emotional state, different mic) can lower similarity — the threshold should be conservative with a "confirm" UX fallback.
+**Why cosine similarity (not PLDA):** For large-margin trained embeddings like ECAPA-TDNN, cosine similarity performs as well as PLDA (confirmed by Wang et al., Interspeech 2022). PLDA adds complexity (requires training data, LDA dimension reduction) with minimal benefit for 192-dim embeddings. Cosine is simple, effective, and runs in microseconds.
+
+**Threshold tuning:** Start at 0.30, validate on test recordings with known speakers. The ECAPA-TDNN cosine similarity range for same-speaker pairs is typically 0.5–0.9, and for different speakers 0.0–0.3. A threshold of 0.25–0.35 balances false accepts vs false rejects. Voice changes (colds, emotional state, different mic) can lower similarity — the threshold should be conservative with a "confirm" UX fallback.
 
 #### Embedding Storage
 
@@ -300,7 +308,7 @@ Companion App                          Pablo Backend (Python 3.13 / FastAPI)
 | Component | Library | Why |
 |-----------|---------|-----|
 | **ASR** | `faster-whisper` (CTranslate2 backend) | 4x faster than OpenAI Whisper, GPU support, Python-native |
-| **Diarization** | `pyannote.audio` 3.x | Best open-source diarization; full pipeline with overlap handling |
+| **Diarization** | `pyannote.audio` 4.x (`community-1`, CC-BY-4.0) | Best open-source diarization; not gated; exclusive speaker mode; overlap handling |
 | **Speaker embeddings** | `speechbrain` ECAPA-TDNN or pyannote's built-in | Same embedding space as local mode for cross-mode consistency |
 | **VAD** | `pyannote.audio` built-in (or Silero) | Integrated with diarization pipeline |
 | **GPU** | CUDA via PyTorch | Much faster than CPU for large models |
@@ -452,8 +460,9 @@ Show warnings:
 
 | Strategy | Description |
 |----------|-------------|
-| **Bundled default** | Ship `whisper-small` (Q5_1, ~200 MB) in the app bundle |
-| **On-demand download** | Offer Medium and Large as optional downloads from Pablo CDN |
+| **Bundled default** | Ship `whisper-large-v3-turbo` (Q5_0, ~1.0 GB) in the app bundle — it's the best speed/accuracy tradeoff |
+| **Lightweight fallback** | Ship `whisper-small` (~200 MB) as the "Fast" option, also bundled |
+| **On-demand download** | Offer `whisper-large-v3` (~1.6 GB) as optional "High Accuracy" download from Pablo CDN |
 | **Model cache** | Store in `~/Library/Application Support/PabloCompanion/Models/` |
 | **Updates** | Check for model updates on app launch (background, non-blocking) |
 
@@ -463,17 +472,23 @@ Diarization models (Silero VAD ~2 MB, ECAPA-TDNN ~20 MB) are small enough to alw
 
 ## 8. HIPAA Considerations
 
+### December 2025 HIPAA Encryption Update
+
+As of the December 2025 HIPAA rule update, **all ePHI must be encrypted — no exceptions.** The previous "addressable" standard has been eliminated. This means encryption is now a hard requirement, not a recommendation. Our architecture already meets this, but it's worth noting for compliance documentation.
+
 ### On-Device (Local Mode)
 
 | Concern | Mitigation |
 |---------|-----------|
-| Audio files at rest | AES-256 encryption (already implemented in `RecordingEncryptor`) |
-| Transcript at rest (before upload) | Encrypt with same device key |
-| Temp files during ASR | Use secure temp directory; wipe on completion |
-| Model files | Not PHI (pretrained, no patient data) |
+| Audio files at rest | AES-256-GCM encryption (already implemented in `RecordingEncryptor`); unique rotating keys per file |
+| Transcript at rest (before upload) | Encrypt with same device key; AES-256-GCM |
+| Temp files during ASR | Process in memory where possible; if temp files needed, encrypt with AES-256-GCM, securely delete (overwrite + unlink) immediately after use |
+| Model files | Not PHI (pretrained on public datasets — LibriSpeech, VoxCeleb — no patient data) |
 | Voiceprint embeddings | Biometric identifier — encrypt, store in Keychain or encrypted DB |
 | Processing in RAM | Standard — no special mitigation needed (RAM is volatile) |
 | Audio never leaves device | Strongest privacy posture — document for customers |
+| Key management | Store encryption keys in platform keychain (macOS Keychain, Windows Credential Manager); consider envelope encryption (DEK encrypted by KEK in keychain) |
+| Secure temp directory | Use app sandbox container on macOS; `%LOCALAPPDATA%\Temp` within protected user profile on Windows |
 
 ### Cloud Mode (Backend)
 
@@ -611,7 +626,7 @@ Following the Rust Decision Rule from CLAUDE.md: "Will the other platform need t
 
 3. **Org-level settings for cloud mode** — does the Pablo backend already have an org/tenant settings model, or do we need to build one?
 
-4. **pyannote model licensing** — the pretrained models require accepting terms on Hugging Face. For the backend this is fine (one-time acceptance). For client-side ONNX exports, verify redistribution rights.
+4. **pyannote model licensing** — `community-1` is CC-BY-4.0 and not gated (good news). For client-side ONNX exports of individual components (segmentation model, embedding model), verify redistribution rights under CC-BY-4.0 — attribution required but should be straightforward.
 
 5. **Enrollment consent** — recording a voiceprint is biometric data collection. Do we need explicit consent UI beyond HIPAA? (State laws like BIPA in Illinois require it.)
 
@@ -636,3 +651,23 @@ Following the Rust Decision Rule from CLAUDE.md: "Will the other platform need t
 | **PHI** | Protected Health Information — any health data identifiable to a patient |
 | **BAA** | Business Associate Agreement — HIPAA contract for vendors handling PHI |
 | **BIPA** | Biometric Information Privacy Act — Illinois state law on biometric data |
+
+---
+
+## 14. Key References
+
+| Topic | Source |
+|-------|--------|
+| whisper.cpp | github.com/ggml-org/whisper.cpp |
+| whisper-rs (Rust bindings, v0.15.1) | crates.io/crates/whisper-rs |
+| whisper-large-v3-turbo | huggingface.co/openai/whisper-large-v3-turbo |
+| pyannote.audio community-1 (CC-BY-4.0) | huggingface.co/pyannote/speaker-diarization-community-1 |
+| SpeechBrain ECAPA-TDNN | huggingface.co/speechbrain/spkrec-ecapa-voxceleb |
+| WeSpeaker ECAPA-TDNN (ONNX available) | huggingface.co/Wespeaker/wespeaker-ecapa-tdnn512-LM |
+| ort crate (ONNX Runtime for Rust) | crates.io/crates/ort |
+| Cosine vs PLDA for embeddings | Wang et al., Interspeech 2022 |
+| HIPAA encryption update (Dec 2025) | hipaajournal.com/hipaa-encryption-requirements |
+| Silero VAD | github.com/snakers4/silero-vad |
+| faster-whisper | github.com/SYSTRAN/faster-whisper |
+| macOS ScreenCaptureKit | developer.apple.com/documentation/screencapturekit |
+| WASAPI loopback recording | learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording |
