@@ -186,6 +186,12 @@ struct SettingsView: View {
             if recordingState != .idle {
                 liveDiagnostics
             }
+
+            #if DEBUG
+            NavigationLink("Open Debug Recording View") {
+                DebugRecordingView()
+            }
+            #endif
         }
     }
 
