@@ -154,6 +154,9 @@ struct SettingsView: View {
     }
 
     @AppStorage("deleteAfterUpload") private var deleteAfterUpload = true
+    #if DEBUG
+    @State private var showDebugRecordingView = false
+    #endif
 
     private var audioFormatSection: some View {
         Section("Audio Format") {
@@ -188,7 +191,11 @@ struct SettingsView: View {
             }
 
             #if DEBUG
-            NavigationLink("Open Debug Recording View") {
+            Button("Open Debug Recording View") {
+                showDebugRecordingView = true
+            }
+            .buttonStyle(.bordered)
+            .sheet(isPresented: $showDebugRecordingView) {
                 DebugRecordingView()
             }
             #endif

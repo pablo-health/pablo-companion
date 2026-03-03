@@ -4,6 +4,7 @@ import SwiftUI
 /// Smoke-test view for exercising RecordingService end-to-end.
 /// Accessible from SettingsView in Debug builds only — not visible in Release.
 struct DebugRecordingView: View {
+    @Environment(\.dismiss) private var dismiss
     @State private var vm = RecordingViewModel()
 
     var body: some View {
@@ -17,6 +18,11 @@ struct DebugRecordingView: View {
         }
         .padding(24)
         .frame(minWidth: 380)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") { dismiss() }
+            }
+        }
         .task { await vm.loadAudioSources() }
     }
 
