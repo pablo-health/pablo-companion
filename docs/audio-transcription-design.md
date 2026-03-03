@@ -84,73 +84,27 @@ Both modes produce the same canonical JSON → the rest of the product doesn't c
 ### Current State
 
 `RecordingService.swift` uses AudioCaptureKit with `CaptureConfiguration`:
-- 48 kHz, 16-bit, **2-channel stereo** WAV
-- Mic + system audio captured via `CompositeCaptureSession`
+- 48 kHz, 16-bit, 2-channel stereo WAV
+- Mic + system audio currently mixed into a single file via `CompositeCaptureSession`
 
-### Proposed Channel Layout
+### Approach: AudioCaptureKit Separate Streams
 
-Record a **3-channel WAV** (or 2 separate files — see trade-offs below):
+AudioCaptureKit is a first-party Pablo framework (not a third-party dependency). We will **extend its API** to support separate output files per stream. AudioCaptureKit's responsibility is simply to capture at the best quality it can and write separate files — it does not resample, mix, or do any ML processing. All downstream audio processing (resampling for ASR, playback mixing) is the Rust core's job.
 
-| Channel | Source | Purpose |
-|---------|--------|---------|
-| **Ch 1** | Local microphone | Therapist's voice (dominant) |
-| **Ch 2** | System audio — left | Remote participant(s) — stereo preserved for playback |
-| **Ch 3** | System audio — right | Remote participant(s) — stereo preserved for playback |
+**Two output files:**
 
-**Why this matters:**
+| File | Channels | Format | Contains |
+|------|----------|--------|---------|
+| `*_mic.wav` | 1 (mono) | 48 kHz, 16-bit PCM | Microphone only — therapist's voice |
+| `*_system.wav` | 2 (stereo) | 48 kHz, 16-bit PCM | System/loopback audio only — remote participant(s) |
 
-- **Ch 1 is the therapist.** No enrollment or diarization needed for role labeling — channel identity = speaker identity.
-- **Ch 2+3 contain only remote participants.** Diarization only needs to separate clients on the system audio channels — much easier than diarizing 3 voices from one mixed signal.
-- **Stereo system audio preserved for playback.** When a therapist replays the session, they hear natural stereo. When ASR processes it, we downmix Ch 2+3 to mono first.
+**Why this is the right model:**
+- **Mic file = therapist.** Channel identity replaces speaker diarization for the primary speaker — no embedding, no clustering needed to label the therapist.
+- **System file = client(s).** Diarization only needs to separate speakers within the client audio, which is dramatically simpler (2 speakers on one channel vs 3 on a mixed channel).
+- **Stereo preserved for playback.** The system file is full stereo. When a therapist replays the session, the UI mixes both files for natural stereo playback. When the ASR pipeline processes the system file, it downmixes to mono first — that's a trivial operation in the Rust core.
+- **Standard formats.** Mono WAV and stereo WAV are understood by every tool; no multi-channel exotic formats to deal with.
 
-### Stereo Playback Optimization
-
-```
-Storage (WAV on disk):
-  Ch 1: Mic (mono)        — therapist
-  Ch 2: System Left        — clients, stereo L
-  Ch 3: System Right       — clients, stereo R
-
-For human playback → mix to stereo:
-  L = Ch1 * 0.5 + Ch2 * 0.7    (therapist centered, clients in stereo)
-  R = Ch1 * 0.5 + Ch3 * 0.7
-
-For ASR processing → split to 2 mono streams:
-  Stream A = Ch 1 (therapist)   → transcribe directly, label THERAPIST
-  Stream B = (Ch 2 + Ch 3) / 2  → mono downmix, run diarization for CLIENT_A / CLIENT_B
-```
-
-This means:
-- **Full stereo fidelity** preserved on disk for playback
-- **Optimal mono** fed to ASR (Whisper performs best on mono 16 kHz)
-- **Channel-based speaker separation** eliminates the hardest part of diarization (isolating therapist from clients)
-
-### Alternative: 2-File Approach
-
-Instead of a multi-channel WAV, store two files:
-- `session_<id>_mic.wav` — mono, mic only
-- `session_<id>_system.wav` — stereo, system audio only
-
-**Trade-offs:**
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| Multi-channel WAV | Single file, atomic, simpler upload | Needs channel-aware playback; some tools choke on 3-ch WAV |
-| 2 separate files | Each file is standard mono/stereo; easy to process | Must keep files in sync; two uploads; two encryptions |
-
-**Recommendation:** Start with **2 separate files**. It's simpler to implement, every tool understands mono/stereo WAV, and the ASR pipeline can process them independently without demuxing. Combine them for playback in the UI with a lightweight mixer.
-
-### Recording Library Decision
-
-AudioCaptureKit is currently integrated but we're open to replacing it. The key capability needed is **separate mic and system audio streams**. Options:
-
-| Option | Separate streams? | Effort | Notes |
-|--------|-------------------|--------|-------|
-| AudioCaptureKit (current) | Yes — mic + system via CompositeCaptureSession | Low (already integrated) | Verify it can output separate files or separate channel data |
-| ScreenCaptureKit + AVAudioEngine (custom) | Yes — SCStream for system, AVAudioEngine for mic | Medium | More control, no external dependency |
-| Replace with custom CoreAudio / AVFoundation | Yes — full control | High | Only if AudioCaptureKit is limiting |
-
-**Recommendation:** Keep AudioCaptureKit if it supports writing separate mic/system streams. If not, wrap ScreenCaptureKit + AVAudioEngine — it's well-documented for macOS 14+ and gives full control over channel routing.
+**See `docs/audiocapturekit-separate-streams-design.md`** for the full AudioCaptureKit API design — that doc is the implementation spec for the AudioCaptureKit team.
 
 ---
 
@@ -396,7 +350,7 @@ Both local and cloud modes produce the same JSON:
     }
   ],
   "metadata": {
-    "audio_channels_recorded": 3,
+    "recording_mode": "separate_files",
     "sample_rate": 48000,
     "overlap_segments_detected": 2,
     "total_speech_duration_seconds": 2890,
@@ -407,28 +361,58 @@ Both local and cloud modes produce the same JSON:
 
 ### Google Meet Format Export
 
-The downstream session pipeline expects a Google Meet–style transcript. Render from canonical JSON:
+The downstream session pipeline expects a Google Meet–style transcript. This format has been confirmed from real session data (see `meeting-transcription` repo synthetic samples).
+
+**Exact format:**
 
 ```
-00:00:00 Dr. Lee
-Good afternoon. How has the week been since we last met?
+Google Meet Transcript
+Session Date: April 3, 2024
+Duration: 52:14
 
-00:00:04 Alex
-It's been rough. I couldn't sleep much this week.
+[00:00:08]
+Dr. James Rodriguez: Hey Marcus, good to see you. How have you been since our last session?
 
-00:00:12 Jordan
-I noticed that too. There's been a lot of tension at home.
+[00:00:13]
+Marcus Williams: Hey Doc. I've been... it's been a rough week, honestly.
 
-00:00:23 Dr. Lee
-Can you both tell me more about what's been creating that tension?
+[00:00:18]
+Dr. James Rodriguez: I'm sorry to hear that. Do you want to tell me what's been going on?
+
+[Session ends 00:22:57]
+
+---
+Total Duration: 52:14
+Speakers: 2
+Dr. James Rodriguez (Therapist)
+Marcus Williams (Client)
 ```
 
-**Rendering rules:**
-- Timestamp: `HH:MM:SS` at turn-level (start of first segment in the turn)
-- Speaker: `display_name` from speaker map
-- Merge adjacent segments from same speaker if gap ≤ 1.5 seconds
-- Start new turn if: speaker changes, OR pause > 3 seconds (even if same speaker)
-- Overlap: tag `[overlapping]` inline if `overlap: true` (optional, depends on downstream needs)
+**Format specification:**
+- Line 1: literal `Google Meet Transcript`
+- Line 2: `Session Date: <Month D, YYYY>`
+- Line 3: `Duration: <MM:SS or H:MM:SS>` (total session duration)
+- Line 4: blank
+- For each turn:
+  - `[HH:MM:SS]` — timestamp on its own line (format: always 2-digit hours)
+  - `Speaker Display Name: utterance text` — on the next line
+  - Blank line after each turn
+- Session end marker: `[Session ends HH:MM:SS]`
+- Blank line
+- `---` separator
+- `Total Duration: <same as header Duration>`
+- `Speakers: N`
+- One line per speaker: `Display Name (Role)` — roles are: `Therapist`, `Client`, `Client - <description if relevant>`
+- Blank line (no `Clinical Notes` section — that is added downstream by the SOAP note pipeline, not by us)
+
+**Rendering rules from canonical JSON:**
+- Timestamp: use `start` time of first segment in the turn, formatted as `[HH:MM:SS]`
+- Speaker name: `display_name` from speaker map
+- Merge adjacent segments from same speaker if gap ≤ 1.5 seconds → single turn
+- Start new turn if: speaker changes, OR pause > 3 seconds within same speaker
+- No inline overlap tags — if overlap detected, attribute to dominant speaker
+- `Session Date` comes from session metadata (session scheduled date, not file creation date)
+- `Duration` comes from canonical JSON `duration_seconds`
 
 ---
 
@@ -438,7 +422,7 @@ Can you both tell me more about what's been creating that tension?
 
 | Setting | Options | Default | Notes |
 |---------|---------|---------|-------|
-| **Processing mode** | Local / Cloud | Local | Org-level override possible |
+| **Processing mode** | Local / Cloud | Local | Can be overridden by system-level settings |
 | **Quality preset** | Fast / Balanced / High Accuracy | Balanced | Maps to Whisper model size |
 | **Session type** | 1:1 / Couples | 1:1 | Affects diarization (2 vs 3 speakers) |
 | **Auto-transcribe** | On / Off | On | Start transcription automatically when recording stops |
@@ -607,8 +591,8 @@ Following the Rust Decision Rule from CLAUDE.md: "Will the other platform need t
 
 | Decision | Options | Recommendation | Impact |
 |----------|---------|----------------|--------|
-| **Recording: 1 file vs 2 files** | Multi-channel WAV vs separate mic/system files | 2 separate files | Simpler tooling, no 3-channel WAV compat issues |
-| **Recording library** | Keep AudioCaptureKit vs replace | Keep if it supports separate streams; else ScreenCaptureKit + AVAudioEngine | Low effort either way |
+| **Recording: 1 file vs 2 files** | Multi-channel WAV vs separate mic/system files | **✅ 2 separate files** — decided | Simpler tooling, standard mono/stereo WAV formats |
+| **Recording library** | Keep AudioCaptureKit vs replace | **✅ Extend AudioCaptureKit** — decided. See `audiocapturekit-separate-streams-design.md` | First-party library, API extension is clean |
 | **Whisper integration** | `whisper-rs` (Rust) vs Swift C FFI to `whisper.cpp` | `whisper-rs` in core/ — keeps business logic in Rust | Affects Rust core timeline |
 | **Diarization runtime** | ONNX via `ort` (Rust) vs Python subprocess vs Swift ONNX | ONNX via `ort` in Rust core | Best for cross-platform |
 | **Embedding model** | ECAPA-TDNN (SpeechBrain) vs pyannote's segmentation model | ECAPA-TDNN (well-understood, ONNX-exportable, 192-dim) | Affects enrollment storage |
@@ -620,17 +604,17 @@ Following the Rust Decision Rule from CLAUDE.md: "Will the other platform need t
 
 ## 12. Open Questions
 
-1. **Does AudioCaptureKit's `CompositeCaptureSession` support writing mic and system audio to separate files (or separate channel buffers)?** If not, we need to replace or extend it.
+~~1. Does AudioCaptureKit support separate streams?~~ **Resolved.** AudioCaptureKit is a first-party Pablo framework. We will add a `streamMode: .separateFiles` API. See `docs/audiocapturekit-separate-streams-design.md`.
 
-2. **What's the exact Google Meet transcript format the downstream pipeline expects?** Is it plain text (as shown above), DOCX, VTT/SRT, or JSON? Need to match precisely.
+~~2. What's the exact Google Meet transcript format?~~ **Resolved.** Confirmed from `meeting-transcription` repo synthetic session data. Exact format documented in §6 above.
 
-3. **Org-level settings for cloud mode** — does the Pablo backend already have an org/tenant settings model, or do we need to build one?
+~~3. Org-level settings for cloud mode~~ **Resolved.** The Pablo backend uses system-level settings (not org/tenant settings). Cloud mode toggle will be a system setting, not a per-user or per-org setting.
 
 4. **pyannote model licensing** — `community-1` is CC-BY-4.0 and not gated (good news). For client-side ONNX exports of individual components (segmentation model, embedding model), verify redistribution rights under CC-BY-4.0 — attribution required but should be straightforward.
 
-5. **Enrollment consent** — recording a voiceprint is biometric data collection. Do we need explicit consent UI beyond HIPAA? (State laws like BIPA in Illinois require it.)
+5. **Enrollment consent** — recording a voiceprint is biometric data collection. Do we need explicit consent UI beyond HIPAA? (State laws like BIPA in Illinois require it.) **Recommended: yes, always show an explicit consent dialog before enrollment** regardless of state — it's good UX, protects you legally in all states, and takes ~1 day to implement.
 
-6. **Whisper model updates** — how do we ship updated/improved models to existing installs? Silent background download + version check?
+6. **Whisper model updates** — how do we ship updated/improved models to existing installs? **Recommendation:** version-check on app launch against a JSON manifest at a Pablo CDN URL. Download in background, swap on next transcription. User sees a non-disruptive "Model updated" notification. This is standard for AI-powered desktop apps and can be implemented in Phase 4.
 
 ---
 
