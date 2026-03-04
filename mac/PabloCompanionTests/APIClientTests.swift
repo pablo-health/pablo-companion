@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import PabloCompanion
+@testable import Pablo
 
 @Suite("APIClient multipart body")
 struct APIClientTests {

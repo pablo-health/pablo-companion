@@ -142,7 +142,9 @@ private func makePreviewRecordings() -> [LocalRecording] {
             isEncrypted: true,
             checksum: "abc123",
             channelLayout: .separatedStereo,
-            isUploaded: false
+            isUploaded: false,
+            micPCMFileURL: nil,
+            systemAudioPCMFileURL: nil
         ),
         LocalRecording(
             id: UUID(),
@@ -152,7 +154,9 @@ private func makePreviewRecordings() -> [LocalRecording] {
             isEncrypted: true,
             checksum: "def456",
             channelLayout: .separatedStereo,
-            isUploaded: true
+            isUploaded: true,
+            micPCMFileURL: nil,
+            systemAudioPCMFileURL: nil
         ),
     ]
 }

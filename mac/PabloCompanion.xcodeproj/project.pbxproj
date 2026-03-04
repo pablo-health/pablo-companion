@@ -482,9 +482,18 @@
 				DEVELOPMENT_TEAM = L8KG4FA2R9;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = (
+					"$(inherited)",
+					"-Xcc",
+					"-fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/PabloCompanion/Generated",
+				);
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.2;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pablo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pablo";
@@ -500,9 +509,18 @@
 				DEVELOPMENT_TEAM = L8KG4FA2R9;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = (
+					"$(inherited)",
+					"-Xcc",
+					"-fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/PabloCompanion/Generated",
+				);
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.2;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pablo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pablo";
