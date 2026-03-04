@@ -75,7 +75,7 @@ jobs:
 
   swift-test:
     name: Swift Build & Test
-    needs: changes
+    needs: [changes, swift-lint]
     if: needs.changes.outputs.mac == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     steps:
