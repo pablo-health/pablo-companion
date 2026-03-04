@@ -56,6 +56,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
+      - name: Build Rust core (universal dylib for CodeQL)
+        run: |
+          rustup target add x86_64-apple-darwin
+          cargo build --manifest-path core/Cargo.toml
+          cargo build --manifest-path core/Cargo.toml --target x86_64-apple-darwin
+          lipo -create \
+            core/target/debug/libpablo_core.dylib \
+            core/target/x86_64-apple-darwin/debug/libpablo_core.dylib \
+            -output core/target/debug/libpablo_core.dylib
+
       - name: Build
         run: |
           DISABLE_PKGS=${{ steps.spm-cache.outputs.cache-hit == 'true' && '-disableAutomaticPackageResolution' || '' }}
