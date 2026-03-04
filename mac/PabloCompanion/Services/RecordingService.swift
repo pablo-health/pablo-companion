@@ -82,7 +82,8 @@ final class RecordingService {
             outputDirectory: recordingsDirectory,
             micDeviceID: selectedMicID,
             enableMicCapture: debugEnableMic,
-            enableSystemCapture: debugEnableSystem
+            enableSystemCapture: debugEnableSystem,
+            mixingStrategy: .separated
         )
 
         let captureSession = CompositeCaptureSession(configuration: config)
@@ -145,6 +146,7 @@ final class RecordingService {
                 createdAt: Date(),
                 isEncrypted: result.metadata.isEncrypted,
                 checksum: result.checksum,
+                channelLayout: result.metadata.channelLayout,
                 isUploaded: false
             )
             onRecordingCompleted?(recording)

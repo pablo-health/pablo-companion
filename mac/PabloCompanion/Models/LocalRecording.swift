@@ -1,3 +1,4 @@
+import AudioCaptureKit
 import Foundation
 
 /// A locally stored recording with metadata for display and upload tracking.
@@ -8,6 +9,8 @@ struct LocalRecording: Identifiable, Sendable {
     let createdAt: Date
     let isEncrypted: Bool
     let checksum: String
+    /// Channel layout of the WAV file. `.separatedStereo` means Ch1=mic, Ch2=system audio.
+    let channelLayout: ChannelLayout
     var isUploaded: Bool
 
     var formattedDuration: String {

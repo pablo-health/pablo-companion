@@ -94,7 +94,7 @@ jobs:
         run: |
           DISABLE_PKGS=${{ steps.spm-cache.outputs.cache-hit == 'true' && '-disableAutomaticPackageResolution' || '' }}
           xcodebuild -project mac/PabloCompanion.xcodeproj \
-            -scheme PabloCompanion \
+            -scheme Pablo \
             -destination 'platform=macOS' \
             -clonedSourcePackagesDirPath mac/SourcePackages \
             $DISABLE_PKGS \

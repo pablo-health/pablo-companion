@@ -8,7 +8,7 @@ lint-swift:
 
 build-mac:
 	xcodebuild -project mac/PabloCompanion.xcodeproj \
-	  -scheme PabloCompanion \
+	  -scheme Pablo \
 	  -destination 'platform=macOS' \
 	  CODE_SIGN_IDENTITY="" \
 	  CODE_SIGNING_REQUIRED=NO \
@@ -17,7 +17,7 @@ build-mac:
 
 test-mac:
 	xcodebuild -project mac/PabloCompanion.xcodeproj \
-	  -scheme PabloCompanion \
+	  -scheme Pablo \
 	  -destination 'platform=macOS' \
 	  CODE_SIGN_IDENTITY="" \
 	  CODE_SIGNING_REQUIRED=NO \

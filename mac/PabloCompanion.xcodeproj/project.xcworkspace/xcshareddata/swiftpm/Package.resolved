@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pablo-health/AudioCaptureKit.git",
       "state" : {
-        "revision" : "9aff31d844d858fad388303efaf42662081ab5cc",
-        "version" : "1.0.0"
+        "revision" : "e1605ffa110806108566a64952decf46e3e1c389",
+        "version" : "1.0.1"
       }
     },
     {

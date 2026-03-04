@@ -105,6 +105,7 @@ final class RecordingViewModel {
                 createdAt: Date(),
                 isEncrypted: false,
                 checksum: "test-tone",
+                channelLayout: .blended,
                 isUploaded: false
             )
             recordings.insert(recording, at: 0)
