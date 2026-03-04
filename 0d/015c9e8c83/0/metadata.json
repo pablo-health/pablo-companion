@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "0d015c9e8c83",
+  "session_id": "e1dd37b6-e118-4c60-9b12-3c3635d2780b",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-04T02:43:53.832526Z",
+  "branch": "claude/audio-transcription-hipaa-5n99v",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "61fc245bfb67",
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 45491,
+    "cache_read_tokens": 1651493,
+    "output_tokens": 12635,
+    "api_call_count": 37
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-04T02:43:53.700497Z",
+    "agent_lines": 2,
+    "human_added": 29,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 31,
+    "agent_percentage": 6.451612903225806
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "0d015c9e8c83",
+  "strategy": "manual-commit",
+  "branch": "claude/audio-transcription-hipaa-5n99v",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0d/015c9e8c83/0/metadata.json",
+      "transcript": "/0d/015c9e8c83/0/full.jsonl",
+      "context": "/0d/015c9e8c83/0/context.md",
+      "content_hash": "/0d/015c9e8c83/0/content_hash.txt",
+      "prompt": "/0d/015c9e8c83/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 45491,
+    "cache_read_tokens": 1651493,
+    "output_tokens": 12635,
+    "api_call_count": 37
+  }
+}
