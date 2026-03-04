@@ -19,6 +19,10 @@ allow = [
     "Unlicense",
 ]
 # Anything not in the allow list above is implicitly denied.
+# Exception: pablo-core itself is AGPL-3.0-only (matches the repo LICENSE).
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+name = "pablo-core"
 
 [advisories]
 # Deny crates with known security vulnerabilities.
