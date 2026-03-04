@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import PabloCompanion
+@testable import Pablo
 
 @Suite("TokenRefresher error classification")
 struct TokenRefresherTests {

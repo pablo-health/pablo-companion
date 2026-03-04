@@ -83,7 +83,8 @@ final class RecordingService {
             micDeviceID: selectedMicID,
             enableMicCapture: debugEnableMic,
             enableSystemCapture: debugEnableSystem,
-            mixingStrategy: .separated
+            mixingStrategy: .separated,
+            exportRawPCM: true
         )
 
         let captureSession = CompositeCaptureSession(configuration: config)
@@ -147,7 +148,9 @@ final class RecordingService {
                 isEncrypted: result.metadata.isEncrypted,
                 checksum: result.checksum,
                 channelLayout: result.metadata.channelLayout,
-                isUploaded: false
+                isUploaded: false,
+                micPCMFileURL: result.rawPCMFileURLs.indices.contains(0) ? result.rawPCMFileURLs[0] : nil,
+                systemAudioPCMFileURL: result.rawPCMFileURLs.indices.contains(1) ? result.rawPCMFileURLs[1] : nil
             )
             onRecordingCompleted?(recording)
             currentRecordingState = .idle
