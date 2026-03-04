@@ -30,7 +30,6 @@ deny = [
 
 [advisories]
 # Deny crates with known security vulnerabilities.
-version = 2
 
 [bans]
 # Prevent multiple versions of the same crate where possible.
