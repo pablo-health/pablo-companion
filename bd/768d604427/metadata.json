@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "bd768d604427",
+  "strategy": "manual-commit",
+  "branch": "claude/audio-transcription-hipaa-5n99v",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/codeql.yml",
+    "Makefile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bd/768d604427/0/metadata.json",
+      "transcript": "/bd/768d604427/0/full.jsonl",
+      "context": "/bd/768d604427/0/context.md",
+      "content_hash": "/bd/768d604427/0/content_hash.txt",
+      "prompt": "/bd/768d604427/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 7357,
+    "cache_read_tokens": 421693,
+    "output_tokens": 1633,
+    "api_call_count": 6
+  }
+}
