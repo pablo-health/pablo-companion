@@ -132,8 +132,8 @@ struct RecordingRow: View {
     .frame(width: 500, height: 400)
 }
 
-#Preview("With recordings") {
-    let recordings = [
+private func makePreviewRecordings() -> [LocalRecording] {
+    [
         LocalRecording(
             id: UUID(),
             fileURL: URL(fileURLWithPath: "/recordings/session-2026-02-25.m4a"),
@@ -155,8 +155,11 @@ struct RecordingRow: View {
             isUploaded: true
         ),
     ]
+}
+
+#Preview("With recordings") {
     RecordingListView(
-        recordings: recordings,
+        recordings: makePreviewRecordings(),
         uploadProgress: [:],
         uploadingIDs: [],
         playingRecordingID: nil,
