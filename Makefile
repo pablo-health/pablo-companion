@@ -1,6 +1,6 @@
-.PHONY: check build-mac test-mac build-core test-core lint-swift
+.PHONY: check build-mac test-mac build-core test-core generate-bindings lint-swift
 
-check: lint-swift build-mac build-core test-core
+check: lint-swift build-core test-core build-mac
 
 lint-swift:
 	swiftlint lint --strict --config mac/.swiftlint.yml mac/PabloCompanion/
@@ -25,7 +25,15 @@ test-mac:
 	  test | xcpretty
 
 build-core:
-	@if [ -f core/Cargo.toml ]; then cargo build --manifest-path core/Cargo.toml; fi
+	cargo build --manifest-path core/Cargo.toml
 
 test-core:
-	@if [ -f core/Cargo.toml ]; then cargo test --manifest-path core/Cargo.toml; fi
+	cargo test --manifest-path core/Cargo.toml
+
+# Re-generate Swift bindings after UDL changes.
+# Run this whenever core/uniffi/pablo_core.udl changes, then commit the output.
+generate-bindings: build-core
+	cargo run --manifest-path core/Cargo.toml --bin uniffi-bindgen generate \
+	  core/uniffi/pablo_core.udl \
+	  --language swift \
+	  --out-dir mac/PabloCompanion/Generated/

@@ -141,6 +141,7 @@ struct RecordingRow: View {
             createdAt: Date(),
             isEncrypted: true,
             checksum: "abc123",
+            channelLayout: .separatedStereo,
             isUploaded: false
         ),
         LocalRecording(
@@ -150,6 +151,7 @@ struct RecordingRow: View {
             createdAt: Date().addingTimeInterval(-432_000),
             isEncrypted: true,
             checksum: "def456",
+            channelLayout: .separatedStereo,
             isUploaded: true
         ),
     ]

@@ -1,0 +1,37 @@
+// pablo_core.udl — UniFFI interface for pablo-core
+// This file defines the Swift/Windows FFI boundary.
+// Keep it thin and boring: simple value types, no generics, no closures.
+
+namespace pablo_core {
+    string core_version();
+};
+
+// Who spoke this segment.
+enum SpeakerLabel {
+    "Therapist",
+    "Client",
+    "ClientA",
+    "ClientB",
+    "Unknown",
+};
+
+// Whether the session has one or two clients.
+enum SessionMode {
+    "OneToOne",
+    "Couples",
+};
+
+// A single speaker turn with start/end timestamps (seconds) and transcript text.
+dictionary TranscriptSegment {
+    SpeakerLabel speaker;
+    double start_seconds;
+    double end_seconds;
+    string text;
+};
+
+// The full transcript for one session.
+dictionary TranscriptResult {
+    string session_id;
+    SessionMode session_mode;
+    sequence<TranscriptSegment> segments;
+};
