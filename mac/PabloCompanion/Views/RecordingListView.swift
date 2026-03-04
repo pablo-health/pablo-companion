@@ -132,8 +132,8 @@ struct RecordingRow: View {
     .frame(width: 500, height: 400)
 }
 
-#Preview("With recordings") {
-    let recordings = [
+private func makePreviewRecordings() -> [LocalRecording] {
+    [
         LocalRecording(
             id: UUID(),
             fileURL: URL(fileURLWithPath: "/recordings/session-2026-02-25.m4a"),
@@ -141,6 +141,7 @@ struct RecordingRow: View {
             createdAt: Date(),
             isEncrypted: true,
             checksum: "abc123",
+            channelLayout: .separatedStereo,
             isUploaded: false
         ),
         LocalRecording(
@@ -150,11 +151,15 @@ struct RecordingRow: View {
             createdAt: Date().addingTimeInterval(-432_000),
             isEncrypted: true,
             checksum: "def456",
+            channelLayout: .separatedStereo,
             isUploaded: true
         ),
     ]
+}
+
+#Preview("With recordings") {
     RecordingListView(
-        recordings: recordings,
+        recordings: makePreviewRecordings(),
         uploadProgress: [:],
         uploadingIDs: [],
         playingRecordingID: nil,

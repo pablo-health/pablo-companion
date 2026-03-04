@@ -22,7 +22,6 @@ build/
 # Rust
 core/target/
 **/*.rs.bk
-Cargo.lock
 
 # Environment
 .env
