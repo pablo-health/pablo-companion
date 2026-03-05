@@ -1,5 +1,6 @@
-// Audio preprocessing: raw PCM (signed 16-bit LE, 48 kHz) -> mono f32 at 16 kHz.
+// Audio preprocessing: raw PCM (signed 16-bit LE) -> mono f32 at 16 kHz.
 // Ready for whisper-rs consumption.
+// Accepts any input sample rate (e.g. 48 kHz built-in, 16 kHz Bluetooth HFP).
 
 use crate::PabloError;
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -8,17 +9,30 @@ use rubato::{
 };
 use std::io::Cursor;
 
+const TARGET_SAMPLE_RATE: u32 = 16000;
+
 fn audio_err(msg: String) -> PabloError {
     PabloError::AudioPreprocessing { message: msg }
 }
 
-/// Read a raw PCM sidecar file (signed 16-bit LE, no header, 48 kHz),
+/// Read a raw PCM sidecar file (signed 16-bit LE, no header),
 /// downmix to mono if stereo, resample to 16 kHz, and return normalized f32 samples.
-pub async fn preprocess_pcm(path: String, channels: u8) -> Result<Vec<f32>, PabloError> {
+///
+/// - `path`: absolute path to the raw PCM file
+/// - `channels`: 1 (mono mic) or 2 (stereo interleaved system audio)
+/// - `sample_rate`: actual sample rate of the input (e.g. 48000, 44100, 16000)
+pub async fn preprocess_pcm(
+    path: String,
+    channels: u8,
+    sample_rate: u32,
+) -> Result<Vec<f32>, PabloError> {
     if channels == 0 || channels > 2 {
         return Err(audio_err(format!(
             "unsupported channel count: {channels} (expected 1 or 2)"
         )));
+    }
+    if sample_rate == 0 {
+        return Err(audio_err("sample_rate must be > 0".to_string()));
     }
 
     // Read the raw PCM file
@@ -74,12 +88,18 @@ pub async fn preprocess_pcm(path: String, channels: u8) -> Result<Vec<f32>, Pabl
         return Ok(Vec::new());
     }
 
-    // Resample 48 kHz -> 16 kHz
-    resample_48k_to_16k(mono_f32)
+    // Skip resampling if already at target rate
+    if sample_rate == TARGET_SAMPLE_RATE {
+        return Ok(mono_f32);
+    }
+
+    resample_to_16k(mono_f32, sample_rate)
 }
 
-/// Resample mono f32 audio from 48 kHz to 16 kHz using rubato's SincFixedIn.
-fn resample_48k_to_16k(input: Vec<f32>) -> Result<Vec<f32>, PabloError> {
+/// Resample mono f32 audio from `input_rate` Hz to 16 kHz using rubato's SincFixedIn.
+fn resample_to_16k(input: Vec<f32>, input_rate: u32) -> Result<Vec<f32>, PabloError> {
+    let ratio = TARGET_SAMPLE_RATE as f64 / input_rate as f64;
+
     let params = SincInterpolationParameters {
         sinc_len: 256,
         f_cutoff: 0.95,
@@ -90,7 +110,7 @@ fn resample_48k_to_16k(input: Vec<f32>) -> Result<Vec<f32>, PabloError> {
 
     let chunk_size = 1024;
     let mut resampler = SincFixedIn::<f32>::new(
-        16000.0 / 48000.0,
+        ratio,
         2.0,
         params,
         chunk_size,
@@ -98,7 +118,8 @@ fn resample_48k_to_16k(input: Vec<f32>) -> Result<Vec<f32>, PabloError> {
     )
     .map_err(|e| audio_err(format!("resampler init failed: {e}")))?;
 
-    let mut output = Vec::with_capacity(input.len() / 3 + 1024);
+    let estimated_output = (input.len() as f64 * ratio).ceil() as usize + 1024;
+    let mut output = Vec::with_capacity(estimated_output);
 
     // Process full chunks
     let mut pos = 0;
@@ -124,7 +145,7 @@ fn resample_48k_to_16k(input: Vec<f32>) -> Result<Vec<f32>, PabloError> {
             .map_err(|e| audio_err(format!("resample tail failed: {e}")))?;
         if !resampled.is_empty() {
             // Only keep the proportional number of output samples for the real data
-            let expected_out = (remaining.len() as f64 * (16000.0 / 48000.0)).ceil() as usize;
+            let expected_out = (remaining.len() as f64 * ratio).ceil() as usize;
             let out_samples = &resampled[0];
             let take = expected_out.min(out_samples.len());
             output.extend_from_slice(&out_samples[..take]);
@@ -157,13 +178,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mono_passthrough_produces_output() {
+    async fn mono_48k_resamples_to_16k() {
         // Generate 48000 samples (1 second of mono 48 kHz silence with a blip)
         let mut samples = vec![0i16; 48000];
         samples[0] = 16384; // quarter-amplitude blip
         let path = write_pcm_file(&samples);
 
-        let result = preprocess_pcm(path.clone(), 1).await.unwrap();
+        let result = preprocess_pcm(path.clone(), 1, 48000).await.unwrap();
         std::fs::remove_file(&path).ok();
 
         // Should produce roughly 16000 samples (1 second at 16 kHz)
@@ -189,7 +210,7 @@ mod tests {
         }
         let path = write_pcm_file(&samples);
 
-        let result = preprocess_pcm(path.clone(), 2).await.unwrap();
+        let result = preprocess_pcm(path.clone(), 2, 48000).await.unwrap();
         std::fs::remove_file(&path).ok();
 
         // Should produce roughly 16000 samples
@@ -208,9 +229,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn already_16k_skips_resampling() {
+        // 16000 samples = 1 second at 16 kHz, should pass through without resampling
+        let samples: Vec<i16> = (0..16000).map(|i| (i % 100) as i16).collect();
+        let path = write_pcm_file(&samples);
+
+        let result = preprocess_pcm(path.clone(), 1, 16000).await.unwrap();
+        std::fs::remove_file(&path).ok();
+
+        // Exact sample count — no resampling, just i16->f32 conversion
+        assert_eq!(result.len(), 16000);
+        // Verify normalization: sample 1 should be 1/32768
+        assert!((result[1] - 1.0 / 32768.0).abs() < 1e-6);
+    }
+
+    #[tokio::test]
     async fn empty_file_returns_empty() {
         let path = write_pcm_file(&[]);
-        let result = preprocess_pcm(path.clone(), 1).await.unwrap();
+        let result = preprocess_pcm(path.clone(), 1, 48000).await.unwrap();
         std::fs::remove_file(&path).ok();
         assert!(result.is_empty());
     }
@@ -218,7 +254,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_channel_count_errors() {
         let path = write_pcm_file(&[0i16; 100]);
-        let err = preprocess_pcm(path.clone(), 3).await.unwrap_err();
+        let err = preprocess_pcm(path.clone(), 3, 48000).await.unwrap_err();
         std::fs::remove_file(&path).ok();
         match err {
             PabloError::AudioPreprocessing { message } => {

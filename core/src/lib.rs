@@ -60,9 +60,14 @@ pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Audio preprocessing: raw PCM (48 kHz, signed 16-bit LE) → mono f32 at 16 kHz.
-pub async fn preprocess_pcm(path: String, channels: u8) -> Result<Vec<f32>, PabloError> {
-    audio_preprocessing::preprocess_pcm(path, channels).await
+/// Audio preprocessing: raw PCM (signed 16-bit LE) -> mono f32 at 16 kHz.
+/// `sample_rate` is the actual input rate (e.g. 48000 built-in, 16000 Bluetooth HFP).
+pub async fn preprocess_pcm(
+    path: String,
+    channels: u8,
+    sample_rate: u32,
+) -> Result<Vec<f32>, PabloError> {
+    audio_preprocessing::preprocess_pcm(path, channels, sample_rate).await
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
