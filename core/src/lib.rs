@@ -5,6 +5,17 @@
 
 uniffi::include_scaffolding!("pablo_core");
 
+pub mod audio_preprocessing;
+
+// ── Error type ───────────────────────────────────────────────────────────────
+
+/// Unified error type for all pablo-core operations, exposed via UniFFI.
+#[derive(Debug, thiserror::Error)]
+pub enum PabloError {
+    #[error("Audio preprocessing error: {message}")]
+    AudioPreprocessing { message: String },
+}
+
 // ── Public types exposed via UniFFI ──────────────────────────────────────────
 
 /// Who spoke a given transcript segment.
@@ -47,6 +58,11 @@ pub struct TranscriptResult {
 /// Returns the pablo-core crate version. Used by Swift to confirm FFI is wired.
 pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Audio preprocessing: raw PCM (48 kHz, signed 16-bit LE) → mono f32 at 16 kHz.
+pub async fn preprocess_pcm(path: String, channels: u8) -> Result<Vec<f32>, PabloError> {
+    audio_preprocessing::preprocess_pcm(path, channels).await
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
