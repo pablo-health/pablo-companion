@@ -6,7 +6,7 @@ namespace pablo_core {
     string core_version();
 
     [Async, Throws=PabloError]
-    sequence<float> preprocess_pcm(string path, u8 channels);
+    sequence<float> preprocess_pcm(string path, u8 channels, u32 sample_rate);
 };
 
 // Unified error type for pablo-core operations.
