@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "8ad06442e11a",
+  "strategy": "manual-commit",
+  "branch": "PABLO-D-104.2-recording-service-pcm-sidecar",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "mac/PabloCompanion/Services/RecordingService.swift",
+    "mac/PabloCompanion/ViewModels/RecordingViewModel.swift",
+    "mac/PabloCompanion/Views/RecordingListView.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8a/d06442e11a/0/metadata.json",
+      "transcript": "/8a/d06442e11a/0/full.jsonl",
+      "context": "/8a/d06442e11a/0/context.md",
+      "content_hash": "/8a/d06442e11a/0/content_hash.txt",
+      "prompt": "/8a/d06442e11a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 63,
+    "cache_creation_tokens": 53762,
+    "cache_read_tokens": 3102764,
+    "output_tokens": 11697,
+    "api_call_count": 57
+  }
+}

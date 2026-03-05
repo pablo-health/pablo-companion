@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "8ad06442e11a",
+  "session_id": "4f6a1636-218b-4c6c-bc80-07735d995632",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-05T02:32:28.348368Z",
+  "branch": "PABLO-D-104.2-recording-service-pcm-sidecar",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "mac/PabloCompanion/Services/RecordingService.swift",
+    "mac/PabloCompanion/Views/RecordingListView.swift",
+    "mac/PabloCompanion/ViewModels/RecordingViewModel.swift"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "fd21d965fbb6",
+  "token_usage": {
+    "input_tokens": 63,
+    "cache_creation_tokens": 53762,
+    "cache_read_tokens": 3102764,
+    "output_tokens": 11697,
+    "api_call_count": 57
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-05T02:32:28.233864Z",
+    "agent_lines": 8,
+    "human_added": 568,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 576,
+    "agent_percentage": 1.3888888888888888
+  }
+}
