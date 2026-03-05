@@ -4,6 +4,15 @@
 
 namespace pablo_core {
     string core_version();
+
+    [Async, Throws=PabloError]
+    sequence<float> preprocess_pcm(string path, u8 channels);
+};
+
+// Unified error type for pablo-core operations.
+[Error]
+interface PabloError {
+    AudioPreprocessing(string message);
 };
 
 // Who spoke this segment.

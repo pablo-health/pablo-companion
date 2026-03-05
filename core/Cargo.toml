@@ -16,9 +16,12 @@ path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
 uniffi = { version = "0.31", features = ["tokio", "cli"] }
-tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "fs", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rubato = "0.16"
+byteorder = "1"
+thiserror = "1"
 
 [build-dependencies]
 uniffi = { version = "0.31", features = ["build"] }
