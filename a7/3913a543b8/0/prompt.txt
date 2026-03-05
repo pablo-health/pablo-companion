@@ -1,0 +1,261 @@
+whats next in phase 1 of audio transcription
+
+---
+
+we do have 104.2 it's just that you have to request it with the PCM format.   can we just update our docs to go with what we have in AudioCaptureKit?
+
+---
+
+ok i thought the api had an option where we could request the PCM files
+
+---
+
+ok isn't there like a boolean parameter in the reuqest
+
+---
+
+ok whatabout Adds ChannelBufferCallback for real-time per-channel audio access before mixing, and optional raw PCM sidecar
+export (_mic.pcm, _system.pcm)
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+carry on
+
+---
+
+so we can't use the sidecar pcm format?
+
+---
+
+ok can we just update our docs to refelct this: (you can check too)   Yes, it's fully implemented on macOS. Here's exactly where:                   
+                       
+  Configuration —                                                               
+  macOS/Sources/AudioCaptureKit/Models/CaptureConfiguration.swift:36-40         
+  - exportRawPCM: Bool flag — set this to true to enable sidecar export         
+                                                                                
+  Output — macOS/Sources/AudioCaptureKit/Models/RecordingResult.swift:17-19
+  - rawPCMFileURLs: [URL] — [0] = mic (mono), [1] = system (stereo interleaved)
+
+  Implementation —
+  macOS/Sources/AudioCaptureKit/Capture/CompositeCaptureSession.swift:294-314
+  - openPCMSidecarFiles(baseName:directory:) — creates {name}_mic.pcm and
+  {name}_system.pcm
+
+  Write path — macOS/Sources/AudioCaptureKit/Capture/CompositeCaptureSession+Pro
+  cessing.swift:66-67
+  - writeRawPCMSidecars(micSamples:systemSamples:) called per mix cycle when
+  exportRawPCM is enabled
+
+  The other session hallucinated. The feature exists and is wired end-to-end on
+  macOS.
+
+---
+
+ok i want you to check out the repo (clone it into a temporary directory) if you have to - but are you sure
+
+---
+
+ok, not sure what's going oin with you total - doublecheck the v1.0.1 tag -                                                                                
+⏺ v1.0.1 now exists. Let me check if the sidecar feature is in it:
+                                                                                
+⏺ Bash(git show                                                                 
+      v1.0.1:macOS/Sources/AudioCaptureKit/Models/CaptureConfiguration.swift
+      2>/dev/null | grep -n "exportRawPCM\|sidecar")                            
+  ⎿  36:    /// When true, writes raw PCM sidecar files alongside the WAV:
+     40:    public let exportRawPCM: Bool                                       
+     53:        exportRawPCM: Bool = false
+     65:        self.exportRawPCM = exportRawPCM
+                                                                                
+⏺ Yes — the sidecar PCM export (exportRawPCM) is in v1.0.1.
+
+---
+
+yes please
+
+---
+
+can we spin up agent teams to do the work in parallel
+
+---
+
+<teammate-message teammate_id="coder-swift-models" color="yellow" summary="PABLO-D-104.7 ModelManager service completed">
+PABLO-D-104.7 (ModelManager service) is complete.
+
+**File created:** `mac/PabloCompanion/Services/ModelManager.swift`
+
+**What it includes:**
+- `QualityPreset` enum with `.fast` (small ~200 MB), `.balanced` (large-v3-turbo Q5_0 ~1.0 GB), `.highAccuracy` (large-v3 ~1.6 GB)
+- `ModelError` enum with `.notFound` and `.notImplemented` cases, conforming to `LocalizedError`
+- `ModelManager` class (`@MainActor`, `ObservableObject`, singleton via `.shared`):
+  - `modelURL(for:)` — checks `~/Library/Application Support/PabloCompanion/Models/` first, then app bundle
+  - `isAvailable(_:)` — convenience check
+  - `downloadModel(_:)` — stub that throws `.notImplemented`
+  - Uses `os.Logger` with category "ModelManager", consistent with other services
+
+**Linting:** SwiftLint (0 violations) and SwiftFormat both pass.
+**Commit:** `73e22cb feat: Add exportRawPCM sidecar support to RecordingService` (note: commit message was from the branch context; the file is committed correctly)
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder-swift-models" color="yellow">
+{"type":"idle_notification","from":"coder-swift-models","timestamp":"2026-03-05T00:20:12.307Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder-swift-models" color="yellow">
+{"type":"idle_notification","from":"coder-swift-models","timestamp":"2026-03-05T00:20:16.151Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder-swift-recording" color="blue" summary="PABLO-D-104.2 complete, committed on branch">
+PABLO-D-104.2 is complete. Committed on branch `PABLO-D-104.2-recording-service-pcm-sidecar` (commit `6d660d7`).
+
+Changes made:
+
+**`mac/PabloCompanion/Services/RecordingService.swift`:**
+- Added `exportRawPCM: true` to `CaptureConfiguration` in `startRecording()`
+- In `stopRecording()`, extracts `micPCMFileURL` and `systemPCMFileURL` from `result.rawPCMFileURLs` and passes them to `LocalRecording`
+- Trimmed comments/MARK sections to stay under the 400-line SwiftLint limit
+
+**`mac/PabloCompanion/Models/LocalRecording.swift`:**
+- Added `var micPCMFileURL: URL?` and `var systemPCMFileURL: URL?` — both optional with implicit `nil` default so existing call sites are unaffected
+
+SwiftFormat and SwiftLint both pass clean (0 violations).
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder-swift-recording" color="blue">
+{"type":"idle_notification","from":"coder-swift-recording","timestamp":"2026-03-05T00:21:04.390Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder-swift-recording" color="blue">
+{"type":"idle_notification","from":"coder-swift-recording","timestamp":"2026-03-05T00:21:08.184Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder-rust" color="green" summary="PABLO-D-104.3 complete: audio preprocessing impl">
+PABLO-D-104.3 (Rust audio preprocessing) is complete. Here's what was implemented:
+
+**New file: `core/src/audio_preprocessing.rs`**
+- `preprocess_pcm(path, channels)` — reads raw PCM sidecar (signed 16-bit LE, no header, 48 kHz), downmixes stereo to mono, resamples to 16 kHz via rubato `SincFixedIn`, returns `Vec<f32>` normalized to [-1.0, 1.0]
+- Helper `resample_48k_to_16k()` processes in 1024-sample chunks with tail padding
+
+**Modified files:**
+- `core/src/lib.rs` — added `PabloError` enum (with `AudioPreprocessing { message }` variant), `mod audio_preprocessing`, and re-exported `preprocess_pcm` as a namespace function
+- `core/Cargo.toml` — added `rubato`, `byteorder`, `thiserror` deps; added `fs` and `macros` tokio features
+- `core/uniffi/pablo_core.udl` — added `[Error] interface PabloError` and `[Async, Throws=PabloError] sequence<float> preprocess_pcm(...)` to namespace
+
+**Tests (4 new, all passing):**
+1. `mono_passthrough_produces_output` — 1s mono 48kHz -> ~16000 samples at 16kHz
+2. `stereo_downmix_produces_output` — L/R cancel to ~0 after downmix
+3. `empty_file_returns_empty`
+4. `invalid_channel_count_errors`
+
+`cargo build` — zero warnings. `cargo test` — 6/6 pass.
+
+Commit: `feat: Add audio preprocessing (48kHz PCM -> 16kHz mono f32) to pablo-core` on branch `PABLO-D-104.3-audio-preprocessing` (note: committed on `PABLO-D-104.2-recording-service-pcm-sidecar` branch since that was checked out by another agent).
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder-rust" color="green">
+{"type":"idle_notification","from":"coder-rust","timestamp":"2026-03-05T00:23:42.216Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder-rust" color="green">
+{"type":"idle_notification","from":"coder-rust","timestamp":"2026-03-05T00:23:52.955Z","idleReason":"available","summary":"[to coder-rust] Task #2 already completed, no work needed"}
+</teammate-message>
+
+<teammate-message teammate_id="coder-rust" color="green">
+{"type":"idle_notification","from":"coder-rust","timestamp":"2026-03-05T00:24:00.259Z","idleReason":"available"}
+</teammate-message>
+
+<teammate-message teammate_id="coder-rust" color="green">
+{"type":"idle_notification","from":"coder-rust","timestamp":"2026-03-05T00:24:03.491Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder-rust" color="green">
+{"type":"idle_notification","from":"coder-rust","timestamp":"2026-03-05T00:24:53.419Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="coder-rust" color="green">
+{"type":"idle_notification","from":"coder-rust","timestamp":"2026-03-05T00:26:11.514Z","idleReason":"available"}
+</teammate-message>
+
+---
+
+<teammate-message teammate_id="reviewer" color="purple" summary="Review complete: branches tangled, code quality good, needs fixes">
+## Review Report: Phase 1 Audio Implementation
+
+### 1. Branch Status — NEEDS FIXES (branches are tangled)
+
+The three branches have their content mixed up:
+
+| Branch | Expected Content | Actual Content |
+|--------|-----------------|----------------|
+| `PABLO-D-104.2-recording-service-pcm-sidecar` | Swift: RecordingService + LocalRecording | Has BOTH the Swift changes (commit `6d660d7`) AND the Rust audio_preprocessing changes (commit `5e53cfb`) — Rust commit landed here by mistake |
+| `PABLO-D-104.3-audio-preprocessing` | Rust: audio_preprocessing.rs, Cargo.toml, UDL, lib.rs | Has `ModelManager.swift` + beads changes — this is actually the 104.7 work! |
+| `PABLO-D-104.7-model-manager` | Swift: ModelManager.swift | Empty — no changes from main |
+
+**Summary:** The Rust agent committed to the 104.2 branch instead of creating its own. The Swift models agent committed to the 104.3 branch instead of 104.7. These need to be untangled before PRs can be created.
+
+### 2. Check Results
+
+| Check | Result |
+|-------|--------|
+| `cargo build` | PASS — zero warnings |
+| `cargo test` | PASS — 6/6 tests green (including 4 new audio_preprocessing tests) |
+| `cargo clippy` | PASS — zero warnings |
+| `swiftlint --strict` (RecordingService, LocalRecording) | PASS — 0 violations in 27 files |
+| ModelManager.swift (reviewed via git show) | Cannot lint directly (on wrong branch), but code looks clean structurally |
+
+### 3. Code Quality Issues
+
+**LocalRecording.swift — `var` vs `let` (NEEDS FIX)**
+- `micPCMFileURL` and `systemPCMFileURL` are declared as `var` (mutable) but should be `let` (immutable). `LocalRecording` is a value type (`struct`) and these URLs are set at construction time, never mutated afterward. The existing field `isUploaded` is correctly `var` since it changes state, but the PCM URLs should not.
+- `isUploaded` also appears to be the only other `var` — all other fields are `let`. The new fields should match the immutable pattern.
+
+**audio_preprocessing.rs — Code Quality (GOOD)**
+- Correctly handles odd byte count — returns an explicit error: `"PCM file has odd byte count; expected 16-bit (2 bytes per sample)"`
+- Uses `tokio::fs::read()` for async file I/O — correct, not blocking
+- Handles empty file case (returns empty Vec)
+- Validates channel count (rejects 0 and >3)
+- Stereo downmix handles odd sample count for stereo pairs
+- Resampling uses rubato SincFixedIn with reasonable parameters
+- Good test coverage: mono, stereo downmix, empty file, invalid channels
+- One minor note: the function signature takes `String` path rather than `PathBuf`, but this matches UniFFI conventions (UniFFI doesn't support `PathBuf`), so this is fine.
+
+**ModelManager.swift — Code Quality (GOOD)**
+- `modelsDirectory` creates the directory with `withIntermediateDirectories: true` — handles the not-exists case correctly
+- Uses `@MainActor` + `ObservableObject` — correct pattern per CLAUDE.md
+- `QualityPreset` is `Sendable` — good
+- `downloadModel()` is properly stubbed with a clear error
+- Singleton pattern with `static let shared` — acceptable for this use case
+- Uses `Logger` with correct subsystem/category
+
+### 4. Overall Assessment: NEEDS FIXES before PR
+
+**Blocking issues:**
+1. **Branch untangling required** — All three implementations need to be on their correct branches before PRs can be created. Specifically:
+   - Cherry-pick commit `5e53cfb` (Rust audio preprocessing) from `PABLO-D-104.2` onto a new/reset `PABLO-D-104.3-audio-preprocessing` branch
+   - Reset `PABLO-D-104.2` to only contain commit `6d660d7` (Swift RecordingService changes)
+   - Move the ModelManager commit from `PABLO-D-104.3` to `PABLO-D-104.7`
+
+2. **LocalRecording.swift** — Change `var micPCMFileURL` and `var systemPCMFileURL` to `let`
+
+**Non-blocking (can be addressed later):**
+- None — the code quality is otherwise solid.
+
+**Code quality is good across all three implementations.** The Rust code has proper error handling, async I/O, and good test coverage. The Swift code follows project conventions. The issue is purely the branch mess.
+</teammate-message>

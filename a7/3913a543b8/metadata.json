@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "a73913a543b8",
+  "strategy": "manual-commit",
+  "branch": "PABLO-D-104.3-audio-preprocessing",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "core/src/audio_preprocessing.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a7/3913a543b8/0/metadata.json",
+      "transcript": "/a7/3913a543b8/0/full.jsonl",
+      "context": "/a7/3913a543b8/0/context.md",
+      "content_hash": "/a7/3913a543b8/0/content_hash.txt",
+      "prompt": "/a7/3913a543b8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 107,
+    "cache_creation_tokens": 74799,
+    "cache_read_tokens": 4346212,
+    "output_tokens": 26136,
+    "api_call_count": 66
+  }
+}
