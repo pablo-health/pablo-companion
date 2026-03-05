@@ -140,6 +140,9 @@ final class RecordingService {
             let result = try await session.stopCapture()
             logger.info("Recording stopped: \(result.fileURL.lastPathComponent)")
 
+            let micPCMFileURL = result.rawPCMFileURLs.indices.contains(0) ? result.rawPCMFileURLs[0] : nil
+            let systemPCMFileURL = result.rawPCMFileURLs.indices.contains(1) ? result.rawPCMFileURLs[1] : nil
+
             let recording = LocalRecording(
                 id: result.metadata.id,
                 fileURL: result.fileURL,
@@ -149,8 +152,8 @@ final class RecordingService {
                 checksum: result.checksum,
                 channelLayout: result.metadata.channelLayout,
                 isUploaded: false,
-                micPCMFileURL: result.rawPCMFileURLs.indices.contains(0) ? result.rawPCMFileURLs[0] : nil,
-                systemAudioPCMFileURL: result.rawPCMFileURLs.indices.contains(1) ? result.rawPCMFileURLs[1] : nil
+                micPCMFileURL: micPCMFileURL,
+                systemPCMFileURL: systemPCMFileURL
             )
             onRecordingCompleted?(recording)
             currentRecordingState = .idle
@@ -355,8 +358,6 @@ final class RecordingService {
     }
 }
 
-// MARK: - Delegate Adapter
-
 /// Bridges the non-isolated AudioCaptureDelegate callbacks to MainActor closures.
 private final class CaptureDelegateAdapter: AudioCaptureDelegate, @unchecked Sendable {
     var onStateChange: (@Sendable (CaptureState) -> Void)?
@@ -384,17 +385,10 @@ private final class CaptureDelegateAdapter: AudioCaptureDelegate, @unchecked Sen
         onError?(error)
     }
 
-    func captureSession(
-        _: any AudioCaptureSession,
-        didFinishCapture _: RecordingResult
-    ) {}
+    func captureSession(_: any AudioCaptureSession, didFinishCapture _: RecordingResult) {}
 }
 
-// MARK: - Sendable Weak Reference
-
-/// A Sendable wrapper for a weak reference to a MainActor-isolated object.
-/// Used to safely pass a reference across concurrency boundaries (e.g. CoreAudio callbacks)
-/// without triggering Swift 6 actor isolation traps.
+/// Sendable weak reference for safely passing across concurrency boundaries (e.g. CoreAudio callbacks).
 private final class WeakSendableBox<T: AnyObject>: @unchecked Sendable {
     weak var value: T?
     init(_ value: T) {
