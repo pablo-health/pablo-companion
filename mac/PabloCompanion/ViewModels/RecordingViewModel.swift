@@ -106,7 +106,9 @@ final class RecordingViewModel {
                 isEncrypted: false,
                 checksum: "test-tone",
                 channelLayout: .blended,
-                isUploaded: false
+                isUploaded: false,
+                micPCMFileURL: nil,
+                systemAudioPCMFileURL: nil
             )
             recordings.insert(recording, at: 0)
             logger.info("Test tone generated: \(fileName)")

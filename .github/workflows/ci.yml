@@ -73,9 +73,9 @@ jobs:
       - name: SwiftFormat
         run: swiftformat --lint --config mac/.swiftformat mac/PabloCompanion/
 
-  swift-build:
-    name: Swift Build
-    needs: changes
+  swift-test:
+    name: Swift Build & Test
+    needs: [changes, swift-lint]
     if: needs.changes.outputs.mac == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     steps:
@@ -90,7 +90,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
-      - name: Build
+      - name: Build & Test
         run: |
           DISABLE_PKGS=${{ steps.spm-cache.outputs.cache-hit == 'true' && '-disableAutomaticPackageResolution' || '' }}
           xcodebuild -project mac/PabloCompanion.xcodeproj \
@@ -101,7 +101,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            build | xcpretty
+            test | xcpretty
 
   rust-lint:
     name: Rust Lint
@@ -150,7 +150,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/dependency-review-action@05fe4576374b728f0c523d6a13d64c25081e0803 # v4.8.3
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
