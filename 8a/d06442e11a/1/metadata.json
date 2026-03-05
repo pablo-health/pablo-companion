@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "8ad06442e11a",
+  "session_id": "5b5a2350-445b-42d8-9e4b-eb1d8b893d2d",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-05T02:32:28.81254Z",
+  "branch": "PABLO-D-104.2-recording-service-pcm-sidecar",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "core/src/audio_preprocessing.rs"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "ccc692eb75b5",
+  "token_usage": {
+    "input_tokens": 141,
+    "cache_creation_tokens": 83831,
+    "cache_read_tokens": 6794109,
+    "output_tokens": 30093,
+    "api_call_count": 90
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-05T02:32:28.633008Z",
+    "agent_lines": 0,
+    "human_added": 156,
+    "human_modified": 13,
+    "human_removed": 0,
+    "total_committed": 156,
+    "agent_percentage": 0
+  }
+}

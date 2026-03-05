@@ -3,8 +3,9 @@
   "checkpoint_id": "8ad06442e11a",
   "strategy": "manual-commit",
   "branch": "PABLO-D-104.2-recording-service-pcm-sidecar",
-  "checkpoints_count": 0,
+  "checkpoints_count": 1,
   "files_touched": [
+    "core/src/audio_preprocessing.rs",
     "mac/PabloCompanion/Services/RecordingService.swift",
     "mac/PabloCompanion/ViewModels/RecordingViewModel.swift",
     "mac/PabloCompanion/Views/RecordingListView.swift"
@@ -16,13 +17,20 @@
       "context": "/8a/d06442e11a/0/context.md",
       "content_hash": "/8a/d06442e11a/0/content_hash.txt",
       "prompt": "/8a/d06442e11a/0/prompt.txt"
+    },
+    {
+      "metadata": "/8a/d06442e11a/1/metadata.json",
+      "transcript": "/8a/d06442e11a/1/full.jsonl",
+      "context": "/8a/d06442e11a/1/context.md",
+      "content_hash": "/8a/d06442e11a/1/content_hash.txt",
+      "prompt": "/8a/d06442e11a/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 63,
-    "cache_creation_tokens": 53762,
-    "cache_read_tokens": 3102764,
-    "output_tokens": 11697,
-    "api_call_count": 57
+    "input_tokens": 204,
+    "cache_creation_tokens": 137593,
+    "cache_read_tokens": 9896873,
+    "output_tokens": 41790,
+    "api_call_count": 147
   }
 }
