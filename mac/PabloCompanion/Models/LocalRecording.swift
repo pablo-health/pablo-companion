@@ -13,10 +13,10 @@ struct LocalRecording: Identifiable, Sendable {
     let channelLayout: ChannelLayout
     /// Raw PCM sidecar file for the microphone channel (mono, Float32).
     /// Present when the session was captured with `exportRawPCM` enabled.
-    var micPCMFileURL: URL?
+    let micPCMFileURL: URL?
     /// Raw PCM sidecar file for the system audio channel (stereo interleaved, Float32).
     /// Present when the session was captured with `exportRawPCM` enabled and system audio was active.
-    var systemPCMFileURL: URL?
+    let systemPCMFileURL: URL?
     var isUploaded: Bool
 
     var formattedDuration: String {
