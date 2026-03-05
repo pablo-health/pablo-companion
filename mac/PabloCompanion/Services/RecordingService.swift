@@ -151,9 +151,9 @@ final class RecordingService {
                 isEncrypted: result.metadata.isEncrypted,
                 checksum: result.checksum,
                 channelLayout: result.metadata.channelLayout,
-                isUploaded: false,
                 micPCMFileURL: micPCMFileURL,
-                systemPCMFileURL: systemPCMFileURL
+                systemPCMFileURL: systemPCMFileURL,
+                isUploaded: false
             )
             onRecordingCompleted?(recording)
             currentRecordingState = .idle

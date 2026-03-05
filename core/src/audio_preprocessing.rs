@@ -78,10 +78,7 @@ pub async fn preprocess_pcm(
             })
             .collect()
     } else {
-        samples_i16
-            .iter()
-            .map(|&s| s as f32 / 32768.0)
-            .collect()
+        samples_i16.iter().map(|&s| s as f32 / 32768.0).collect()
     };
 
     if mono_f32.is_empty() {
@@ -110,11 +107,7 @@ fn resample_to_16k(input: Vec<f32>, input_rate: u32) -> Result<Vec<f32>, PabloEr
 
     let chunk_size = 1024;
     let mut resampler = SincFixedIn::<f32>::new(
-        ratio,
-        2.0,
-        params,
-        chunk_size,
-        1, // mono
+        ratio, 2.0, params, chunk_size, 1, // mono
     )
     .map_err(|e| audio_err(format!("resampler init failed: {e}")))?;
 
@@ -221,10 +214,7 @@ mod tests {
         );
         // Since L and R cancel out, all samples should be near zero
         for &s in &result {
-            assert!(
-                s.abs() < 0.01,
-                "expected near-zero after downmix, got {s}"
-            );
+            assert!(s.abs() < 0.01, "expected near-zero after downmix, got {s}");
         }
     }
 
