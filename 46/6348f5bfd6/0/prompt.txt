@@ -1,0 +1,108 @@
+whats next on speaker diarization
+
+---
+
+what about the phase 1 tasks
+
+---
+
+104.2
+
+---
+
+Base directory for this skill: /Users/kurtn/.claude/skills/work
+
+# Work Skill
+
+Start working on a beads task - automatically creates a git worktree and updates task status.
+
+## Usage
+
+```
+/work TASK-ID
+/work search terms for task title
+```
+
+## Examples
+
+```
+/work THERAPY-lo7.1
+/work modern frontend setup
+/work backend models
+```
+
+## What This Does
+
+Claude will:
+- Search for the task (ask if multiple matches)
+- Create a git worktree with descriptive name
+- Update beads status to in_progress
+- Give you the commands to switch to the worktree
+
+## Instructions
+
+When the user invokes this skill:
+
+1. Parse the input to determine if it's a task ID or search term
+2. If search term, use `bd search` to find matching tasks
+3. If multiple matches, ask user to select one
+4. Get task details with `bd show`
+5. Create a descriptive worktree name from the task title
+6. Create git worktree: git worktree add ../PROJECT-NAME-description -b TASK-ID-description
+7. Update beads: bd update TASK-ID --status=in_progress
+8. Show user the cd command to switch to the worktree
+
+## Directory Naming
+
+- Use descriptive name from task title (kebab-case)
+- Format: ../PROJECT-NAME-descriptive-name (where PROJECT-NAME matches current directory)
+- Branch: TASK-ID-descriptive-name
+
+Be friendly and interactive. Ask if anything is unclear.
+
+
+ARGUMENTS: PABLO-D-104.2
+
+---
+
+We did implement something already
+
+---
+
+Yes
+
+---
+
+Commit and pr but does lint and tests pass
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+even if it's preexisting we need to fix
+
+---
+
+swift lint error.   let's talk.   is 400 lines arbitrary or documented somewher as best practice we have 403 lines
+
+---
+
+RecordingService - also should we even run the CodeQL and Build if we fail linting
+
+---
+
+is there anything in there we should split?
+
+---
+
+ok let's do it but whats a WeakSendableBox??
+
+---
+
+ok on the CI - it still says Swift Build expected
+
+---
+
+on the github ui
