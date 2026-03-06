@@ -6,6 +6,9 @@
 uniffi::include_scaffolding!("pablo_core");
 
 pub mod audio_preprocessing;
+pub mod whisper_transcriber;
+
+pub use whisper_transcriber::RawSegment;
 
 // ── Error type ───────────────────────────────────────────────────────────────
 
@@ -14,6 +17,10 @@ pub mod audio_preprocessing;
 pub enum PabloError {
     #[error("Audio preprocessing error: {message}")]
     AudioPreprocessing { message: String },
+    #[error("Whisper model init error: {message}")]
+    WhisperInit { message: String },
+    #[error("Whisper transcription error: {message}")]
+    WhisperTranscribe { message: String },
 }
 
 // ── Public types exposed via UniFFI ──────────────────────────────────────────
@@ -68,6 +75,16 @@ pub async fn preprocess_pcm(
     sample_rate: u32,
 ) -> Result<Vec<f32>, PabloError> {
     audio_preprocessing::preprocess_pcm(path, channels, sample_rate).await
+}
+
+/// Transcribe 16 kHz mono f32 audio using the GGML Whisper model at `model_path`.
+/// Returns one `RawSegment` per sentence segment, ordered by start time.
+/// Fixed params: language=en, token_timestamps=true, beam_size=5.
+pub async fn transcribe_audio(
+    model_path: String,
+    audio: Vec<f32>,
+) -> Result<Vec<RawSegment>, PabloError> {
+    whisper_transcriber::transcribe_audio(model_path, audio).await
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
