@@ -12,11 +12,15 @@ struct HardwareCapabilityService {
     }
 
     /// True if the machine has ≥ 16 GB physical RAM.
-    var meetsHighAccuracyRequirement: Bool { physicalMemoryGB >= 16 }
+    var meetsHighAccuracyRequirement: Bool {
+        physicalMemoryGB >= 16
+    }
 
     /// True if this machine is likely to be slow at local transcription.
     /// Intel Mac with < 16 GB — recommend Cloud mode.
-    var isLowSpec: Bool { !isAppleSilicon && physicalMemoryGB < 16 }
+    var isLowSpec: Bool {
+        !isAppleSilicon && physicalMemoryGB < 16
+    }
 
     // MARK: - Private
 

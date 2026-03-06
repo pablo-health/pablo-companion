@@ -6,6 +6,8 @@ struct ContentView: View {
     @State private var recordingVM = RecordingViewModel()
     @State private var uploadVM = UploadViewModel()
     @State private var patientVM = PatientViewModel()
+    @State private var transcriptionVM = TranscriptionViewModel()
+    @State private var viewingTranscript: TranscriptViewerItem?
     @State private var selectedTab = 0
 
     var body: some View {
@@ -67,6 +69,13 @@ struct ContentView: View {
             await patientVM.loadPatients()
             await recordingVM.loadAudioSources()
             await uploadVM.checkBackendHealth()
+
+            // Configure transcription VM with backend + auth
+            transcriptionVM.backendURL = uploadVM.backendURL
+            transcriptionVM.getToken = { [authVM] in try await authVM.getValidToken() }
+
+            // Retry any transcripts that failed to upload last session
+            await transcriptionVM.retryPendingUploads()
         }
         .alert(
             "Recording Error",
@@ -135,6 +144,7 @@ struct ContentView: View {
             uploadProgress: uploadVM.uploadProgress,
             uploadingIDs: uploadVM.uploadingRecordingIDs,
             playingRecordingID: recordingVM.playingRecordingID,
+            transcriptionStates: transcriptionVM.states,
             onUpload: { recording in
                 Task {
                     await uploadVM.uploadRecording(recording) { uploadedID in
@@ -151,8 +161,28 @@ struct ContentView: View {
             },
             onStopPlayback: {
                 recordingVM.stopPlayback()
+            },
+            onViewTranscript: { recording in
+                if let text = transcriptionVM.states[recording.id]?.transcript {
+                    viewingTranscript = TranscriptViewerItem(
+                        id: recording.id,
+                        text: text,
+                        recordingDate: recording.createdAt
+                    )
+                }
+            },
+            onTranscribe: { recording in
+                Task { await transcriptionVM.transcribe(recording) }
             }
         )
+        .sheet(item: $viewingTranscript) { (item: TranscriptViewerItem) in
+            TranscriptViewerView(transcript: item.text, recordingDate: item.recordingDate)
+        }
+        .task {
+            recordingVM.onRecordingCompleted = { recording in
+                transcriptionVM.transcribeIfNeeded(recording)
+            }
+        }
     }
 
     private var patientsTab: some View {

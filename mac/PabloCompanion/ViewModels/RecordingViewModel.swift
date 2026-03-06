@@ -26,6 +26,7 @@ final class RecordingViewModel {
     var errorMessage: String?
     var showError = false
     var playingRecordingID: UUID?
+    var onRecordingCompleted: ((LocalRecording) -> Void)?
     var systemAudioActive = false
     var bluetoothRoutingConflict = false
     var bluetoothRecommendation: String?
@@ -184,6 +185,7 @@ final class RecordingViewModel {
         }
         service.onRecordingCompleted = { [weak self] recording in
             self?.recordings.insert(recording, at: 0)
+            self?.onRecordingCompleted?(recording)
         }
     }
 

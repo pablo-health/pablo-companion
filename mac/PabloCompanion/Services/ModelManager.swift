@@ -7,7 +7,9 @@ enum SessionType: String, CaseIterable, Sendable {
     case oneToOne = "1:1"
     case couples = "Couples"
 
-    var displayName: String { rawValue }
+    var displayName: String {
+        rawValue
+    }
 }
 
 // MARK: - QualityPreset

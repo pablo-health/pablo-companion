@@ -249,6 +249,26 @@ RustBuffer uniffi_pablo_core_fn_func_core_version(RustCallStatus *_Nonnull out_s
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_PREPROCESS_PCM
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_PREPROCESS_PCM
+uint64_t uniffi_pablo_core_fn_func_preprocess_pcm(RustBuffer path, uint8_t channels, uint32_t sample_rate
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_RENDER_GOOGLE_MEET
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_RENDER_GOOGLE_MEET
+RustBuffer uniffi_pablo_core_fn_func_render_google_meet(RustBuffer transcript, RustBuffer opts, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_AUDIO
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_AUDIO
+uint64_t uniffi_pablo_core_fn_func_transcribe_audio(RustBuffer model_path, RustBuffer audio
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_SESSION_1ON1
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_SESSION_1ON1
+uint64_t uniffi_pablo_core_fn_func_transcribe_session_1on1(RustBuffer session_id, RustBuffer mic_path, RustBuffer system_path, RustBuffer config
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_PABLO_CORE_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_PABLO_CORE_RUSTBUFFER_ALLOC
 RustBuffer ffi_pablo_core_rustbuffer_alloc(uint64_t size, RustCallStatus *_Nonnull out_status
@@ -512,6 +532,30 @@ void ffi_pablo_core_rust_future_complete_void(uint64_t handle, RustCallStatus *_
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CORE_VERSION
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CORE_VERSION
 uint16_t uniffi_pablo_core_checksum_func_core_version(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_PREPROCESS_PCM
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_PREPROCESS_PCM
+uint16_t uniffi_pablo_core_checksum_func_preprocess_pcm(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_RENDER_GOOGLE_MEET
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_RENDER_GOOGLE_MEET
+uint16_t uniffi_pablo_core_checksum_func_render_google_meet(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_TRANSCRIBE_AUDIO
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_TRANSCRIBE_AUDIO
+uint16_t uniffi_pablo_core_checksum_func_transcribe_audio(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_TRANSCRIBE_SESSION_1ON1
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_TRANSCRIBE_SESSION_1ON1
+uint16_t uniffi_pablo_core_checksum_func_transcribe_session_1on1(void
     
 );
 #endif
