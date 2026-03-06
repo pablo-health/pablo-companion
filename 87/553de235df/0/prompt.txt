@@ -1,0 +1,17 @@
+whats next on phase 1 of our plan
+
+---
+
+we can do it here provided we create a branch
+
+---
+
+did we push this to a branch
+
+---
+
+and open pr
+
+---
+
+ok, let's work on the next one it's ok if we stay on this branch
