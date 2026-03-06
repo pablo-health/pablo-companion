@@ -11,6 +11,8 @@ namespace pablo_core {
     [Async, Throws=PabloError]
     sequence<RawSegment> transcribe_audio(string model_path, sequence<float> audio);
 
+    string render_google_meet(TranscriptResult transcript, GoogleMeetOptions opts);
+
     [Async, Throws=PabloError]
     TranscriptResult transcribe_session_1on1(
         string session_id,
@@ -26,6 +28,15 @@ interface PabloError {
     AudioPreprocessing(string message);
     WhisperInit(string message);
     WhisperTranscribe(string message);
+};
+
+// Options for rendering to Google Meet format.
+dictionary GoogleMeetOptions {
+    string session_date;
+    string therapist_name;
+    string client_name;
+    string client_a_name;
+    string client_b_name;
 };
 
 // Configuration for a local transcription run.

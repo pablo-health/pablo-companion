@@ -6,6 +6,7 @@
 uniffi::include_scaffolding!("pablo_core");
 
 pub mod audio_preprocessing;
+pub mod google_meet_renderer;
 pub mod session_pipeline;
 pub mod whisper_transcriber;
 
@@ -25,6 +26,21 @@ pub enum PabloError {
 }
 
 // ── Public types exposed via UniFFI ──────────────────────────────────────────
+
+/// Options for rendering a transcript to Google Meet format.
+#[derive(Debug, Clone)]
+pub struct GoogleMeetOptions {
+    /// Session date string, e.g. "April 3, 2024" (formatted by the caller).
+    pub session_date: String,
+    /// Display name for the therapist speaker.
+    pub therapist_name: String,
+    /// Display name for the client speaker (1:1 mode).
+    pub client_name: String,
+    /// Display name for client A (couples mode).
+    pub client_a_name: String,
+    /// Display name for client B (couples mode).
+    pub client_b_name: String,
+}
 
 /// Configuration for a local transcription run.
 #[derive(Debug, Clone)]
@@ -91,6 +107,12 @@ pub async fn preprocess_pcm(
     sample_rate: u32,
 ) -> Result<Vec<f32>, PabloError> {
     audio_preprocessing::preprocess_pcm(path, channels, sample_rate).await
+}
+
+/// Render a TranscriptResult to Google Meet plain-text format.
+/// The resulting string is what the Pablo SOAP note pipeline expects.
+pub fn render_google_meet(transcript: TranscriptResult, opts: GoogleMeetOptions) -> String {
+    google_meet_renderer::render_google_meet(&transcript, &opts)
 }
 
 /// 1:1 session transcription pipeline.
