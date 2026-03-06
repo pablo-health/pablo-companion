@@ -159,6 +159,7 @@ struct SettingsView: View {
     @AppStorage("sessionType") private var sessionType = SessionType.oneToOne.rawValue
     @AppStorage("autoTranscribe") private var autoTranscribe = true
 
+    @ObservedObject private var modelManager = ModelManager.shared
     private let hardware = HardwareCapabilityService()
 
     #if DEBUG
@@ -207,6 +208,43 @@ struct SettingsView: View {
 
             LabeledContent("CPU", value: hardware.isAppleSilicon ? "Apple Silicon" : "Intel")
             LabeledContent("RAM", value: "\(hardware.physicalMemoryGB) GB")
+
+            ForEach(QualityPreset.allCases, id: \.rawValue) { preset in
+                modelRow(preset)
+            }
+        }
+    }
+
+    private func modelRow(_ preset: QualityPreset) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(preset.displayName)
+                    .font(.pabloBody(13))
+                Text(preset.diskSizeDescription)
+                    .font(.pabloBody(11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if modelManager.downloadingPresets.contains(preset) {
+                HStack(spacing: 6) {
+                    ProgressView(value: modelManager.downloadProgress[preset] ?? 0)
+                        .frame(width: 80)
+                    Text("\(Int((modelManager.downloadProgress[preset] ?? 0) * 100))%")
+                        .font(.pabloBody(11))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            } else if modelManager.isAvailable(preset) {
+                Label("Downloaded", systemImage: "checkmark.circle.fill")
+                    .font(.pabloBody(11))
+                    .foregroundStyle(Color.pabloSage)
+            } else {
+                Button("Download") {
+                    Task { try? await modelManager.downloadModel(preset) }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         }
     }
 

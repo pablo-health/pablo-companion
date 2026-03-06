@@ -48,14 +48,14 @@ enum QualityPreset: String, CaseIterable, Sendable {
 
 enum ModelError: Error, LocalizedError {
     case notFound(QualityPreset)
-    case notImplemented
+    case downloadFailed(String)
 
     var errorDescription: String? {
         switch self {
         case let .notFound(preset):
             "Model file not found for \(preset.displayName) preset (\(preset.modelFileName))"
-        case .notImplemented:
-            "Model downloading is not yet implemented"
+        case let .downloadFailed(reason):
+            "Model download failed: \(reason)"
         }
     }
 }
@@ -67,6 +67,9 @@ enum ModelError: Error, LocalizedError {
 @MainActor
 final class ModelManager: ObservableObject {
     static let shared = ModelManager()
+
+    @Published var downloadProgress: [QualityPreset: Double] = [:]
+    @Published var downloadingPresets: Set<QualityPreset> = []
 
     private let fileManager = FileManager.default
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "ModelManager")
@@ -107,9 +110,63 @@ final class ModelManager: ObservableObject {
         (try? modelURL(for: preset)) != nil
     }
 
-    /// Downloads the model for the given preset from the Pablo CDN.
-    /// Currently a stub that throws `ModelError.notImplemented`.
-    func downloadModel(_: QualityPreset) async throws {
-        throw ModelError.notImplemented
+    /// Downloads the model for the given preset from the Hugging Face whisper.cpp repository.
+    /// Progress is published via `downloadProgress` and `downloadingPresets`.
+    func downloadModel(_ preset: QualityPreset) async throws {
+        guard !downloadingPresets.contains(preset) else { return }
+
+        let baseURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
+        guard let url = URL(string: baseURL + preset.modelFileName) else { return }
+
+        downloadingPresets.insert(preset)
+        downloadProgress[preset] = 0
+        defer {
+            downloadingPresets.remove(preset)
+            downloadProgress.removeValue(forKey: preset)
+        }
+
+        let delegate = ModelDownloadDelegate { [weak self] progress in
+            Task { @MainActor [weak self] in
+                self?.downloadProgress[preset] = progress
+            }
+        }
+
+        do {
+            let (tempURL, _) = try await URLSession.shared.download(from: url, delegate: delegate)
+            let destination = modelsDirectory.appendingPathComponent(preset.modelFileName)
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            try fileManager.moveItem(at: tempURL, to: destination)
+            logger.info("Model downloaded: \(preset.modelFileName)")
+        } catch {
+            logger.error("Model download failed for \(preset.modelFileName): \(error.localizedDescription)")
+            throw ModelError.downloadFailed(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - ModelDownloadDelegate
+
+private final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    private let onProgress: (Double) -> Void
+
+    init(onProgress: @escaping (Double) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    /// Required by URLSessionDownloadDelegate.
+    /// The async/await wrapper owns the temp file — this is intentionally a no-op.
+    func urlSession(_: URLSession, downloadTask _: URLSessionDownloadTask, didFinishDownloadingTo _: URL) {}
+
+    func urlSession(
+        _: URLSession,
+        downloadTask _: URLSessionDownloadTask,
+        didWriteData _: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesExpectedToWrite > 0 else { return }
+        onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
     }
 }
