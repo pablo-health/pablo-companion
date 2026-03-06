@@ -6,6 +6,7 @@
 uniffi::include_scaffolding!("pablo_core");
 
 pub mod audio_preprocessing;
+pub mod session_pipeline;
 pub mod whisper_transcriber;
 
 pub use whisper_transcriber::RawSegment;
@@ -24,6 +25,21 @@ pub enum PabloError {
 }
 
 // ── Public types exposed via UniFFI ──────────────────────────────────────────
+
+/// Configuration for a local transcription run.
+#[derive(Debug, Clone)]
+pub struct TranscriptionConfig {
+    /// Path to the GGML Whisper model file.
+    pub model_path: String,
+    /// Number of channels in the mic recording (always 1 — mono).
+    pub mic_channels: u8,
+    /// Sample rate of the mic recording (48000 built-in, 16000 Bluetooth HFP).
+    pub mic_sample_rate: u32,
+    /// Number of channels in the system audio recording (always 2 — stereo).
+    pub system_channels: u8,
+    /// Sample rate of the system audio recording.
+    pub system_sample_rate: u32,
+}
 
 /// Who spoke a given transcript segment.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +91,18 @@ pub async fn preprocess_pcm(
     sample_rate: u32,
 ) -> Result<Vec<f32>, PabloError> {
     audio_preprocessing::preprocess_pcm(path, channels, sample_rate).await
+}
+
+/// 1:1 session transcription pipeline.
+/// Preprocesses and transcribes mic and (optionally) system audio files,
+/// labels segments THERAPIST / CLIENT, merges by start time, returns TranscriptResult.
+pub async fn transcribe_session_1on1(
+    session_id: String,
+    mic_path: String,
+    system_path: Option<String>,
+    config: TranscriptionConfig,
+) -> Result<TranscriptResult, PabloError> {
+    session_pipeline::transcribe_session_1on1(session_id, mic_path, system_path, config).await
 }
 
 /// Transcribe 16 kHz mono f32 audio using the GGML Whisper model at `model_path`.

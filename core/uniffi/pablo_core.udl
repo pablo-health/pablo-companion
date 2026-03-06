@@ -10,6 +10,14 @@ namespace pablo_core {
 
     [Async, Throws=PabloError]
     sequence<RawSegment> transcribe_audio(string model_path, sequence<float> audio);
+
+    [Async, Throws=PabloError]
+    TranscriptResult transcribe_session_1on1(
+        string session_id,
+        string mic_path,
+        string? system_path,
+        TranscriptionConfig config
+    );
 };
 
 // Unified error type for pablo-core operations.
@@ -18,6 +26,15 @@ interface PabloError {
     AudioPreprocessing(string message);
     WhisperInit(string message);
     WhisperTranscribe(string message);
+};
+
+// Configuration for a local transcription run.
+dictionary TranscriptionConfig {
+    string model_path;
+    u8 mic_channels;
+    u32 mic_sample_rate;
+    u8 system_channels;
+    u32 system_sample_rate;
 };
 
 // A raw ASR segment from Whisper. Timestamps are milliseconds.
