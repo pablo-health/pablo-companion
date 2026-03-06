@@ -5,7 +5,13 @@
   "branch": "PABLO-D-104.4-whisper-integration",
   "checkpoints_count": 0,
   "files_touched": [
-    "core/src/audio_preprocessing.rs"
+    ".github/workflows/ci.yml",
+    "core/Cargo.lock",
+    "core/Cargo.toml",
+    "core/src/audio_preprocessing.rs",
+    "core/src/lib.rs",
+    "core/src/whisper_transcriber.rs",
+    "core/uniffi/pablo_core.udl"
   ],
   "sessions": [
     {
@@ -14,13 +20,20 @@
       "context": "/94/d46f6b04fe/0/context.md",
       "content_hash": "/94/d46f6b04fe/0/content_hash.txt",
       "prompt": "/94/d46f6b04fe/0/prompt.txt"
+    },
+    {
+      "metadata": "/94/d46f6b04fe/1/metadata.json",
+      "transcript": "/94/d46f6b04fe/1/full.jsonl",
+      "context": "/94/d46f6b04fe/1/context.md",
+      "content_hash": "/94/d46f6b04fe/1/content_hash.txt",
+      "prompt": "/94/d46f6b04fe/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 141,
-    "cache_creation_tokens": 83831,
-    "cache_read_tokens": 6794109,
-    "output_tokens": 30093,
-    "api_call_count": 90
+    "input_tokens": 198,
+    "cache_creation_tokens": 130074,
+    "cache_read_tokens": 9434802,
+    "output_tokens": 47352,
+    "api_call_count": 143
   }
 }
