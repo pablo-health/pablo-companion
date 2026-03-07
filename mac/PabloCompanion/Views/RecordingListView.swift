@@ -6,9 +6,12 @@ struct RecordingListView: View {
     let uploadProgress: [UUID: Double]
     let uploadingIDs: Set<UUID>
     let playingRecordingID: UUID?
+    let transcriptionStates: [UUID: TranscriptionState]
     let onUpload: (LocalRecording) -> Void
     let onPlay: (LocalRecording) -> Void
     let onStopPlayback: () -> Void
+    let onViewTranscript: (LocalRecording) -> Void
+    let onTranscribe: (LocalRecording) -> Void
 
     var body: some View {
         Group {
@@ -45,9 +48,12 @@ struct RecordingListView: View {
                 uploadProgress: uploadProgress[recording.id],
                 isUploading: uploadingIDs.contains(recording.id),
                 isPlaying: playingRecordingID == recording.id,
+                transcriptionState: transcriptionStates[recording.id],
                 onUpload: { onUpload(recording) },
                 onPlay: { onPlay(recording) },
-                onStopPlayback: onStopPlayback
+                onStopPlayback: onStopPlayback,
+                onViewTranscript: { onViewTranscript(recording) },
+                onTranscribe: { onTranscribe(recording) }
             )
             .pabloListRowStyle()
         }
@@ -60,9 +66,12 @@ struct RecordingRow: View {
     let uploadProgress: Double?
     let isUploading: Bool
     let isPlaying: Bool
+    let transcriptionState: TranscriptionState?
     let onUpload: () -> Void
     let onPlay: () -> Void
     let onStopPlayback: () -> Void
+    let onViewTranscript: () -> Void
+    let onTranscribe: () -> Void
 
     var body: some View {
         HStack {
@@ -88,6 +97,8 @@ struct RecordingRow: View {
                 }
                 .font(.pabloBody(11))
                 .foregroundStyle(.secondary)
+
+                transcriptStatusRow
             }
 
             Spacer()
@@ -95,6 +106,44 @@ struct RecordingRow: View {
             uploadStatus
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var transcriptStatusRow: some View {
+        switch transcriptionState {
+        case nil:
+            if recording.micPCMFileURL != nil {
+                Button("Transcribe") { onTranscribe() }
+                    .font(.pabloBody(11))
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.pabloHoney)
+            }
+        case .running:
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text("Transcribing…")
+                    .font(.pabloBody(11))
+                    .foregroundStyle(.secondary)
+            }
+        case .done, .pendingUpload:
+            Button {
+                onViewTranscript()
+            } label: {
+                Label(
+                    transcriptionState?.isPendingUpload == true
+                        ? "View Transcript (upload pending)" : "View Transcript",
+                    systemImage: "doc.text"
+                )
+                .font(.pabloBody(11))
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.pabloHoney)
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.pabloBody(11))
+                .foregroundStyle(Color.pabloHoney)
+                .lineLimit(1)
+        }
     }
 
     @ViewBuilder
@@ -125,9 +174,12 @@ struct RecordingRow: View {
         uploadProgress: [:],
         uploadingIDs: [],
         playingRecordingID: nil,
+        transcriptionStates: [:],
         onUpload: { _ in },
         onPlay: { _ in },
-        onStopPlayback: {}
+        onStopPlayback: {},
+        onViewTranscript: { _ in },
+        onTranscribe: { _ in }
     )
     .frame(width: 500, height: 400)
 }
@@ -167,9 +219,12 @@ private func makePreviewRecordings() -> [LocalRecording] {
         uploadProgress: [:],
         uploadingIDs: [],
         playingRecordingID: nil,
+        transcriptionStates: [:],
         onUpload: { _ in },
         onPlay: { _ in },
-        onStopPlayback: {}
+        onStopPlayback: {},
+        onViewTranscript: { _ in },
+        onTranscribe: { _ in }
     )
     .frame(width: 500, height: 400)
 }

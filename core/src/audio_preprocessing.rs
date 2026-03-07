@@ -250,6 +250,7 @@ mod tests {
             PabloError::AudioPreprocessing { message } => {
                 assert!(message.contains("unsupported channel count"));
             }
+            _ => panic!("expected AudioPreprocessing error"),
         }
     }
 }

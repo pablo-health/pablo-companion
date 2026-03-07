@@ -419,6 +419,70 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
+    typealias FfiType = UInt32
+    typealias SwiftType = UInt32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+    typealias FfiType = Int64
+    typealias SwiftType = Int64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int64, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
+    typealias FfiType = Float
+    typealias SwiftType = Float
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
+        return try lift(readFloat(&buf))
+    }
+
+    public static func write(_ value: Float, into buf: inout [UInt8]) {
+        writeFloat(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
     typealias FfiType = Double
     typealias SwiftType = Double
@@ -471,6 +535,130 @@ fileprivate struct FfiConverterString: FfiConverter {
         writeInt(&buf, len)
         writeBytes(&buf, value.utf8)
     }
+}
+
+
+public struct GoogleMeetOptions: Equatable, Hashable {
+    public var sessionDate: String
+    public var therapistName: String
+    public var clientName: String
+    public var clientAName: String
+    public var clientBName: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionDate: String, therapistName: String, clientName: String, clientAName: String, clientBName: String) {
+        self.sessionDate = sessionDate
+        self.therapistName = therapistName
+        self.clientName = clientName
+        self.clientAName = clientAName
+        self.clientBName = clientBName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GoogleMeetOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGoogleMeetOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GoogleMeetOptions {
+        return
+            try GoogleMeetOptions(
+                sessionDate: FfiConverterString.read(from: &buf), 
+                therapistName: FfiConverterString.read(from: &buf), 
+                clientName: FfiConverterString.read(from: &buf), 
+                clientAName: FfiConverterString.read(from: &buf), 
+                clientBName: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GoogleMeetOptions, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.sessionDate, into: &buf)
+        FfiConverterString.write(value.therapistName, into: &buf)
+        FfiConverterString.write(value.clientName, into: &buf)
+        FfiConverterString.write(value.clientAName, into: &buf)
+        FfiConverterString.write(value.clientBName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGoogleMeetOptions_lift(_ buf: RustBuffer) throws -> GoogleMeetOptions {
+    return try FfiConverterTypeGoogleMeetOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGoogleMeetOptions_lower(_ value: GoogleMeetOptions) -> RustBuffer {
+    return FfiConverterTypeGoogleMeetOptions.lower(value)
+}
+
+
+public struct RawSegment: Equatable, Hashable {
+    public var startMs: Int64
+    public var endMs: Int64
+    public var text: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(startMs: Int64, endMs: Int64, text: String) {
+        self.startMs = startMs
+        self.endMs = endMs
+        self.text = text
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RawSegment: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRawSegment: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RawSegment {
+        return
+            try RawSegment(
+                startMs: FfiConverterInt64.read(from: &buf), 
+                endMs: FfiConverterInt64.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RawSegment, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.startMs, into: &buf)
+        FfiConverterInt64.write(value.endMs, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRawSegment_lift(_ buf: RustBuffer) throws -> RawSegment {
+    return try FfiConverterTypeRawSegment.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRawSegment_lower(_ value: RawSegment) -> RustBuffer {
+    return FfiConverterTypeRawSegment.lower(value)
 }
 
 
@@ -591,6 +779,166 @@ public func FfiConverterTypeTranscriptSegment_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeTranscriptSegment_lower(_ value: TranscriptSegment) -> RustBuffer {
     return FfiConverterTypeTranscriptSegment.lower(value)
+}
+
+
+public struct TranscriptionConfig: Equatable, Hashable {
+    public var modelPath: String
+    public var micChannels: UInt8
+    public var micSampleRate: UInt32
+    public var systemChannels: UInt8
+    public var systemSampleRate: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(modelPath: String, micChannels: UInt8, micSampleRate: UInt32, systemChannels: UInt8, systemSampleRate: UInt32) {
+        self.modelPath = modelPath
+        self.micChannels = micChannels
+        self.micSampleRate = micSampleRate
+        self.systemChannels = systemChannels
+        self.systemSampleRate = systemSampleRate
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TranscriptionConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranscriptionConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TranscriptionConfig {
+        return
+            try TranscriptionConfig(
+                modelPath: FfiConverterString.read(from: &buf), 
+                micChannels: FfiConverterUInt8.read(from: &buf), 
+                micSampleRate: FfiConverterUInt32.read(from: &buf), 
+                systemChannels: FfiConverterUInt8.read(from: &buf), 
+                systemSampleRate: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TranscriptionConfig, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.modelPath, into: &buf)
+        FfiConverterUInt8.write(value.micChannels, into: &buf)
+        FfiConverterUInt32.write(value.micSampleRate, into: &buf)
+        FfiConverterUInt8.write(value.systemChannels, into: &buf)
+        FfiConverterUInt32.write(value.systemSampleRate, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptionConfig_lift(_ buf: RustBuffer) throws -> TranscriptionConfig {
+    return try FfiConverterTypeTranscriptionConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptionConfig_lower(_ value: TranscriptionConfig) -> RustBuffer {
+    return FfiConverterTypeTranscriptionConfig.lower(value)
+}
+
+
+public enum PabloError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case AudioPreprocessing(message: String
+    )
+    case WhisperInit(message: String
+    )
+    case WhisperTranscribe(message: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension PabloError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePabloError: FfiConverterRustBuffer {
+    typealias SwiftType = PabloError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PabloError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .AudioPreprocessing(
+            message: try FfiConverterString.read(from: &buf)
+            )
+        case 2: return .WhisperInit(
+            message: try FfiConverterString.read(from: &buf)
+            )
+        case 3: return .WhisperTranscribe(
+            message: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PabloError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .AudioPreprocessing(message):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .WhisperInit(message):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .WhisperTranscribe(message):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(message, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePabloError_lift(_ buf: RustBuffer) throws -> PabloError {
+    return try FfiConverterTypePabloError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePabloError_lower(_ value: PabloError) -> RustBuffer {
+    return FfiConverterTypePabloError.lower(value)
 }
 
 // Note that we don't yet support `indirect` for enums.
@@ -751,6 +1099,80 @@ public func FfiConverterTypeSpeakerLabel_lower(_ value: SpeakerLabel) -> RustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
+    typealias SwiftType = String?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
+    typealias SwiftType = [Float]
+
+    public static func write(_ value: [Float], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterFloat.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Float] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Float]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterFloat.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRawSegment: FfiConverterRustBuffer {
+    typealias SwiftType = [RawSegment]
+
+    public static func write(_ value: [RawSegment], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRawSegment.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RawSegment] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RawSegment]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRawSegment.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTranscriptSegment: FfiConverterRustBuffer {
     typealias SwiftType = [TranscriptSegment]
 
@@ -772,11 +1194,109 @@ fileprivate struct FfiConverterSequenceTypeTranscriptSegment: FfiConverterRustBu
         return seq
     }
 }
+private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
+private let UNIFFI_RUST_FUTURE_POLL_WAKE: Int8 = 1
+
+fileprivate let uniffiContinuationHandleMap = UniffiHandleMap<UnsafeContinuation<Int8, Never>>()
+
+fileprivate func uniffiRustCallAsync<F, T>(
+    rustFutureFunc: () -> UInt64,
+    pollFunc: (UInt64, @escaping UniffiRustFutureContinuationCallback, UInt64) -> (),
+    completeFunc: (UInt64, UnsafeMutablePointer<RustCallStatus>) -> F,
+    freeFunc: (UInt64) -> (),
+    liftFunc: (F) throws -> T,
+    errorHandler: ((RustBuffer) throws -> Swift.Error)?
+) async throws -> T {
+    // Make sure to call the ensure init function since future creation doesn't have a
+    // RustCallStatus param, so doesn't use makeRustCall()
+    uniffiEnsurePabloCoreInitialized()
+    let rustFuture = rustFutureFunc()
+    defer {
+        freeFunc(rustFuture)
+    }
+    var pollResult: Int8;
+    repeat {
+        pollResult = await withUnsafeContinuation {
+            pollFunc(
+                rustFuture,
+                { handle, pollResult in
+                    uniffiFutureContinuationCallback(handle: handle, pollResult: pollResult)
+                },
+                uniffiContinuationHandleMap.insert(obj: $0)
+            )
+        }
+    } while pollResult != UNIFFI_RUST_FUTURE_POLL_READY
+
+    return try liftFunc(makeRustCall(
+        { completeFunc(rustFuture, $0) },
+        errorHandler: errorHandler
+    ))
+}
+
+// Callback handlers for an async calls.  These are invoked by Rust when the future is ready.  They
+// lift the return value or error and resume the suspended function.
+fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: Int8) {
+    if let continuation = try? uniffiContinuationHandleMap.remove(handle: handle) {
+        continuation.resume(returning: pollResult)
+    } else {
+        print("uniffiFutureContinuationCallback invalid handle")
+    }
+}
 public func coreVersion() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_pablo_core_fn_func_core_version($0
     )
 })
+}
+public func preprocessPcm(path: String, channels: UInt8, sampleRate: UInt32)async throws  -> [Float]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_preprocess_pcm(FfiConverterString.lower(path),FfiConverterUInt8.lower(channels),FfiConverterUInt32.lower(sampleRate)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceFloat.lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func renderGoogleMeet(transcript: TranscriptResult, opts: GoogleMeetOptions) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_pablo_core_fn_func_render_google_meet(
+        FfiConverterTypeTranscriptResult_lower(transcript),
+        FfiConverterTypeGoogleMeetOptions_lower(opts),$0
+    )
+})
+}
+public func transcribeAudio(modelPath: String, audio: [Float])async throws  -> [RawSegment]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_transcribe_audio(FfiConverterString.lower(modelPath),FfiConverterSequenceFloat.lower(audio)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeRawSegment.lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func transcribeSession1on1(sessionId: String, micPath: String, systemPath: String?, config: TranscriptionConfig)async throws  -> TranscriptResult  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_transcribe_session_1on1(FfiConverterString.lower(sessionId),FfiConverterString.lower(micPath),FfiConverterOptionString.lower(systemPath),FfiConverterTypeTranscriptionConfig_lower(config)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeTranscriptResult_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
 }
 
 private enum InitializationResult {
@@ -795,6 +1315,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.contractVersionMismatch
     }
     if (uniffi_pablo_core_checksum_func_core_version() != 16817) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_preprocess_pcm() != 9691) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_render_google_meet() != 29351) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_transcribe_audio() != 50848) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_transcribe_session_1on1() != 37574) {
         return InitializationResult.apiChecksumMismatch
     }
 

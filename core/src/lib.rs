@@ -6,6 +6,11 @@
 uniffi::include_scaffolding!("pablo_core");
 
 pub mod audio_preprocessing;
+pub mod google_meet_renderer;
+pub mod session_pipeline;
+pub mod whisper_transcriber;
+
+pub use whisper_transcriber::RawSegment;
 
 // ── Error type ───────────────────────────────────────────────────────────────
 
@@ -14,9 +19,43 @@ pub mod audio_preprocessing;
 pub enum PabloError {
     #[error("Audio preprocessing error: {message}")]
     AudioPreprocessing { message: String },
+    #[error("Whisper model init error: {message}")]
+    WhisperInit { message: String },
+    #[error("Whisper transcription error: {message}")]
+    WhisperTranscribe { message: String },
 }
 
 // ── Public types exposed via UniFFI ──────────────────────────────────────────
+
+/// Options for rendering a transcript to Google Meet format.
+#[derive(Debug, Clone)]
+pub struct GoogleMeetOptions {
+    /// Session date string, e.g. "April 3, 2024" (formatted by the caller).
+    pub session_date: String,
+    /// Display name for the therapist speaker.
+    pub therapist_name: String,
+    /// Display name for the client speaker (1:1 mode).
+    pub client_name: String,
+    /// Display name for client A (couples mode).
+    pub client_a_name: String,
+    /// Display name for client B (couples mode).
+    pub client_b_name: String,
+}
+
+/// Configuration for a local transcription run.
+#[derive(Debug, Clone)]
+pub struct TranscriptionConfig {
+    /// Path to the GGML Whisper model file.
+    pub model_path: String,
+    /// Number of channels in the mic recording (always 1 — mono).
+    pub mic_channels: u8,
+    /// Sample rate of the mic recording (48000 built-in, 16000 Bluetooth HFP).
+    pub mic_sample_rate: u32,
+    /// Number of channels in the system audio recording (always 2 — stereo).
+    pub system_channels: u8,
+    /// Sample rate of the system audio recording.
+    pub system_sample_rate: u32,
+}
 
 /// Who spoke a given transcript segment.
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +107,34 @@ pub async fn preprocess_pcm(
     sample_rate: u32,
 ) -> Result<Vec<f32>, PabloError> {
     audio_preprocessing::preprocess_pcm(path, channels, sample_rate).await
+}
+
+/// Render a TranscriptResult to Google Meet plain-text format.
+/// The resulting string is what the Pablo SOAP note pipeline expects.
+pub fn render_google_meet(transcript: TranscriptResult, opts: GoogleMeetOptions) -> String {
+    google_meet_renderer::render_google_meet(&transcript, &opts)
+}
+
+/// 1:1 session transcription pipeline.
+/// Preprocesses and transcribes mic and (optionally) system audio files,
+/// labels segments THERAPIST / CLIENT, merges by start time, returns TranscriptResult.
+pub async fn transcribe_session_1on1(
+    session_id: String,
+    mic_path: String,
+    system_path: Option<String>,
+    config: TranscriptionConfig,
+) -> Result<TranscriptResult, PabloError> {
+    session_pipeline::transcribe_session_1on1(session_id, mic_path, system_path, config).await
+}
+
+/// Transcribe 16 kHz mono f32 audio using the GGML Whisper model at `model_path`.
+/// Returns one `RawSegment` per sentence segment, ordered by start time.
+/// Fixed params: language=en, token_timestamps=true, beam_size=5.
+pub async fn transcribe_audio(
+    model_path: String,
+    audio: Vec<f32>,
+) -> Result<Vec<RawSegment>, PabloError> {
+    whisper_transcriber::transcribe_audio(model_path, audio).await
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
