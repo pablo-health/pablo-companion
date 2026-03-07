@@ -1,0 +1,9 @@
+can you take at codeql linker error on latest github run on the only PR I have
+
+---
+
+ok interesting - the other day I had a problem, when the running was not arm64.
+
+---
+
+can yu commit and ppush please

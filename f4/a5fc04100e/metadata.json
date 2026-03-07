@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "f4a5fc04100e",
+  "strategy": "manual-commit",
+  "branch": "PABLO-D-104.4-whisper-integration",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".github/workflows/codeql.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f4/a5fc04100e/0/metadata.json",
+      "transcript": "/f4/a5fc04100e/0/full.jsonl",
+      "context": "/f4/a5fc04100e/0/context.md",
+      "content_hash": "/f4/a5fc04100e/0/content_hash.txt",
+      "prompt": "/f4/a5fc04100e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 21,
+    "cache_creation_tokens": 52060,
+    "cache_read_tokens": 588332,
+    "output_tokens": 2713,
+    "api_call_count": 15
+  }
+}
