@@ -10,31 +10,6 @@
 		9588F2B82F46BE5B0052AF8F /* AudioCaptureKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9588F2B12F46BD500052AF8F /* AudioCaptureKit */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		BB00000000000001000000 /* Build Rust Core (pablo-core) */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/../core/Cargo.toml",
-				"$(SRCROOT)/../core/src/lib.rs",
-				"$(SRCROOT)/../core/uniffi/pablo_core.udl",
-			);
-			name = "Build Rust Core (pablo-core)";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/../core/target/debug/libpablo_core.dylib",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\n\nCARGO=\"$HOME/.cargo/bin/cargo\"\nMANIFEST=\"$SRCROOT/../core/Cargo.toml\"\nDYLIB=\"libpablo_core.dylib\"\n\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    PROFILE=\"--release\"\n    NATIVE_DIR=\"$SRCROOT/../core/target/release\"\n    CROSS_DIR=\"$SRCROOT/../core/target/x86_64-apple-darwin/release\"\nelse\n    PROFILE=\"\"\n    NATIVE_DIR=\"$SRCROOT/../core/target/debug\"\n    CROSS_DIR=\"$SRCROOT/../core/target/x86_64-apple-darwin/debug\"\nfi\n\n# Build universal binary when targeting multiple architectures (e.g. Release dist, CodeQL CI).\n# For arm64-only Debug builds (local dev), skip cross-compile for speed.\nif echo \"$ARCHS\" | grep -qw \"x86_64\"; then\n    rustup target add x86_64-apple-darwin 2>/dev/null || true\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" $PROFILE\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" --target x86_64-apple-darwin $PROFILE\n    lipo -create \"$NATIVE_DIR/$DYLIB\" \"$CROSS_DIR/$DYLIB\" -output \"$NATIVE_DIR/$DYLIB\"\nelse\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" $PROFILE\nfi\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXContainerItemProxy section */
 		AA0000000000000B000000 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -219,6 +194,31 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		BB00000000000001000000 /* Build Rust Core (pablo-core) */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../core/Cargo.toml",
+				"$(SRCROOT)/../core/src/lib.rs",
+				"$(SRCROOT)/../core/uniffi/pablo_core.udl",
+			);
+			name = "Build Rust Core (pablo-core)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/../core/target/debug/libpablo_core.dylib",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\nCARGO=\"$HOME/.cargo/bin/cargo\"\nMANIFEST=\"$SRCROOT/../core/Cargo.toml\"\nDYLIB=\"libpablo_core.dylib\"\n\n# Use the real system compiler, not CI wrappers.\n# CodeQL wraps CC/CXX to intercept builds for analysis, but it only\n# needs Swift -- the Rust/whisper.cpp build must use native compilers\n# to avoid architecture mismatch (ARM detection with x86_64 target).\nexport CC=$(xcrun -find cc)\nexport CXX=$(xcrun -find c++)\n\n# Suppress CMake developer warnings (CMP0065, CMP0066 policy warnings).\nexport CMAKE_SUPPRESS_DEVELOPER_WARNINGS=TRUE\n\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    PROFILE=\"--release\"\n    NATIVE_DIR=\"$SRCROOT/../core/target/release\"\n    CROSS_DIR=\"$SRCROOT/../core/target/x86_64-apple-darwin/release\"\nelse\n    PROFILE=\"\"\n    NATIVE_DIR=\"$SRCROOT/../core/target/debug\"\n    CROSS_DIR=\"$SRCROOT/../core/target/x86_64-apple-darwin/debug\"\nfi\n\n# Detect actual hardware architecture, reliable regardless of CI tool wrappers.\nHARDWARE_ARCH=$(uname -m)\n\n# Cross-compile only when arm64 hardware needs to also produce an x86_64 slice.\nif [ \"$HARDWARE_ARCH\" = \"arm64\" ] && echo \"$ARCHS\" | grep -qw \"x86_64\"; then\n    rustup target add x86_64-apple-darwin 2>/dev/null || true\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" $PROFILE\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" --target x86_64-apple-darwin $PROFILE\n    lipo -create \"$NATIVE_DIR/$DYLIB\" \"$CROSS_DIR/$DYLIB\" -output \"$NATIVE_DIR/$DYLIB\"\nelse\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" $PROFILE\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		9588F2862F46BC910052AF8F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -379,21 +379,21 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
-				INFOPLIST_KEY_CFBundleName = Pablo;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pablo Companion needs microphone access to record audio.";
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)/PabloCompanion/Generated",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../core/target/debug",
-				);
+				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
+				INFOPLIST_KEY_CFBundleName = Pablo;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pablo Companion needs microphone access to record audio.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
+					"$(SRCROOT)/../core/target/debug",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
 					"$(SRCROOT)/../core/target/debug",
 				);
 				MARKETING_VERSION = 1.0;
@@ -401,18 +401,11 @@
 					"$(inherited)",
 					"-lpablo_core",
 				);
-				OTHER_SWIFT_FLAGS = (
-					"$(inherited)",
-					"-Xcc",
-					"-fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap",
-				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/PabloCompanion/Generated",
-				);
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/PabloCompanion/Generated";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.2;
 			};
@@ -421,7 +414,10 @@
 		9588F2972F46BC930052AF8F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "arm64 x86_64";
+				ARCHS = (
+					arm64,
+					x86_64,
+				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = PabloCompanion/PabloCompanion.entitlements;
@@ -433,21 +429,21 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
-				INFOPLIST_KEY_CFBundleName = Pablo;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pablo Companion needs microphone access to record audio.";
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)/PabloCompanion/Generated",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../core/target/release",
-				);
+				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
+				INFOPLIST_KEY_CFBundleName = Pablo;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pablo Companion needs microphone access to record audio.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
+					"$(SRCROOT)/../core/target/release",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
 					"$(SRCROOT)/../core/target/release",
 				);
 				MARKETING_VERSION = 1.0;
@@ -456,18 +452,11 @@
 					"$(inherited)",
 					"-lpablo_core",
 				);
-				OTHER_SWIFT_FLAGS = (
-					"$(inherited)",
-					"-Xcc",
-					"-fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap",
-				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/PabloCompanion/Generated",
-				);
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/PabloCompanion/Generated";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.2;
 			};
@@ -482,18 +471,11 @@
 				DEVELOPMENT_TEAM = L8KG4FA2R9;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				OTHER_SWIFT_FLAGS = (
-					"$(inherited)",
-					"-Xcc",
-					"-fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap",
-				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_INCLUDE_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/PabloCompanion/Generated",
-				);
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/PabloCompanion/Generated";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.2;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pablo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pablo";
@@ -509,18 +491,11 @@
 				DEVELOPMENT_TEAM = L8KG4FA2R9;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				OTHER_SWIFT_FLAGS = (
-					"$(inherited)",
-					"-Xcc",
-					"-fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap",
-				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_INCLUDE_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/PabloCompanion/Generated",
-				);
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/PabloCompanion/Generated";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.2;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pablo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pablo";
