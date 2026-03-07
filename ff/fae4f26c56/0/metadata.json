@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "fffae4f26c56",
+  "session_id": "a190cfe0-1233-4e63-ab47-4e79b9fdb70a",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-07T14:29:16.563905Z",
+  "branch": "PABLO-D-104.4-whisper-integration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Makefile"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "6ac05df9c904",
+  "checkpoint_transcript_start": 60,
+  "transcript_lines_at_start": 60,
+  "token_usage": {
+    "input_tokens": 1221,
+    "cache_creation_tokens": 116044,
+    "cache_read_tokens": 1639950,
+    "output_tokens": 5114,
+    "api_call_count": 28
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-07T14:29:15.736943Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 4,
+    "human_removed": 74,
+    "total_committed": 29,
+    "agent_percentage": 0
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "fffae4f26c56",
+  "strategy": "manual-commit",
+  "branch": "PABLO-D-104.4-whisper-integration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Makefile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ff/fae4f26c56/0/metadata.json",
+      "transcript": "/ff/fae4f26c56/0/full.jsonl",
+      "context": "/ff/fae4f26c56/0/context.md",
+      "content_hash": "/ff/fae4f26c56/0/content_hash.txt",
+      "prompt": "/ff/fae4f26c56/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1221,
+    "cache_creation_tokens": 116044,
+    "cache_read_tokens": 1639950,
+    "output_tokens": 5114,
+    "api_call_count": 28
+  }
+}
