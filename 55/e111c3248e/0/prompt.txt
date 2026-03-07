@@ -1,0 +1,100 @@
+hi on ci i'm getting the codeql swift error -  is the problem with my cmake?
+
+---
+
+[Request interrupted by user]
+
+---
+
+CMakeLists.txt:2 (project)
+  This warning is for project developers.  Use -Wno-dev to suppress it.
+
+     Called from: [3]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/CMakeLists.txt
+                  [2]    /opt/homebrew/share/cmake/Modules/CMakeTestCCompiler.cmake
+                  [1]    /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerABI.cmake
+  CMake Warning (dev) at /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:83 (try_compile):
+    Policy CMP0066 is not set: Honor per-config flags in try_compile()
+    source-file signature.  Run "cmake --help-policy CMP0066" for policy
+    details.  Use the cmake_policy command to set the policy and suppress this
+    warning.
+
+    For compatibility with older versions of CMake, try_compile is not honoring
+    caller config-specific compiler flags (e.g.  CMAKE_C_FLAGS_DEBUG) in the
+    test project.
+  Call Stack (most recent call first):
+    /opt/homebrew/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)
+    CMakeLists.txt:2 (project)
+  This warning is for project developers.  Use -Wno-dev to suppress it.
+
+     Called from: [3]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/CMakeLists.txt
+                  [2]    /opt/homebrew/share/cmake/Modules/CMakeTestCXXCompiler.cmake
+                  [1]    /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerABI.cmake
+     Entering             /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml
+     Called from: [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/CMakeLists.txt
+     Entering             /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src
+     Called from: [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/CMakeLists.txt
+     Entering             /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/ggml-cpu
+     Called from: [2]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+                  [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+     Returning to         /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src
+     Called from: [2]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+                  [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+  cc: error: unsupported option '-mcpu=' for target 'x86_64-apple-darwin25.3.0'
+  CMake Warning at ggml/src/ggml-cpu/CMakeLists.txt:222 (message):
+    Failed to get ARM features
+  Call Stack (most recent call first):
+    ggml/src/CMakeLists.txt:372 (ggml_add_cpu_backend_variant_impl)
+
+
+     Called from: [2]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+                  [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/ggml-cpu/CMakeLists.txt
+     Entering             /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/ggml-blas
+     Called from: [2]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+                  [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+     Returning to         /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src
+     Called from: [2]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+                  [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/src/CMakeLists.txt
+     Returning to         /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml
+     Called from: [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/CMakeLists.txt
+  CMake Warning at ggml/CMakeLists.txt:315 (message):
+    GGML build version fixed at 1 likely due to a shallow clone.
+
+
+     Called from: [1]    /Users/runner/work/pablo-companion/pablo-companion/core/target/debug/build/whisper-rs-sys-20ddda06087b178b/out/whisper.cpp/ggml/CMakeLists.txt
+
+  command did not execute successfully, got: exit status: 2
+
+  build script failed, must exit now
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+SwiftDriverJobDiscovery normal x86_64 Compiling AVFoundationMicCapture.swift, CompositeCaptureSession+AudioSources.swift, CompositeCaptureSession+Processing.swift, CompositeCaptureSession.swift, CoreAudioTapCapture.swift, AudioModels.swift, CaptureConfiguration.swift, CaptureError.swift (in target 'AudioCaptureKit' from project 'AudioCaptureKit')
+
+SwiftDriverJobDiscovery normal x86_64 Compiling UnfairLock.swift, AudioCaptureDelegate.swift, AudioCaptureProvider.swift, AudioCaptureSession.swift, CaptureEncryptor.swift, EncryptedFileWriter.swift, RecordingMetadata.swift (in target 'AudioCaptureKit' from project 'AudioCaptureKit')
+
+SwiftDriver\ Compilation AudioCaptureKit normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'AudioCaptureKit' from project 'AudioCaptureKit')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion.xcodeproj
+    builtin-Swift-Compilation -- /Applications/Xcode_26.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name AudioCaptureKit -Onone -enforce-exclusivity\=checked @/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE -DXcode -plugin-path /Applications/Xcode_26.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_26.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -target x86_64-apple-macos14.0 -g -module-cache-path /Users/runner/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -suppress-warnings -index-store-path /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug -Isystem /Applications/Xcode_26.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/PackageFrameworks -F /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug -F /Applications/Xcode_26.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j3 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/runner/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/macosx26.2-25C57-228358829757ae63d7ca6923410e58a7.sdkstatcache -output-file-map /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/runner/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/runner/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit.swiftmodule -user-module-version 1.0.1 -validate-clang-modules-once -clang-build-session-file /Users/runner/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/Session.modulevalidation -package-name audiocapturekit -Xcc -I/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit_const_extract_protocols.json -Xcc -I/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/include -Xcc -I/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/DerivedSources-normal/x86_64 -Xcc -I/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/DerivedSources/x86_64 -Xcc -I/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit-Swift.h -working-directory /Users/runner/work/pablo-companion/pablo-companion/mac/PabloCompanion.xcodeproj -experimental-emit-module-separately -disable-cmo
+
+Ld /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/AudioCaptureKit.o normal (in target 'AudioCaptureKit' from project 'AudioCaptureKit')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac/SourcePackages/checkouts/AudioCaptureKit
+    /Applications/Xcode_26.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-macos14.0 -r -isysroot /Applications/Xcode_26.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -O0 -w -L/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -L/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug -L/Applications/Xcode_26.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -F/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/PackageFrameworks -F/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug -iframework /Applications/Xcode_26.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -filelist /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit.LinkFileList -nostdlib -Xlinker -object_path_lto -Xlinker /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -debug_variant -Xlinker -dependency_info -Xlinker /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_26.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit.swiftmodule @/Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit-linker-args.resp -o /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/AudioCaptureKit.o
+
+ExtractAppIntentsMetadata (in target 'AudioCaptureKit' from project 'AudioCaptureKit')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac/SourcePackages/checkouts/AudioCaptureKit
+    /Applications/Xcode_26.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode_26.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name AudioCaptureKit --sdk-root /Applications/Xcode_26.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk --xcode-version 17C52 --platform-family macOS --deployment-target 14.0 --bundle-identifier audiocapturekit.AudioCaptureKit --output /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/AudioCaptureKit.appintents --target-triple x86_64-apple-macos14.0 --binary-file /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/AudioCaptureKit.o --dependency-file /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit_dependency_info.dat --stringsdata-file /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit.SwiftFileList --metadata-file-list /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/AudioCaptureKit.DependencyMetadataFileList --static-metadata-file-list /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/AudioCaptureKit.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Intermediates.noindex/AudioCaptureKit.build/Debug/AudioCaptureKit.build/Objects-normal/x86_64/AudioCaptureKit.SwiftConstValuesFileList --force --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2026-03-07 18:01:04.868 appintentsmetadataprocessor[22784:96086] Starting appintentsmetadataprocessor export
+2026-03-07 18:01:05.367 appintentsmetadataprocessor[22784:96086] Extracted no relevant App Intents symbols, skipping writing output
+
+RegisterExecutionPolicyException /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/AudioCaptureKit.o (in target 'AudioCaptureKit' from project 'AudioCaptureKit')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac/SourcePackages/checkouts/AudioCaptureKit
+    builtin-RegisterExecutionPolicyException /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/AudioCaptureKit.o
+
+Copy /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/Pablo.app/Contents/Resources/swift-crypto_Crypto.bundle /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/swift-crypto_Crypto.bundle (in target 'Pablo' from project 'PabloCompanion')
+    cd /Users/runner/work/pablo-companion/pablo-companion/mac
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/swift-crypto_Crypto.bundle /Users/runner/Library/Developer/Xcode/DerivedData/PabloCompanion-cpauxsyvtnyjpjaobnmjggvbtyaq/Build/Products/Debug/Pablo.app/Contents/Resources
+
+** BUILD FAILED **
+
+---
+
+yes let's do it
