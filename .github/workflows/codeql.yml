@@ -57,26 +57,17 @@ jobs:
             ${{ runner.os }}-spm-
 
       - name: Build
-        env:
-          # CodeQL's C++ extractor can intercept compiler calls and replay
-          # them through its own (x86_64) toolchain, where the arm64-only
-          # flag -mcpu=native is unsupported. Clear these env vars so the
-          # flag never reaches the extractor's compiler wrapper.
-          CFLAGS: ""
-          CXXFLAGS: ""
         run: |
           DISABLE_PKGS=${{ steps.spm-cache.outputs.cache-hit == 'true' && '-disableAutomaticPackageResolution' || '' }}
           xcodebuild -project mac/PabloCompanion.xcodeproj \
             -scheme Pablo \
-            -destination 'platform=macOS,arch=arm64' \
+            -destination 'platform=macOS' \
             -clonedSourcePackagesDirPath mac/SourcePackages \
             $DISABLE_PKGS \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
-            OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-unused-command-line-argument' \
             build
 
       - name: Perform CodeQL Analysis
