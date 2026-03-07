@@ -67,7 +67,8 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            ONLY_ACTIVE_ARCH=YES \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
             build
 
       - name: Perform CodeQL Analysis
