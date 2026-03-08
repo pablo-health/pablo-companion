@@ -49,6 +49,9 @@
 # Header
 --header strip
 
+# Modifier order (match SwiftLint: nonisolated before access control)
+--modifierorder nonisolated,override,private,fileprivate,internal,public,open,final,static,class,lazy,required,convenience,optional,dynamic
+
 # Disable rules that conflict with SwiftUI / project preferences
 --disable blankLinesAtStartOfScope
 --disable blankLinesAtEndOfScope

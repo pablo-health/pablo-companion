@@ -243,10 +243,70 @@ typedef void (*UniffiForeignFutureCompleteVoid)(uint64_t, UniffiForeignFutureRes
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_ACCEPT_BAA
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_ACCEPT_BAA
+uint64_t uniffi_pablo_core_fn_func_accept_baa(RustBuffer base_url, RustBuffer token
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CORE_VERSION
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CORE_VERSION
 RustBuffer uniffi_pablo_core_fn_func_core_version(RustCallStatus *_Nonnull out_status
     
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CREATE_PATIENT
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CREATE_PATIENT
+uint64_t uniffi_pablo_core_fn_func_create_patient(RustBuffer base_url, RustBuffer token, RustBuffer first_name, RustBuffer last_name, RustBuffer email, RustBuffer phone, RustBuffer date_of_birth, RustBuffer diagnosis
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CREATE_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CREATE_SESSION
+uint64_t uniffi_pablo_core_fn_func_create_session(RustBuffer base_url, RustBuffer token, RustBuffer request
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_BAA_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_BAA_STATUS
+uint64_t uniffi_pablo_core_fn_func_fetch_baa_status(RustBuffer base_url, RustBuffer token
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_PATIENTS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_PATIENTS
+uint64_t uniffi_pablo_core_fn_func_fetch_patients(RustBuffer base_url, RustBuffer token, RustBuffer search, uint32_t page, uint32_t page_size
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_PREFERENCES
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_PREFERENCES
+uint64_t uniffi_pablo_core_fn_func_fetch_preferences(RustBuffer base_url, RustBuffer token
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_SESSION
+uint64_t uniffi_pablo_core_fn_func_fetch_session(RustBuffer base_url, RustBuffer token, RustBuffer session_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_SESSIONS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_SESSIONS
+uint64_t uniffi_pablo_core_fn_func_fetch_sessions(RustBuffer base_url, RustBuffer token, uint32_t page, uint32_t page_size, RustBuffer status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_TODAY_SESSIONS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_TODAY_SESSIONS
+uint64_t uniffi_pablo_core_fn_func_fetch_today_sessions(RustBuffer base_url, RustBuffer token, RustBuffer timezone
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_USER_PROFILE
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FETCH_USER_PROFILE
+uint64_t uniffi_pablo_core_fn_func_fetch_user_profile(RustBuffer base_url, RustBuffer token
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FINALIZE_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_FINALIZE_SESSION
+uint64_t uniffi_pablo_core_fn_func_finalize_session(RustBuffer base_url, RustBuffer token, RustBuffer session_id, uint8_t quality_rating
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_HEALTH_CHECK
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_HEALTH_CHECK
+uint64_t uniffi_pablo_core_fn_func_health_check(RustBuffer base_url
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_PREPROCESS_PCM
@@ -259,6 +319,11 @@ uint64_t uniffi_pablo_core_fn_func_preprocess_pcm(RustBuffer path, uint8_t chann
 RustBuffer uniffi_pablo_core_fn_func_render_google_meet(RustBuffer transcript, RustBuffer opts, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_SAVE_PREFERENCES
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_SAVE_PREFERENCES
+uint64_t uniffi_pablo_core_fn_func_save_preferences(RustBuffer base_url, RustBuffer token, RustBuffer preferences
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_AUDIO
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_AUDIO
 uint64_t uniffi_pablo_core_fn_func_transcribe_audio(RustBuffer model_path, RustBuffer audio
@@ -267,6 +332,26 @@ uint64_t uniffi_pablo_core_fn_func_transcribe_audio(RustBuffer model_path, RustB
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_SESSION_1ON1
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_SESSION_1ON1
 uint64_t uniffi_pablo_core_fn_func_transcribe_session_1on1(RustBuffer session_id, RustBuffer mic_path, RustBuffer system_path, RustBuffer config
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_UPDATE_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_UPDATE_SESSION
+uint64_t uniffi_pablo_core_fn_func_update_session(RustBuffer base_url, RustBuffer token, RustBuffer session_id, RustBuffer request
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_UPDATE_SESSION_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_UPDATE_SESSION_STATUS
+uint64_t uniffi_pablo_core_fn_func_update_session_status(RustBuffer base_url, RustBuffer token, RustBuffer session_id, RustBuffer status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_UPLOAD_RECORDING
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_UPLOAD_RECORDING
+uint64_t uniffi_pablo_core_fn_func_upload_recording(RustBuffer base_url, RustBuffer token, RustBuffer file_path
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_UPLOAD_TRANSCRIPT
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_UPLOAD_TRANSCRIPT
+uint64_t uniffi_pablo_core_fn_func_upload_transcript(RustBuffer base_url, RustBuffer token, RustBuffer session_id, RustBuffer format, RustBuffer content
 );
 #endif
 #ifndef UNIFFI_FFIDEF_FFI_PABLO_CORE_RUSTBUFFER_ALLOC
@@ -529,9 +614,81 @@ void ffi_pablo_core_rust_future_free_void(uint64_t handle
 void ffi_pablo_core_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_ACCEPT_BAA
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_ACCEPT_BAA
+uint16_t uniffi_pablo_core_checksum_func_accept_baa(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CORE_VERSION
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CORE_VERSION
 uint16_t uniffi_pablo_core_checksum_func_core_version(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CREATE_PATIENT
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CREATE_PATIENT
+uint16_t uniffi_pablo_core_checksum_func_create_patient(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CREATE_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CREATE_SESSION
+uint16_t uniffi_pablo_core_checksum_func_create_session(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_BAA_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_BAA_STATUS
+uint16_t uniffi_pablo_core_checksum_func_fetch_baa_status(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_PATIENTS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_PATIENTS
+uint16_t uniffi_pablo_core_checksum_func_fetch_patients(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_PREFERENCES
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_PREFERENCES
+uint16_t uniffi_pablo_core_checksum_func_fetch_preferences(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_SESSION
+uint16_t uniffi_pablo_core_checksum_func_fetch_session(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_SESSIONS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_SESSIONS
+uint16_t uniffi_pablo_core_checksum_func_fetch_sessions(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_TODAY_SESSIONS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_TODAY_SESSIONS
+uint16_t uniffi_pablo_core_checksum_func_fetch_today_sessions(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_USER_PROFILE
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FETCH_USER_PROFILE
+uint16_t uniffi_pablo_core_checksum_func_fetch_user_profile(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FINALIZE_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_FINALIZE_SESSION
+uint16_t uniffi_pablo_core_checksum_func_finalize_session(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_HEALTH_CHECK
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_HEALTH_CHECK
+uint16_t uniffi_pablo_core_checksum_func_health_check(void
     
 );
 #endif
@@ -547,6 +704,12 @@ uint16_t uniffi_pablo_core_checksum_func_render_google_meet(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_SAVE_PREFERENCES
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_SAVE_PREFERENCES
+uint16_t uniffi_pablo_core_checksum_func_save_preferences(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_TRANSCRIBE_AUDIO
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_TRANSCRIBE_AUDIO
 uint16_t uniffi_pablo_core_checksum_func_transcribe_audio(void
@@ -556,6 +719,30 @@ uint16_t uniffi_pablo_core_checksum_func_transcribe_audio(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_TRANSCRIBE_SESSION_1ON1
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_TRANSCRIBE_SESSION_1ON1
 uint16_t uniffi_pablo_core_checksum_func_transcribe_session_1on1(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_UPDATE_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_UPDATE_SESSION
+uint16_t uniffi_pablo_core_checksum_func_update_session(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_UPDATE_SESSION_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_UPDATE_SESSION_STATUS
+uint16_t uniffi_pablo_core_checksum_func_update_session_status(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_UPLOAD_RECORDING
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_UPLOAD_RECORDING
+uint16_t uniffi_pablo_core_checksum_func_upload_recording(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_UPLOAD_TRANSCRIPT
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_UPLOAD_TRANSCRIPT
+uint16_t uniffi_pablo_core_checksum_func_upload_transcript(void
     
 );
 #endif

@@ -155,8 +155,8 @@ struct SettingsView: View {
     }
 
     @AppStorage("deleteAfterUpload") private var deleteAfterUpload = true
-    @AppStorage("qualityPreset") private var qualityPreset = QualityPreset.balanced.rawValue
-    @AppStorage("sessionType") private var sessionType = SessionType.oneToOne.rawValue
+    @AppStorage("qualityPreset") private var qualityPreset = WhisperModelPreset.balanced.rawValue
+    @AppStorage("sessionType") private var sessionType = DisplaySessionType.oneToOne.rawValue
     @AppStorage("autoTranscribe") private var autoTranscribe = true
 
     @ObservedObject private var modelManager = ModelManager.shared
@@ -184,13 +184,13 @@ struct SettingsView: View {
             Toggle("Auto-transcribe after session", isOn: $autoTranscribe)
 
             Picker("Quality Preset", selection: $qualityPreset) {
-                ForEach(QualityPreset.allCases, id: \.rawValue) { preset in
+                ForEach(WhisperModelPreset.allCases, id: \.rawValue) { preset in
                     Text(preset.displayName).tag(preset.rawValue)
                 }
             }
 
             Picker("Session Type", selection: $sessionType) {
-                ForEach(SessionType.allCases, id: \.rawValue) { type in
+                ForEach(DisplaySessionType.allCases, id: \.rawValue) { type in
                     Text(type.displayName).tag(type.rawValue)
                 }
             }
@@ -209,13 +209,13 @@ struct SettingsView: View {
             LabeledContent("CPU", value: hardware.isAppleSilicon ? "Apple Silicon" : "Intel")
             LabeledContent("RAM", value: "\(hardware.physicalMemoryGB) GB")
 
-            ForEach(QualityPreset.allCases, id: \.rawValue) { preset in
+            ForEach(WhisperModelPreset.allCases, id: \.rawValue) { preset in
                 modelRow(preset)
             }
         }
     }
 
-    private func modelRow(_ preset: QualityPreset) -> some View {
+    private func modelRow(_ preset: WhisperModelPreset) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(preset.displayName)
@@ -249,7 +249,7 @@ struct SettingsView: View {
     }
 
     private var transcriptionWarning: String? {
-        let preset = QualityPreset(rawValue: qualityPreset) ?? .balanced
+        let preset = WhisperModelPreset(rawValue: qualityPreset) ?? .balanced
         if preset == .highAccuracy, !hardware.meetsHighAccuracyRequirement {
             return "High Accuracy requires 16+ GB RAM. Consider Balanced instead."
         }
