@@ -144,6 +144,16 @@ pub struct Patient {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePatientRequest {
+    pub first_name: String,
+    pub last_name: String,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub date_of_birth: Option<String>,
+    pub diagnosis: Option<String>,
+}
+
 // ── Paginated response types ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

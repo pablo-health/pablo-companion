@@ -5,9 +5,9 @@ use reqwest::Client;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::models::{
-    BaaStatus, CreateSessionRequest, Patient, PatientListResponse, Session, SessionListResponse,
-    SessionStatus, TranscriptUploadResponse, UpdateSessionRequest, UploadResponse, UserPreferences,
-    UserProfile,
+    BaaStatus, CreatePatientRequest, CreateSessionRequest, Patient, PatientListResponse, Session,
+    SessionListResponse, SessionStatus, TranscriptUploadResponse, UpdateSessionRequest,
+    UploadResponse, UserPreferences, UserProfile,
 };
 use crate::PabloError;
 
@@ -78,10 +78,7 @@ impl ApiClient {
     ) -> reqwest::RequestBuilder {
         self.client
             .request(method, format!("{}{}", self.base_url, path))
-            .header(
-                "Authorization",
-                format!("Bearer {}", token.expose_secret()),
-            )
+            .header("Authorization", format!("Bearer {}", token.expose_secret()))
             .header("X-Client-Type", CLIENT_TYPE_HEADER)
     }
 }
@@ -130,14 +127,15 @@ pub(crate) async fn handle_error_response(response: reqwest::Response) -> PabloE
 pub async fn health_check(base_url: String) -> Result<(), PabloError> {
     let client = ApiClient::new(base_url);
 
-    let response = client
-        .get_public("/health")
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+    let response =
+        client
+            .get_public("/health")
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
     if !response.status().is_success() {
         return Err(handle_error_response(response).await);
@@ -459,10 +457,7 @@ pub async fn upload_transcript(
     });
 
     let response = client
-        .post(
-            &format!("/api/sessions/{session_id}/transcript"),
-            &token,
-        )
+        .post(&format!("/api/sessions/{session_id}/transcript"), &token)
         .json(&body)
         .send()
         .await
@@ -547,10 +542,7 @@ pub async fn fetch_user_profile(
 }
 
 /// Fetch the user's BAA acceptance status.
-pub async fn fetch_baa_status(
-    base_url: String,
-    token: String,
-) -> Result<BaaStatus, PabloError> {
+pub async fn fetch_baa_status(base_url: String, token: String) -> Result<BaaStatus, PabloError> {
     let client = ApiClient::new(base_url);
     let token = SecretString::from(token);
 
@@ -576,10 +568,7 @@ pub async fn fetch_baa_status(
 }
 
 /// Accept the BAA agreement.
-pub async fn accept_baa(
-    base_url: String,
-    token: String,
-) -> Result<BaaStatus, PabloError> {
+pub async fn accept_baa(base_url: String, token: String) -> Result<BaaStatus, PabloError> {
     let client = ApiClient::new(base_url);
     let token = SecretString::from(token);
 
@@ -668,28 +657,14 @@ pub async fn save_preferences(
 pub async fn create_patient(
     base_url: String,
     token: String,
-    first_name: String,
-    last_name: String,
-    email: Option<String>,
-    phone: Option<String>,
-    date_of_birth: Option<String>,
-    diagnosis: Option<String>,
+    request: CreatePatientRequest,
 ) -> Result<Patient, PabloError> {
     let client = ApiClient::new(base_url);
     let token = SecretString::from(token);
 
-    let body = serde_json::json!({
-        "first_name": first_name,
-        "last_name": last_name,
-        "email": email,
-        "phone": phone,
-        "date_of_birth": date_of_birth,
-        "diagnosis": diagnosis,
-    });
-
     let response = client
         .post("/api/patients", &token)
-        .json(&body)
+        .json(&request)
         .send()
         .await
         .map_err(|e| PabloError::ApiClient {
@@ -751,16 +726,18 @@ mod tests {
         let token = SecretString::from("test-token-abc");
         let req = client.get("/v1/sessions", &token).build().unwrap();
 
-        let auth = req.headers().get("Authorization").unwrap().to_str().unwrap();
+        let auth = req
+            .headers()
+            .get("Authorization")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert_eq!(auth, "Bearer test-token-abc");
         assert_eq!(
             req.headers().get("X-Client-Type").unwrap(),
             CLIENT_TYPE_HEADER
         );
-        assert_eq!(
-            req.url().as_str(),
-            "https://api.pablo.health/v1/sessions"
-        );
+        assert_eq!(req.url().as_str(), "https://api.pablo.health/v1/sessions");
     }
 
     #[test]
@@ -800,10 +777,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_error_401_maps_to_unauthenticated() {
-        let response = http::Response::builder()
-            .status(401)
-            .body("")
-            .unwrap();
+        let response = http::Response::builder().status(401).body("").unwrap();
         let reqwest_resp = reqwest::Response::from(response);
         let err = handle_error_response(reqwest_resp).await;
         assert!(matches!(err, PabloError::Unauthenticated));
@@ -811,10 +785,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_error_403_maps_to_forbidden() {
-        let response = http::Response::builder()
-            .status(403)
-            .body("")
-            .unwrap();
+        let response = http::Response::builder().status(403).body("").unwrap();
         let reqwest_resp = reqwest::Response::from(response);
         let err = handle_error_response(reqwest_resp).await;
         assert!(matches!(err, PabloError::Forbidden));
@@ -1103,10 +1074,7 @@ mod tests {
         let client = ApiClient::new("https://api.pablo.health".to_string());
         let token = SecretString::from("tok");
         let req = client.get("/api/users/me", &token).build().unwrap();
-        assert_eq!(
-            req.url().as_str(),
-            "https://api.pablo.health/api/users/me"
-        );
+        assert_eq!(req.url().as_str(), "https://api.pablo.health/api/users/me");
         assert_eq!(req.method(), reqwest::Method::GET);
     }
 
@@ -1198,10 +1166,7 @@ mod tests {
             .json(&body)
             .build()
             .unwrap();
-        assert_eq!(
-            req.url().as_str(),
-            "https://api.pablo.health/api/patients"
-        );
+        assert_eq!(req.url().as_str(), "https://api.pablo.health/api/patients");
         assert_eq!(req.method(), reqwest::Method::POST);
         let body_bytes = req.body().unwrap().as_bytes().unwrap();
         let body_str = String::from_utf8_lossy(body_bytes);
@@ -1256,10 +1221,8 @@ mod tests {
         let client = ApiClient::new("https://api.pablo.health".to_string());
         let token = SecretString::from("tok");
         // When search is None, only page/page_size should be in query
-        let query_params: Vec<(&str, String)> = vec![
-            ("page", "1".to_string()),
-            ("page_size", "50".to_string()),
-        ];
+        let query_params: Vec<(&str, String)> =
+            vec![("page", "1".to_string()), ("page_size", "50".to_string())];
         let req = client
             .get("/api/patients", &token)
             .query(&query_params)

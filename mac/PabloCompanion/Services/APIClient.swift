@@ -104,15 +104,19 @@ final class APIClient {
     ) async throws -> Patient {
         let token = try await requireToken()
 
-        let patient = try await Pablo.createPatient(
-            baseUrl: baseURLString,
-            token: token,
+        let request = CreatePatientRequest(
             firstName: firstName,
             lastName: lastName,
             email: email,
             phone: phone,
             dateOfBirth: dateOfBirth,
             diagnosis: diagnosis
+        )
+
+        let patient = try await Pablo.createPatient(
+            baseUrl: baseURLString,
+            token: token,
+            request: request
         )
 
         logger.info("Created patient: \(patient.id)")

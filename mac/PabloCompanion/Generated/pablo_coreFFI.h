@@ -256,7 +256,7 @@ RustBuffer uniffi_pablo_core_fn_func_core_version(RustCallStatus *_Nonnull out_s
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CREATE_PATIENT
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CREATE_PATIENT
-uint64_t uniffi_pablo_core_fn_func_create_patient(RustBuffer base_url, RustBuffer token, RustBuffer first_name, RustBuffer last_name, RustBuffer email, RustBuffer phone, RustBuffer date_of_birth, RustBuffer diagnosis
+uint64_t uniffi_pablo_core_fn_func_create_patient(RustBuffer base_url, RustBuffer token, RustBuffer request
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CREATE_SESSION

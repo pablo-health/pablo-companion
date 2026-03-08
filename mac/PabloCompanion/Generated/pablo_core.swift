@@ -632,6 +632,76 @@ public func FfiConverterTypeBaaStatus_lower(_ value: BaaStatus) -> RustBuffer {
 }
 
 
+public struct CreatePatientRequest: Equatable, Hashable {
+    public var firstName: String
+    public var lastName: String
+    public var email: String?
+    public var phone: String?
+    public var dateOfBirth: String?
+    public var diagnosis: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(firstName: String, lastName: String, email: String?, phone: String?, dateOfBirth: String?, diagnosis: String?) {
+        self.firstName = firstName
+        self.lastName = lastName
+        self.email = email
+        self.phone = phone
+        self.dateOfBirth = dateOfBirth
+        self.diagnosis = diagnosis
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CreatePatientRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCreatePatientRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CreatePatientRequest {
+        return
+            try CreatePatientRequest(
+                firstName: FfiConverterString.read(from: &buf), 
+                lastName: FfiConverterString.read(from: &buf), 
+                email: FfiConverterOptionString.read(from: &buf), 
+                phone: FfiConverterOptionString.read(from: &buf), 
+                dateOfBirth: FfiConverterOptionString.read(from: &buf), 
+                diagnosis: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CreatePatientRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.firstName, into: &buf)
+        FfiConverterString.write(value.lastName, into: &buf)
+        FfiConverterOptionString.write(value.email, into: &buf)
+        FfiConverterOptionString.write(value.phone, into: &buf)
+        FfiConverterOptionString.write(value.dateOfBirth, into: &buf)
+        FfiConverterOptionString.write(value.diagnosis, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreatePatientRequest_lift(_ buf: RustBuffer) throws -> CreatePatientRequest {
+    return try FfiConverterTypeCreatePatientRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreatePatientRequest_lower(_ value: CreatePatientRequest) -> RustBuffer {
+    return FfiConverterTypeCreatePatientRequest.lower(value)
+}
+
+
 public struct CreateSessionRequest: Equatable, Hashable {
     public var patientId: String
     public var scheduledAt: String
@@ -2786,11 +2856,11 @@ public func coreVersion() -> String  {
     )
 })
 }
-public func createPatient(baseUrl: String, token: String, firstName: String, lastName: String, email: String?, phone: String?, dateOfBirth: String?, diagnosis: String?)async throws  -> Patient  {
+public func createPatient(baseUrl: String, token: String, request: CreatePatientRequest)async throws  -> Patient  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_pablo_core_fn_func_create_patient(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(firstName),FfiConverterString.lower(lastName),FfiConverterOptionString.lower(email),FfiConverterOptionString.lower(phone),FfiConverterOptionString.lower(dateOfBirth),FfiConverterOptionString.lower(diagnosis)
+                uniffi_pablo_core_fn_func_create_patient(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterTypeCreatePatientRequest_lower(request)
                 )
             },
             pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
@@ -3082,7 +3152,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_pablo_core_checksum_func_core_version() != 16817) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_pablo_core_checksum_func_create_patient() != 38729) {
+    if (uniffi_pablo_core_checksum_func_create_patient() != 37923) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_pablo_core_checksum_func_create_session() != 59569) {

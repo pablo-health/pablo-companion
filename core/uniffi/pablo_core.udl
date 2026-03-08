@@ -144,12 +144,7 @@ namespace pablo_core {
     Patient create_patient(
         string base_url,
         string token,
-        string first_name,
-        string last_name,
-        string? email,
-        string? phone,
-        string? date_of_birth,
-        string? diagnosis
+        CreatePatientRequest request
     );
 };
 
@@ -349,6 +344,16 @@ dictionary Patient {
     string? next_session_date;
     string created_at;
     string updated_at;
+};
+
+// Request body for creating a new patient.
+dictionary CreatePatientRequest {
+    string first_name;
+    string last_name;
+    string? email;
+    string? phone;
+    string? date_of_birth;
+    string? diagnosis;
 };
 
 // Paginated list of sessions.
