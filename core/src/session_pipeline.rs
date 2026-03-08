@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mic_only_returns_therapist_segments_on_empty_audio() {
+    async fn mic_only_silent_audio_returns_empty_transcript() {
         use std::io::Write;
         let dir = std::env::temp_dir();
         let mic_path = dir.join("test_mic.pcm");
@@ -145,8 +145,7 @@ mod tests {
         }
 
         let config = make_config();
-        // This will fail at the Whisper model load step (model doesn't exist),
-        // which is expected — we just confirm the error variant is WhisperInit.
+        // Silent audio → VAD finds no speech → empty transcript (no model load needed)
         let result = transcribe_session_1on1(
             "test-session".to_string(),
             mic_path.to_str().unwrap().to_string(),
@@ -156,6 +155,7 @@ mod tests {
         .await;
 
         std::fs::remove_file(&mic_path).ok();
-        assert!(matches!(result, Err(PabloError::WhisperInit { .. })));
+        let transcript = result.unwrap();
+        assert!(transcript.segments.is_empty());
     }
 }

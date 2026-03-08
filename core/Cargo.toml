@@ -7,7 +7,7 @@ license = "AGPL-3.0-only"
 
 [lib]
 name = "pablo_core"
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "lib"]
 
 # uniffi-bindgen binary: cargo run --bin uniffi-bindgen generate ...
 [[bin]]
@@ -29,3 +29,5 @@ uniffi = { version = "0.31", features = ["build"] }
 
 [dev-dependencies]
 uniffi = { version = "0.31", features = ["cli"] }
+reqwest = { version = "0.12", features = ["json"] }
+dotenvy = "0.15"
