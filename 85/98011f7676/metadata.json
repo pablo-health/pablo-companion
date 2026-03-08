@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "8598011f7676",
+  "strategy": "manual-commit",
+  "branch": "PABLO-D-108-rust-api-client",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/companion-api-contract.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/85/98011f7676/0/metadata.json",
+      "transcript": "/85/98011f7676/0/full.jsonl",
+      "context": "/85/98011f7676/0/context.md",
+      "content_hash": "/85/98011f7676/0/content_hash.txt",
+      "prompt": "/85/98011f7676/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 1256,
+    "cache_read_tokens": 567803,
+    "output_tokens": 434,
+    "api_call_count": 4
+  }
+}
