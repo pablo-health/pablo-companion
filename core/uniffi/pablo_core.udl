@@ -20,6 +20,137 @@ namespace pablo_core {
         string? system_path,
         TranscriptionConfig config
     );
+
+    // ── Pablo API endpoint functions ────────────────────────────────────────
+
+    // Group A: ported from Swift (108.3)
+
+    [Async, Throws=PabloError]
+    void health_check(string base_url);
+
+    [Async, Throws=PabloError]
+    PatientListResponse fetch_patients(
+        string base_url,
+        string token,
+        string? search,
+        u32 page,
+        u32 page_size
+    );
+
+    [Async, Throws=PabloError]
+    UploadResponse upload_recording(
+        string base_url,
+        string token,
+        string file_path
+    );
+
+    // Group B: new API methods (108.4)
+
+    [Async, Throws=PabloError]
+    sequence<Session> fetch_today_sessions(
+        string base_url,
+        string token,
+        string timezone
+    );
+
+    [Async, Throws=PabloError]
+    Session create_session(
+        string base_url,
+        string token,
+        CreateSessionRequest request
+    );
+
+    [Async, Throws=PabloError]
+    Session update_session_status(
+        string base_url,
+        string token,
+        string session_id,
+        SessionStatus status
+    );
+
+    [Async, Throws=PabloError]
+    Session update_session(
+        string base_url,
+        string token,
+        string session_id,
+        UpdateSessionRequest request
+    );
+
+    [Async, Throws=PabloError]
+    Session fetch_session(
+        string base_url,
+        string token,
+        string session_id
+    );
+
+    [Async, Throws=PabloError]
+    SessionListResponse fetch_sessions(
+        string base_url,
+        string token,
+        u32 page,
+        u32 page_size,
+        string? status
+    );
+
+    [Async, Throws=PabloError]
+    TranscriptUploadResponse upload_transcript(
+        string base_url,
+        string token,
+        string session_id,
+        string format,
+        string content
+    );
+
+    [Async, Throws=PabloError]
+    Session finalize_session(
+        string base_url,
+        string token,
+        string session_id,
+        u8 quality_rating
+    );
+
+    [Async, Throws=PabloError]
+    UserProfile fetch_user_profile(
+        string base_url,
+        string token
+    );
+
+    [Async, Throws=PabloError]
+    BaaStatus fetch_baa_status(
+        string base_url,
+        string token
+    );
+
+    [Async, Throws=PabloError]
+    BaaStatus accept_baa(
+        string base_url,
+        string token
+    );
+
+    [Async, Throws=PabloError]
+    UserPreferences fetch_preferences(
+        string base_url,
+        string token
+    );
+
+    [Async, Throws=PabloError]
+    UserPreferences save_preferences(
+        string base_url,
+        string token,
+        UserPreferences preferences
+    );
+
+    [Async, Throws=PabloError]
+    Patient create_patient(
+        string base_url,
+        string token,
+        string first_name,
+        string last_name,
+        string? email,
+        string? phone,
+        string? date_of_birth,
+        string? diagnosis
+    );
 };
 
 // Unified error type for pablo-core operations.
@@ -28,6 +159,12 @@ interface PabloError {
     AudioPreprocessing(string message);
     WhisperInit(string message);
     WhisperTranscribe(string message);
+    ApiClient(u16 status_code, string message);
+    JsonParse(string message);
+    Unauthenticated();
+    Forbidden();
+    NotFound(string resource);
+    ConflictState(string message);
 };
 
 // Options for rendering to Google Meet format.
@@ -83,4 +220,164 @@ dictionary TranscriptResult {
     string session_id;
     SessionMode session_mode;
     sequence<TranscriptSegment> segments;
+};
+
+// ── Domain types for Pablo API client ────────────────────────────────────────
+
+enum SessionStatus {
+    "Scheduled",
+    "InProgress",
+    "RecordingComplete",
+    "Queued",
+    "Processing",
+    "PendingReview",
+    "Finalized",
+    "Cancelled",
+    "Failed",
+};
+
+enum VideoPlatform {
+    "Zoom",
+    "Teams",
+    "Meet",
+    "None",
+};
+
+enum SessionType {
+    "Individual",
+    "Couples",
+};
+
+enum SessionSource {
+    "Web",
+    "Companion",
+    "Calendar",
+};
+
+enum QualityPreset {
+    "Fast",
+    "Balanced",
+    "Accurate",
+};
+
+// Minimal patient info embedded in a session.
+dictionary PatientSummary {
+    string id;
+    string first_name;
+    string last_name;
+};
+
+// A therapy session.
+dictionary Session {
+    string id;
+    string patient_id;
+    PatientSummary? patient;
+    SessionStatus status;
+    string? scheduled_at;
+    string? started_at;
+    string? ended_at;
+    u32 duration_minutes;
+    string? video_link;
+    VideoPlatform? video_platform;
+    SessionType session_type;
+    SessionSource source;
+    string? notes;
+    string created_at;
+    string updated_at;
+};
+
+// Request body for creating a new session.
+dictionary CreateSessionRequest {
+    string patient_id;
+    string scheduled_at;
+    u32? duration_minutes;
+    string? video_link;
+    VideoPlatform? video_platform;
+    SessionType? session_type;
+    SessionSource? source;
+    string? notes;
+};
+
+// Request body for updating an existing session.
+dictionary UpdateSessionRequest {
+    string? scheduled_at;
+    string? video_link;
+    VideoPlatform? video_platform;
+    u32? duration_minutes;
+    string? notes;
+};
+
+// Therapist preference settings.
+dictionary UserPreferences {
+    VideoPlatform default_video_platform;
+    SessionType default_session_type;
+    u32 default_duration_minutes;
+    boolean auto_transcribe;
+    QualityPreset quality_preset;
+    string therapist_display_name;
+};
+
+// User profile from the Pablo backend.
+dictionary UserProfile {
+    string id;
+    string email;
+    string first_name;
+    string last_name;
+    string role;
+    string created_at;
+};
+
+// BAA acceptance status.
+dictionary BaaStatus {
+    boolean baa_accepted;
+    string? accepted_at;
+};
+
+// A patient record.
+dictionary Patient {
+    string id;
+    string user_id;
+    string first_name;
+    string last_name;
+    string? email;
+    string? phone;
+    string status;
+    string? date_of_birth;
+    string? diagnosis;
+    u32 session_count;
+    string? last_session_date;
+    string? next_session_date;
+    string created_at;
+    string updated_at;
+};
+
+// Paginated list of sessions.
+dictionary SessionListResponse {
+    sequence<Session> data;
+    u32 total;
+    u32 page;
+    u32 page_size;
+    boolean has_more;
+};
+
+// Paginated list of patients.
+dictionary PatientListResponse {
+    sequence<Patient> data;
+    u32 total;
+    u32 page;
+    u32 page_size;
+    boolean has_more;
+};
+
+// Response from uploading a transcript.
+dictionary TranscriptUploadResponse {
+    string id;
+    SessionStatus status;
+    string message;
+};
+
+// Response from uploading a recording file.
+dictionary UploadResponse {
+    string id;
+    string status;
 };
