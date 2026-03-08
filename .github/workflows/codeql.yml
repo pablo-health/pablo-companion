@@ -57,6 +57,10 @@ jobs:
             ${{ runner.os }}-spm-
 
       - name: Build
+        # The Rust build phase is skipped under CodeQL (stub dylib created
+        # instead) so the link step may fail with missing symbols. That's
+        # fine — CodeQL only needs Swift ASTs from the compilation step.
+        continue-on-error: true
         run: |
           DISABLE_PKGS=${{ steps.spm-cache.outputs.cache-hit == 'true' && '-disableAutomaticPackageResolution' || '' }}
           xcodebuild -project mac/PabloCompanion.xcodeproj \
