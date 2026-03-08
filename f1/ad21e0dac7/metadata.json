@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "f1ad21e0dac7",
+  "strategy": "manual-commit",
+  "branch": "PABLO-D-108-rust-api-client",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".beads/issues.jsonl",
+    "core/src/lib.rs",
+    "core/src/models.rs",
+    "core/uniffi/pablo_core.udl"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/ad21e0dac7/0/metadata.json",
+      "transcript": "/f1/ad21e0dac7/0/full.jsonl",
+      "context": "/f1/ad21e0dac7/0/context.md",
+      "content_hash": "/f1/ad21e0dac7/0/content_hash.txt",
+      "prompt": "/f1/ad21e0dac7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 29,
+    "cache_creation_tokens": 39456,
+    "cache_read_tokens": 414236,
+    "output_tokens": 8269,
+    "api_call_count": 15
+  }
+}

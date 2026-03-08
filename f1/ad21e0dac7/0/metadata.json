@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "f1ad21e0dac7",
+  "session_id": "d4dc5a49-1a2f-4d53-924b-cb5dc6eab247",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-08T04:14:10.81682Z",
+  "branch": "PABLO-D-108-rust-api-client",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".beads/issues.jsonl",
+    "core/src/lib.rs",
+    "core/src/models.rs",
+    "core/uniffi/pablo_core.udl"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "20456e0f02ef",
+  "token_usage": {
+    "input_tokens": 29,
+    "cache_creation_tokens": 39456,
+    "cache_read_tokens": 414236,
+    "output_tokens": 8269,
+    "api_call_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-08T04:14:10.571774Z",
+    "agent_lines": 31,
+    "human_added": 416,
+    "human_modified": 8,
+    "human_removed": 0,
+    "total_committed": 455,
+    "agent_percentage": 6.813186813186813
+  }
+}
