@@ -171,6 +171,12 @@ pub struct TranscriptUploadResponse {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadResponse {
+    pub id: String,
+    pub status: String,
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

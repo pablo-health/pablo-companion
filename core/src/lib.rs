@@ -5,14 +5,14 @@
 
 uniffi::include_scaffolding!("pablo_core");
 
-#[allow(dead_code)] // Consumed by API endpoint functions in tasks 108.3/108.4
-mod api_client;
+pub mod api_client;
 pub mod audio_preprocessing;
 pub mod google_meet_renderer;
 pub mod models;
 pub mod session_pipeline;
 pub mod whisper_transcriber;
 
+pub use api_client::*;
 pub use models::*;
 
 pub use whisper_transcriber::RawSegment;

@@ -20,6 +20,30 @@ namespace pablo_core {
         string? system_path,
         TranscriptionConfig config
     );
+
+    // ── Pablo API endpoint functions ────────────────────────────────────────
+
+    // Group A: ported from Swift (108.3)
+
+    [Async, Throws=PabloError]
+    void health_check(string base_url);
+
+    [Async, Throws=PabloError]
+    PatientListResponse fetch_patients(
+        string base_url,
+        string token,
+        string? search,
+        u32 page,
+        u32 page_size
+    );
+
+    [Async, Throws=PabloError]
+    UploadResponse upload_recording(
+        string base_url,
+        string token,
+        string file_path
+    );
+
 };
 
 // Unified error type for pablo-core operations.
@@ -243,4 +267,10 @@ dictionary TranscriptUploadResponse {
     string id;
     SessionStatus status;
     string message;
+};
+
+// Response from uploading a recording file.
+dictionary UploadResponse {
+    string id;
+    string status;
 };
