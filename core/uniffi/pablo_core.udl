@@ -28,6 +28,12 @@ interface PabloError {
     AudioPreprocessing(string message);
     WhisperInit(string message);
     WhisperTranscribe(string message);
+    ApiClient(u16 status_code, string message);
+    JsonParse(string message);
+    Unauthenticated();
+    Forbidden();
+    NotFound(string resource);
+    ConflictState(string message);
 };
 
 // Options for rendering to Google Meet format.
@@ -83,4 +89,158 @@ dictionary TranscriptResult {
     string session_id;
     SessionMode session_mode;
     sequence<TranscriptSegment> segments;
+};
+
+// ── Domain types for Pablo API client ────────────────────────────────────────
+
+enum SessionStatus {
+    "Scheduled",
+    "InProgress",
+    "RecordingComplete",
+    "Queued",
+    "Processing",
+    "PendingReview",
+    "Finalized",
+    "Cancelled",
+    "Failed",
+};
+
+enum VideoPlatform {
+    "Zoom",
+    "Teams",
+    "Meet",
+    "None",
+};
+
+enum SessionType {
+    "Individual",
+    "Couples",
+};
+
+enum SessionSource {
+    "Web",
+    "Companion",
+    "Calendar",
+};
+
+enum QualityPreset {
+    "Fast",
+    "Balanced",
+    "Accurate",
+};
+
+// Minimal patient info embedded in a session.
+dictionary PatientSummary {
+    string id;
+    string first_name;
+    string last_name;
+};
+
+// A therapy session.
+dictionary Session {
+    string id;
+    string patient_id;
+    PatientSummary? patient;
+    SessionStatus status;
+    string? scheduled_at;
+    string? started_at;
+    string? ended_at;
+    u32 duration_minutes;
+    string? video_link;
+    VideoPlatform? video_platform;
+    SessionType session_type;
+    SessionSource source;
+    string? notes;
+    string created_at;
+    string updated_at;
+};
+
+// Request body for creating a new session.
+dictionary CreateSessionRequest {
+    string patient_id;
+    string scheduled_at;
+    u32? duration_minutes;
+    string? video_link;
+    VideoPlatform? video_platform;
+    SessionType? session_type;
+    SessionSource? source;
+    string? notes;
+};
+
+// Request body for updating an existing session.
+dictionary UpdateSessionRequest {
+    string? scheduled_at;
+    string? video_link;
+    VideoPlatform? video_platform;
+    u32? duration_minutes;
+    string? notes;
+};
+
+// Therapist preference settings.
+dictionary UserPreferences {
+    VideoPlatform default_video_platform;
+    SessionType default_session_type;
+    u32 default_duration_minutes;
+    boolean auto_transcribe;
+    QualityPreset quality_preset;
+    string therapist_display_name;
+};
+
+// User profile from the Pablo backend.
+dictionary UserProfile {
+    string id;
+    string email;
+    string first_name;
+    string last_name;
+    string role;
+    string created_at;
+};
+
+// BAA acceptance status.
+dictionary BaaStatus {
+    boolean baa_accepted;
+    string? accepted_at;
+};
+
+// A patient record.
+dictionary Patient {
+    string id;
+    string user_id;
+    string first_name;
+    string last_name;
+    string? email;
+    string? phone;
+    string status;
+    string? date_of_birth;
+    string? diagnosis;
+    u32 session_count;
+    string? last_session_date;
+    string? next_session_date;
+    string created_at;
+    string updated_at;
+};
+
+// Paginated list of sessions.
+dictionary SessionListResponse {
+    sequence<Session> data;
+    u32 total;
+    u32 page;
+    u32 page_size;
+    boolean has_more;
+};
+
+// Paginated list of patients.
+dictionary PatientListResponse {
+    sequence<Patient> data;
+    u32 total;
+    u32 page;
+    u32 page_size;
+    boolean has_more;
+};
+
+// Response from uploading a transcript.
+dictionary TranscriptUploadResponse {
+    string id;
+    SessionStatus status;
+    string message;
 };
