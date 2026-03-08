@@ -163,7 +163,8 @@ fn transcribe_chunk(
 /// `MIN_SILENCE_GAP_MS` of consecutive silence. Short silence gaps within
 /// speech (natural pauses) are absorbed into the region.
 fn detect_speech_regions(audio: &[f32]) -> Vec<SpeechRegion> {
-    let min_silence_windows = (MIN_SILENCE_GAP_MS * WHISPER_SAMPLE_RATE) / (1000 * VAD_WINDOW_SAMPLES);
+    let min_silence_windows =
+        (MIN_SILENCE_GAP_MS * WHISPER_SAMPLE_RATE) / (1000 * VAD_WINDOW_SAMPLES);
     let mut regions = Vec::new();
     let mut in_speech = false;
     let mut region_start = 0;
@@ -332,7 +333,12 @@ mod tests {
         audio.extend(make_sine(16000, 0.1));
 
         let regions = detect_speech_regions(&audio);
-        assert_eq!(regions.len(), 1, "short pause should not split: {:?}", regions);
+        assert_eq!(
+            regions.len(),
+            1,
+            "short pause should not split: {:?}",
+            regions
+        );
     }
 
     #[test]

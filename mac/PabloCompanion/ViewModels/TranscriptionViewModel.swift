@@ -191,4 +191,3 @@ final class TranscriptionViewModel {
         logger.info("Transcript uploaded for session \(sessionID), message: \(response.message)")
     }
 }
-
