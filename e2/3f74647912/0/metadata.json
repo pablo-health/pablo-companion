@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "e23f74647912",
+  "session_id": "56999dfa-e06f-4ed1-94a5-41bf3c29e70d",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-08T00:06:36.819696Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "mac/PabloCompanion.xcodeproj/project.pbxproj"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "656f531ca99b",
+  "token_usage": {
+    "input_tokens": 1251,
+    "cache_creation_tokens": 234546,
+    "cache_read_tokens": 3819992,
+    "output_tokens": 38797,
+    "api_call_count": 48
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-08T00:06:36.575949Z",
+    "agent_lines": 0,
+    "human_added": 4,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 4,
+    "agent_percentage": 0
+  }
+}
