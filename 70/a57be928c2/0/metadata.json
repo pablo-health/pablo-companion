@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "70a57be928c2",
+  "session_id": "492f08c2-8379-49dd-aa02-682248aab99f",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-08T01:10:07.496039Z",
+  "branch": "main",
+  "checkpoints_count": 10,
+  "files_touched": [
+    ".env.example",
+    "core/Cargo.toml",
+    "core/src/session_pipeline.rs",
+    "core/src/whisper_transcriber.rs",
+    "core/tests/e2e_pipeline.rs",
+    "core/tests/support/mod.rs",
+    "core/tests/support/therapy_script_60min.rs"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "d7d2683ffc87",
+  "token_usage": {
+    "input_tokens": 166,
+    "cache_creation_tokens": 350799,
+    "cache_read_tokens": 10247536,
+    "output_tokens": 100642,
+    "api_call_count": 116
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-08T01:09:59.57602Z",
+    "agent_lines": 0,
+    "human_added": 11456,
+    "human_modified": 52,
+    "human_removed": 0,
+    "total_committed": 11456,
+    "agent_percentage": 0
+  }
+}

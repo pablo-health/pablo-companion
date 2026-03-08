@@ -1,0 +1,259 @@
+what's next with phase 1 on the audio transcription?
+
+---
+
+don't we already have beads tasks
+
+---
+
+is there a way i could do an integration test - where we use 11labs to generate audio for a synthetic therapy session and have it go through the whole pipeline - i can provide the key in an .env file
+
+---
+
+if the transcription code works - it should be almost 100% i would think.  and if we can't do it with AI generated voices there is no way it would work with humans.   yes let's do it
+
+---
+
+ok i put it in the .env can you run the test for me
+
+---
+
+ok interesting - is there a way we could insert silent buffer - the test needs to be as realistic as possible
+
+---
+
+where did the test output the transcript - and can you show me what we should have in it
+
+---
+
+yes please
+
+---
+
+ok, so we know that there is silence?    are we detecting the waveforms
+
+---
+
+cann we try running with small model?
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+and do we output the .wav file or files that we have from 11 labs, i want to listen to them as well - but go ahead and run
+
+---
+
+fix that please, and is the time stamp right when Alex first talks - it seems like we are might be computing from when he first talks maybe?
+
+---
+
+ok, help me understand the orphaned one.   how could it be orphaned?    the therapist would not have said - I hear you (unless she actually interrupted him)
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+can i propose something simpler, unless what you have is better.   we can detect silence, would there be an overhead penalty if we split the audio ourselves on detecting silence
+
+---
+
+yes let's do it
+
+---
+
+i think that's fine.   can we make the e2e test cache the audio file creation - maybe using a checksum in the test on the content that we push up to 11 labs.
+
+---
+
+alright now for the fun part - i want a 60 minute session
+
+---
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The user wanted to create an end-to-end integration test for the audio transcription pipeline using ElevenLabs-generated synthetic therapy session audio. The test should be as realistic as possible, with proper turn-taking (silence gaps), accurate timestamps, and cached audio to avoid repeated API calls. The user progressively refined requirements: realistic silence buffers, waveform-based silence detection (not text pattern matching), VAD-based audio splitting before Whisper, quote stripping, timestamp correction, audio file output for listening, TTS caching via content checksum, and finally a full 60-minute therapy session test.
+
+2. Key Technical Concepts:
+   - **VAD-first transcription**: Split audio at silence boundaries BEFORE feeding to Whisper, preventing bridged segments
+   - **RMS energy detection**: Compute root-mean-square energy in 20ms windows to detect speech vs silence (threshold: 0.01)
+   - **Speech region detection**: `detect_speech_regions()` finds contiguous speech blocks separated by >500ms silence gaps
+   - **Model reuse**: Load Whisper model once, call `transcribe_chunk()` for each speech region with timestamp offsets
+   - **ElevenLabs TTS**: API at `POST /v1/text-to-speech/{voice_id}?output_format=pcm_16000`, S16LE PCM output
+   - **Two-track recording simulation**: Mic track (therapist audio + silence during client), system track (client audio + silence during therapist)
+   - **Fake stereo**: Duplicate mono client PCM into stereo (L=R) to exercise the downmix path
+   - **Audio caching**: Hash script content + voice IDs + sample rate with `DefaultHasher`, store PCM files in `core/target/test-audio-cache/<hash>/`
+   - **WAV file generation**: Manual WAV header construction (RIFF/WAVE/fmt/data chunks)
+   - **Whisper text cleaning**: Strip leading/trailing quotation marks that Whisper adds to clear/scripted speech
+   - **WHISPER_MODEL env var**: Selects tiny (default), base, or small model
+
+3. Files and Code Sections:
+
+   - **`core/Cargo.toml`** — Added `"lib"` to crate-type (required for integration tests to link), added dev-dependencies
+     ```toml
+     [lib]
+     name = "pablo_core"
+     crate-type = ["cdylib", "staticlib", "lib"]
+     
+     [dev-dependencies]
+     uniffi = { version = "0.31", features = ["cli"] }
+     reqwest = { version = "0.12", features = ["json"] }
+     dotenvy = "0.15"
+     ```
+
+   - **`core/src/whisper_transcriber.rs`** — Major rewrite to VAD-first approach. Key functions:
+     ```rust
+     // Constants
+     const WHISPER_SAMPLE_RATE: usize = 16000;
+     const SILENCE_RMS_THRESHOLD: f32 = 0.01;
+     const VAD_WINDOW_SAMPLES: usize = (WHISPER_SAMPLE_RATE * 20) / 1000;
+     const MIN_SILENCE_GAP_MS: usize = 500;
+     
+     // Core pipeline: detect regions → load model once → transcribe each chunk
+     fn run_transcription(model_path: &str, audio: &[f32]) -> Result<Vec<RawSegment>, PabloError> {
+         let regions = detect_speech_regions(audio);
+         if regions.is_empty() { return Ok(Vec::new()); }
+         let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())...;
+         let mut all_segments = Vec::new();
+         for region in &regions {
+             let chunk = region.samples(audio);
+             let offset_ms = region.start_ms();
+             let chunk_segments = transcribe_chunk(&ctx, chunk, offset_ms)?;
+             all_segments.extend(chunk_segments);
+         }
+         Ok(all_segments)
+     }
+     
+     // VAD: scan audio in 20ms windows, split at >500ms silence gaps
+     fn detect_speech_regions(audio: &[f32]) -> Vec<SpeechRegion> { ... }
+     
+     // Transcribe single speech chunk with timestamp offset
+     fn transcribe_chunk(ctx: &WhisperContext, audio: &[f32], offset_ms: i64) -> Result<Vec<RawSegment>, PabloError> { ... }
+     
+     // Strip Whisper artifacts (quotes around clear speech)
+     fn clean_text(raw: &str) -> String { ... }
+     ```
+     - 32 unit tests passing: VAD region detection, clean_text, segment basics
+
+   - **`core/src/session_pipeline.rs`** — Updated test: silent audio now returns empty transcript (not WhisperInit error) because VAD finds no speech regions before loading model
+     ```rust
+     #[tokio::test]
+     async fn mic_only_silent_audio_returns_empty_transcript() {
+         // Silent audio → VAD finds no speech → empty transcript (no model load needed)
+         let result = transcribe_session_1on1(...).await;
+         let transcript = result.unwrap();
+         assert!(transcript.segments.is_empty());
+     }
+     ```
+
+   - **`core/tests/e2e_pipeline.rs`** — Full e2e integration test with:
+     - ElevenLabs TTS generation with caching (`ensure_tts_audio()`, `audio_cache_key()`)
+     - Two-track building with silence gaps (`build_tracks()`)
+     - Fake stereo conversion (`mono_to_fake_stereo()`)
+     - WAV file output (`write_wav()`)
+     - Transcription pipeline execution
+     - Keyword assertions (6 phrases across therapist/client)
+     - Google Meet format validation
+     - File output to `core/target/test-output/`
+     - Short script (6 turns) defined inline as `SCRIPT` const
+     - Voices: Rachel (`21m00Tcm4TlvDq8ikWAM`) for therapist, Adam (`pNInz6obpgDQGcFmaJgB`) for client
+     - Run command: `cargo test --manifest-path core/Cargo.toml --test e2e_pipeline -- --ignored --nocapture`
+
+   - **`core/tests/therapy_script_60min.rs`** — Full 60-minute CBT therapy session script (~24K chars, 70 turns)
+     - Covers: opening, exploring anxiety, cognitive distortions, life impact, physical symptoms, cognitive restructuring, coping strategies, behavioral experiments, sleep hygiene, workplace strategies, relationship discussion, action planning, closing
+     - Exports `Speaker` enum, `ScriptLine` struct, and `SCRIPT` const
+     - NOT YET wired into e2e_pipeline.rs
+
+   - **`.env.example`** — Template: `ELEVENLABS_API_KEY=your-key-here`
+
+   - **`.gitignore`** — Already had `.env` and `.env.local` (line 27-28), `core/target/` (line 23)
+
+4. Errors and fixes:
+   - **Format string error**: `{'=':.>60}` in `eprintln!` — Rust format strings use `{}`, not Python-style. Fixed by using `"=".repeat(60)`.
+   - **Unresolved import `pablo_core`**: Integration tests need `rlib` crate type. Fixed by adding `"lib"` to `crate-type` in Cargo.toml.
+   - **ElevenLabs 403 Forbidden**: `pcm_44100` output format requires Pro tier. Fixed by switching to `pcm_16000` (free tier).
+   - **`[BLANK_AUDIO]` hallucination**: Whisper generates fake text on silence. Initially fixed with text pattern matching, then user pushed back ("are we detecting the waveforms") — replaced with RMS energy-based silence detection.
+   - **Client timestamp at 00:00:00**: Whisper snaps first segment to time 0 even when speech starts later. Fixed with `find_speech_onset()` scanning for actual audio energy. Later superseded by VAD-first approach which eliminates the problem entirely.
+   - **Orphaned/bridged segments**: Whisper produced single segments spanning silence gaps between turns, causing fake "interruptions" in the merged transcript. User suggested splitting audio before Whisper. Fixed by implementing VAD-first pipeline: `detect_speech_regions()` → `transcribe_chunk()` per region.
+   - **Session pipeline test failure**: After VAD-first rewrite, silent audio returns empty vec instead of hitting model load. Updated test from asserting `WhisperInit` error to asserting empty segments.
+   - **Whisper quote artifacts**: Small model wraps clear speech in `"quotes"`. Fixed with `clean_text()` stripping leading/trailing `"`.
+
+5. Problem Solving:
+   - Solved hallucination filtering by moving from text pattern matching to waveform energy analysis
+   - Solved timestamp inaccuracy by scanning for speech onset in the audio
+   - Solved segment bridging (the biggest issue) by splitting audio at silence boundaries BEFORE Whisper — the VAD-first approach eliminates bridging, hallucinations, and timestamp errors in one architectural change
+   - Solved repeated ElevenLabs API costs by implementing content-hash-based caching
+   - All 32 unit tests + e2e integration test passing
+
+6. All user messages:
+   - "what's next with phase 1 on the audio transcription?"
+   - "don't we already have beads tasks"
+   - "is there a way i could do an integration test - where we use 11labs to generate audio for a synthetic therapy session and have it go through the whole pipeline - i can provide the key in an .env file"
+   - "although for therapy i think we do want the best we can get 99% accuracy if possible - but tiny is a good starting test"
+   - "if the transcription code works - it should be almost 100% i would think. and if we can't do it with AI generated voices there is no way it would work with humans. yes let's do it"
+   - "ok i put it in the .env can you run the test for me"
+   - "and is .env .gitignored"
+   - "and can you show me the results"
+   - "was hallucination the right variable name to use?"
+   - "ok, so we know that there is silence? are we detecting the waveforms"
+   - "fix that please, and is the time stamp right when Alex first talks - it seems like we are might be computing from when he first talks maybe?"
+   - "seems like we could fix/work around and put in the right place ourselves"
+   - "can i propose something simpler, unless what you have is better. we can detect silence, would there be an overhead penalty if we split the audio ourselves on detecting silence"
+   - "yes let's do it"
+   - "cann we try running with small model?"
+   - "and do we output the .wav file or files that we have from 11 labs, i want to listen to them as well - but go ahead and run"
+   - "i think that's fine. can we make the e2e test cache the audio file creation - maybe using a checksum in the test on the content that we push up to 11 labs."
+   - "ok i put it in the .env can you run the test for me" (when asked to run)
+   - "alright now for the fun part - i want a 60 minute session"
+   - "thinking we should check in the audio artifacts as part of commit - if not too big. also, we are making multiple calls per turn right?? so its just the tokens??"
+
+7. Pending Tasks:
+   - Wire `therapy_script_60min.rs` into `e2e_pipeline.rs` as a second test function
+   - Refactor e2e_pipeline.rs to share test logic between short (6-turn) and long (70-turn) scripts — the helpers (`build_tracks`, `ensure_tts_audio`, `audio_cache_key`, etc.) need to accept a generic script parameter instead of referencing the hardcoded `SCRIPT` const
+   - Consider checking audio artifacts into git (user mentioned this)
+   - Run the 60-minute test
+   - Close epic PABLO-D-104 (all subtasks done, epic still OPEN)
+
+8. Current Work:
+   I had just created `core/tests/therapy_script_60min.rs` with the full 60-minute CBT session script (70 turns, ~24K characters). The user confirmed "one API call per turn" and asked about checking in audio artifacts. I was about to refactor `core/tests/e2e_pipeline.rs` to:
+   1. Make the helpers generic over any script (not just the inline `SCRIPT` const) — `ensure_tts_audio`, `audio_cache_key`, `build_tracks` all reference the module-level `SCRIPT` and `Speaker` types
+   2. Import the 60-minute script module
+   3. Add a second `#[ignore]` test function for the 60-minute session
+   4. Run it
+
+   The current `e2e_pipeline.rs` has its own `Speaker` enum and `ScriptLine` struct that need to be unified with the ones in `therapy_script_60min.rs`, or the helpers need to be parameterized.
+
+9. Optional Next Step:
+   Wire up the 60-minute test. The user said: "alright now for the fun part - i want a 60 minute session". I created the script file but haven't yet integrated it into the test. Need to:
+   - Refactor `e2e_pipeline.rs` to parameterize helpers over script content (currently hardcoded to module-level `SCRIPT` const)
+   - Import `therapy_script_60min` module
+   - Add `e2e_full_therapy_session` test function
+   - Run it with `WHISPER_MODEL=small`
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/kurtn/.claude/projects/-Users-kurtn-Developer-pablo-companion/492f08c2-8379-49dd-aa02-682248aab99f.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
+
+---
+
+<task-notification>
+<task-id>buok06sqw</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-kurtn-Developer-pablo-companion/tasks/buok06sqw.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the full 60-minute therapy session e2e test with small model" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-kurtn-Developer-pablo-companion/tasks/buok06sqw.output
+
+---
+
+Just curious how long the speech recognition part is - can you rerun and let me know how long
+
+---
+
+Ok commit and push please
