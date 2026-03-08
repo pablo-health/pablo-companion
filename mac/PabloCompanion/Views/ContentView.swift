@@ -72,7 +72,9 @@ struct ContentView: View {
 
             // Configure transcription VM with backend + auth
             transcriptionVM.backendURL = uploadVM.backendURL
-            transcriptionVM.getToken = { [authVM] in try await authVM.getValidToken() }
+            transcriptionVM.configureAuth { [authVM] in
+                try await authVM.getValidToken()
+            }
 
             // Retry any transcripts that failed to upload last session
             await transcriptionVM.retryPendingUploads()
