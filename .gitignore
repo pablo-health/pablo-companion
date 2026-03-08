@@ -18,6 +18,7 @@ build/
 # Swift Package Manager
 .build/
 .swiftpm/
+SourcePackages/
 
 # Rust
 core/target/
