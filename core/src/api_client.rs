@@ -4,7 +4,11 @@
 use reqwest::Client;
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::models::{PatientListResponse, UploadResponse};
+use crate::models::{
+    BaaStatus, CreateSessionRequest, Patient, PatientListResponse, Session, SessionListResponse,
+    SessionStatus, TranscriptUploadResponse, UpdateSessionRequest, UploadResponse, UserPreferences,
+    UserProfile,
+};
 use crate::PabloError;
 
 /// Client-type header value sent with every request so the backend
@@ -48,13 +52,11 @@ impl ApiClient {
     }
 
     /// Build an authenticated PATCH request.
-    #[allow(dead_code)] // Used by Group B endpoint functions (108.4)
     pub fn patch(&self, path: &str, token: &SecretString) -> reqwest::RequestBuilder {
         self.authenticated_request(reqwest::Method::PATCH, path, token)
     }
 
     /// Build an authenticated PUT request.
-    #[allow(dead_code)] // Used by Group B endpoint functions (108.4)
     pub fn put(&self, path: &str, token: &SecretString) -> reqwest::RequestBuilder {
         self.authenticated_request(reqwest::Method::PUT, path, token)
     }
@@ -233,6 +235,474 @@ pub async fn upload_recording(
 
     response
         .json::<UploadResponse>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+// ── Group B: New API methods (108.4) ────────────────────────────────────────
+
+/// Fetch today's sessions for the authenticated therapist.
+pub async fn fetch_today_sessions(
+    base_url: String,
+    token: String,
+    timezone: String,
+) -> Result<Vec<Session>, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .get("/api/sessions/today", &token)
+        .query(&[("timezone", &timezone)])
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<Vec<Session>>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Create a new scheduled session.
+pub async fn create_session(
+    base_url: String,
+    token: String,
+    request: CreateSessionRequest,
+) -> Result<Session, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .post("/api/sessions/schedule", &token)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<Session>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Update the status of a session (e.g. start, complete, cancel).
+pub async fn update_session_status(
+    base_url: String,
+    token: String,
+    session_id: String,
+    status: SessionStatus,
+) -> Result<Session, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let body = serde_json::json!({ "status": status });
+
+    let response = client
+        .patch(&format!("/api/sessions/{session_id}/status"), &token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<Session>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Update editable fields on a session.
+pub async fn update_session(
+    base_url: String,
+    token: String,
+    session_id: String,
+    request: UpdateSessionRequest,
+) -> Result<Session, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .patch(&format!("/api/sessions/{session_id}"), &token)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<Session>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Fetch a single session by ID.
+pub async fn fetch_session(
+    base_url: String,
+    token: String,
+    session_id: String,
+) -> Result<Session, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .get(&format!("/api/sessions/{session_id}"), &token)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<Session>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Fetch a paginated list of sessions, optionally filtered by status.
+pub async fn fetch_sessions(
+    base_url: String,
+    token: String,
+    page: u32,
+    page_size: u32,
+    status: Option<String>,
+) -> Result<SessionListResponse, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let mut query_params: Vec<(&str, String)> = vec![
+        ("page", page.to_string()),
+        ("page_size", page_size.to_string()),
+    ];
+    if let Some(ref s) = status {
+        query_params.push(("status", s.clone()));
+    }
+
+    let response = client
+        .get("/api/sessions", &token)
+        .query(&query_params)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<SessionListResponse>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Upload a transcript for a session.
+pub async fn upload_transcript(
+    base_url: String,
+    token: String,
+    session_id: String,
+    format: String,
+    content: String,
+) -> Result<TranscriptUploadResponse, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let body = serde_json::json!({
+        "format": format,
+        "content": content,
+    });
+
+    let response = client
+        .post(
+            &format!("/api/sessions/{session_id}/transcript"),
+            &token,
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<TranscriptUploadResponse>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Finalize a session with a quality rating.
+pub async fn finalize_session(
+    base_url: String,
+    token: String,
+    session_id: String,
+    quality_rating: u8,
+) -> Result<Session, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let body = serde_json::json!({ "quality_rating": quality_rating });
+
+    let response = client
+        .patch(&format!("/api/sessions/{session_id}/finalize"), &token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<Session>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Fetch the authenticated user's profile.
+pub async fn fetch_user_profile(
+    base_url: String,
+    token: String,
+) -> Result<UserProfile, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .get("/api/users/me", &token)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<UserProfile>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Fetch the user's BAA acceptance status.
+pub async fn fetch_baa_status(
+    base_url: String,
+    token: String,
+) -> Result<BaaStatus, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .get("/api/users/me/baa-status", &token)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<BaaStatus>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Accept the BAA agreement.
+pub async fn accept_baa(
+    base_url: String,
+    token: String,
+) -> Result<BaaStatus, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .post("/api/users/me/accept-baa", &token)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<BaaStatus>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Fetch the user's preferences.
+pub async fn fetch_preferences(
+    base_url: String,
+    token: String,
+) -> Result<UserPreferences, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .get("/api/users/me/preferences", &token)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<UserPreferences>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Save (replace) the user's preferences.
+pub async fn save_preferences(
+    base_url: String,
+    token: String,
+    preferences: UserPreferences,
+) -> Result<UserPreferences, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let response = client
+        .put("/api/users/me/preferences", &token)
+        .json(&preferences)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<UserPreferences>()
+        .await
+        .map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })
+}
+
+/// Create a new patient record.
+pub async fn create_patient(
+    base_url: String,
+    token: String,
+    first_name: String,
+    last_name: String,
+    email: Option<String>,
+    phone: Option<String>,
+    date_of_birth: Option<String>,
+    diagnosis: Option<String>,
+) -> Result<Patient, PabloError> {
+    let client = ApiClient::new(base_url);
+    let token = SecretString::from(token);
+
+    let body = serde_json::json!({
+        "first_name": first_name,
+        "last_name": last_name,
+        "email": email,
+        "phone": phone,
+        "date_of_birth": date_of_birth,
+        "diagnosis": diagnosis,
+    });
+
+    let response = client
+        .post("/api/patients", &token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| PabloError::ApiClient {
+            status_code: 0,
+            message: e.to_string(),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(handle_error_response(response).await);
+    }
+
+    response
+        .json::<Patient>()
         .await
         .map_err(|e| PabloError::JsonParse {
             message: e.to_string(),
@@ -465,6 +935,282 @@ mod tests {
     }
 
     #[test]
+    fn fetch_today_sessions_builds_correct_url_with_timezone() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let req = client
+            .get("/api/sessions/today", &token)
+            .query(&[("timezone", "America/New_York")])
+            .build()
+            .unwrap();
+        let url = req.url().to_string();
+        assert!(url.starts_with("https://api.pablo.health/api/sessions/today?"));
+        assert!(url.contains("timezone=America"));
+    }
+
+    #[test]
+    fn create_session_builds_post_to_sessions_schedule() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let request = CreateSessionRequest {
+            patient_id: "pat-001".to_string(),
+            scheduled_at: "2026-03-07T10:00:00Z".to_string(),
+            duration_minutes: Some(50),
+            video_link: None,
+            video_platform: None,
+            session_type: None,
+            source: None,
+            notes: None,
+        };
+        let req = client
+            .post("/api/sessions/schedule", &token)
+            .json(&request)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/sessions/schedule"
+        );
+        assert_eq!(req.method(), reqwest::Method::POST);
+        // Verify body contains patient_id
+        let body = req.body().unwrap().as_bytes().unwrap();
+        let body_str = String::from_utf8_lossy(body);
+        assert!(body_str.contains("pat-001"));
+        assert!(body_str.contains("2026-03-07T10:00:00Z"));
+    }
+
+    #[test]
+    fn update_session_status_builds_patch_with_status_body() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let body = serde_json::json!({ "status": SessionStatus::InProgress });
+        let req = client
+            .patch("/api/sessions/sess-001/status", &token)
+            .json(&body)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/sessions/sess-001/status"
+        );
+        assert_eq!(req.method(), reqwest::Method::PATCH);
+        let body_bytes = req.body().unwrap().as_bytes().unwrap();
+        let body_str = String::from_utf8_lossy(body_bytes);
+        assert!(body_str.contains("in_progress"));
+    }
+
+    #[test]
+    fn update_session_builds_patch_to_session_id() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let request = UpdateSessionRequest {
+            scheduled_at: None,
+            video_link: Some("https://zoom.us/j/123".to_string()),
+            video_platform: Some(crate::models::VideoPlatform::Zoom),
+            duration_minutes: None,
+            notes: None,
+        };
+        let req = client
+            .patch("/api/sessions/sess-001", &token)
+            .json(&request)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/sessions/sess-001"
+        );
+        let body_bytes = req.body().unwrap().as_bytes().unwrap();
+        let body_str = String::from_utf8_lossy(body_bytes);
+        assert!(body_str.contains("zoom.us"));
+    }
+
+    #[test]
+    fn fetch_session_builds_get_to_session_id() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let req = client
+            .get("/api/sessions/sess-abc", &token)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/sessions/sess-abc"
+        );
+        assert_eq!(req.method(), reqwest::Method::GET);
+    }
+
+    #[test]
+    fn fetch_sessions_builds_correct_url_with_pagination() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let req = client
+            .get("/api/sessions", &token)
+            .query(&[("page", "2"), ("page_size", "25"), ("status", "scheduled")])
+            .build()
+            .unwrap();
+        let url = req.url().to_string();
+        assert!(url.starts_with("https://api.pablo.health/api/sessions?"));
+        assert!(url.contains("page=2"));
+        assert!(url.contains("page_size=25"));
+        assert!(url.contains("status=scheduled"));
+    }
+
+    #[test]
+    fn upload_transcript_builds_post_to_session_transcript() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let body = serde_json::json!({
+            "format": "google_meet",
+            "content": "transcript text",
+        });
+        let req = client
+            .post("/api/sessions/sess-001/transcript", &token)
+            .json(&body)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/sessions/sess-001/transcript"
+        );
+        assert_eq!(req.method(), reqwest::Method::POST);
+        let body_bytes = req.body().unwrap().as_bytes().unwrap();
+        let body_str = String::from_utf8_lossy(body_bytes);
+        assert!(body_str.contains("google_meet"));
+    }
+
+    #[test]
+    fn finalize_session_builds_patch_with_quality_rating() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let body = serde_json::json!({ "quality_rating": 4u8 });
+        let req = client
+            .patch("/api/sessions/sess-001/finalize", &token)
+            .json(&body)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/sessions/sess-001/finalize"
+        );
+        let body_bytes = req.body().unwrap().as_bytes().unwrap();
+        let body_str = String::from_utf8_lossy(body_bytes);
+        assert!(body_str.contains("quality_rating"));
+        assert!(body_str.contains("4"));
+    }
+
+    #[test]
+    fn fetch_user_profile_builds_get_to_users_me() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let req = client.get("/api/users/me", &token).build().unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/users/me"
+        );
+        assert_eq!(req.method(), reqwest::Method::GET);
+    }
+
+    #[test]
+    fn fetch_baa_status_builds_get_to_baa_status() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let req = client
+            .get("/api/users/me/baa-status", &token)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/users/me/baa-status"
+        );
+    }
+
+    #[test]
+    fn accept_baa_builds_post_to_accept_baa() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let req = client
+            .post("/api/users/me/accept-baa", &token)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/users/me/accept-baa"
+        );
+        assert_eq!(req.method(), reqwest::Method::POST);
+    }
+
+    #[test]
+    fn fetch_preferences_builds_get_to_preferences() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let req = client
+            .get("/api/users/me/preferences", &token)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/users/me/preferences"
+        );
+    }
+
+    #[test]
+    fn save_preferences_builds_put_with_preferences_body() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let prefs = UserPreferences {
+            default_video_platform: crate::models::VideoPlatform::Zoom,
+            default_session_type: crate::models::SessionType::Individual,
+            default_duration_minutes: 50,
+            auto_transcribe: true,
+            quality_preset: crate::models::QualityPreset::Balanced,
+            therapist_display_name: "Dr. Smith".to_string(),
+        };
+        let req = client
+            .put("/api/users/me/preferences", &token)
+            .json(&prefs)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/users/me/preferences"
+        );
+        assert_eq!(req.method(), reqwest::Method::PUT);
+        let body_bytes = req.body().unwrap().as_bytes().unwrap();
+        let body_str = String::from_utf8_lossy(body_bytes);
+        assert!(body_str.contains("zoom"));
+        assert!(body_str.contains("Dr. Smith"));
+    }
+
+    #[test]
+    fn create_patient_builds_post_with_patient_fields() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let body = serde_json::json!({
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "email": "jane@example.com",
+            "phone": null,
+            "date_of_birth": null,
+            "diagnosis": null,
+        });
+        let req = client
+            .post("/api/patients", &token)
+            .json(&body)
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.pablo.health/api/patients"
+        );
+        assert_eq!(req.method(), reqwest::Method::POST);
+        let body_bytes = req.body().unwrap().as_bytes().unwrap();
+        let body_str = String::from_utf8_lossy(body_bytes);
+        assert!(body_str.contains("Jane"));
+        assert!(body_str.contains("Doe"));
+        assert!(body_str.contains("jane@example.com"));
+    }
+
+    #[test]
     fn upload_response_serde_roundtrip() {
         let json = r#"{"id": "rec-001", "status": "uploaded"}"#;
         let resp: UploadResponse = serde_json::from_str(json).unwrap();
@@ -472,6 +1218,37 @@ mod tests {
         assert_eq!(resp.status, "uploaded");
         let serialized = serde_json::to_string(&resp).unwrap();
         assert!(serialized.contains("rec-001"));
+    }
+
+    #[test]
+    fn session_status_serializes_for_request_body() {
+        // Verify SessionStatus serializes to snake_case for API requests
+        let body = serde_json::json!({ "status": SessionStatus::InProgress });
+        let s = serde_json::to_string(&body).unwrap();
+        assert!(s.contains("\"in_progress\""));
+
+        let body = serde_json::json!({ "status": SessionStatus::RecordingComplete });
+        let s = serde_json::to_string(&body).unwrap();
+        assert!(s.contains("\"recording_complete\""));
+    }
+
+    #[test]
+    fn create_session_request_serializes_with_optional_fields() {
+        let request = CreateSessionRequest {
+            patient_id: "pat-001".to_string(),
+            scheduled_at: "2026-03-07T10:00:00Z".to_string(),
+            duration_minutes: Some(50),
+            video_link: None,
+            video_platform: Some(crate::models::VideoPlatform::Zoom),
+            session_type: None,
+            source: Some(crate::models::SessionSource::Companion),
+            notes: Some("Initial session".to_string()),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("pat-001"));
+        assert!(json.contains("\"zoom\""));
+        assert!(json.contains("\"companion\""));
+        assert!(json.contains("Initial session"));
     }
 
     #[test]
