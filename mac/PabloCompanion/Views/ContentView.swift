@@ -32,51 +32,7 @@ struct ContentView: View {
             settingsTab
         }
         .frame(minWidth: 500, minHeight: 600)
-        .task {
-            // Discover backend URL from the auth server's /api/config.
-            // Read auth server URL from Keychain (source of truth) since
-            // @AppStorage doesn't persist reliably with @Observable.
-            let serverURL = KeychainManager.getToken(forKey: .authServerURL)
-                ?? authVM.authServerURL
-            if let config = try? await fetchServerConfig(
-                authServerURL: serverURL
-            ) {
-                uploadVM.backendURL = config.apiUrl
-                patientVM.backendURL = config.apiUrl
-                if KeychainManager.getToken(forKey: .firebaseAPIKey) == nil {
-                    if let key = config.firebaseApiKey, !key.isEmpty {
-                        KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
-                    }
-                }
-            }
-
-            // Wire up token injection for authenticated requests
-            uploadVM.configureAuth { [authVM] in
-                try await authVM.getValidToken()
-            }
-            patientVM.configureAuth { [authVM] in
-                try await authVM.getValidToken()
-            }
-
-            // Eagerly refresh token on startup to catch expired sessions early
-            do {
-                _ = try await authVM.getValidToken()
-            } catch {
-                authVM.signOut()
-            }
-
-            // Load patients now that auth is configured
-            await patientVM.loadPatients()
-            await recordingVM.loadAudioSources()
-            await uploadVM.checkBackendHealth()
-
-            // Configure transcription VM with backend + auth
-            transcriptionVM.backendURL = uploadVM.backendURL
-            transcriptionVM.getToken = { [authVM] in try await authVM.getValidToken() }
-
-            // Retry any transcripts that failed to upload last session
-            await transcriptionVM.retryPendingUploads()
-        }
+        .task { await configureAndLoad() }
         .alert(
             "Recording Error",
             isPresented: $recordingVM.showError,
@@ -108,6 +64,58 @@ struct ContentView: View {
             patientVM.backendURL = newURL
         }
     }
+
+    // MARK: - Setup
+
+    private func configureAndLoad() async {
+        // Discover backend URL from the auth server's /api/config.
+        // Read auth server URL from Keychain (source of truth) since
+        // @AppStorage doesn't persist reliably with @Observable.
+        let serverURL = KeychainManager.getToken(forKey: .authServerURL)
+            ?? authVM.authServerURL
+        if let config = try? await fetchServerConfig(
+            authServerURL: serverURL
+        ) {
+            uploadVM.backendURL = config.apiUrl
+            patientVM.backendURL = config.apiUrl
+            if KeychainManager.getToken(forKey: .firebaseAPIKey) == nil {
+                if let key = config.firebaseApiKey, !key.isEmpty {
+                    KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
+                }
+            }
+        }
+
+        // Wire up token injection for authenticated requests
+        uploadVM.configureAuth { [authVM] in
+            try await authVM.getValidToken()
+        }
+        patientVM.configureAuth { [authVM] in
+            try await authVM.getValidToken()
+        }
+
+        // Eagerly refresh token on startup to catch expired sessions early
+        do {
+            _ = try await authVM.getValidToken()
+        } catch {
+            authVM.signOut()
+        }
+
+        // Load patients now that auth is configured
+        await patientVM.loadPatients()
+        await recordingVM.loadAudioSources()
+        await uploadVM.checkBackendHealth()
+
+        // Configure transcription VM with backend + auth
+        transcriptionVM.backendURL = uploadVM.backendURL
+        transcriptionVM.configureAuth { [authVM] in
+            try await authVM.getValidToken()
+        }
+
+        // Retry any transcripts that failed to upload last session
+        await transcriptionVM.retryPendingUploads()
+    }
+
+    // MARK: - Tabs
 
     private var recorderTab: some View {
         VStack(spacing: 0) {

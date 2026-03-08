@@ -435,6 +435,22 @@ fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
+    typealias FfiType = UInt16
+    typealias SwiftType = UInt16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -499,6 +515,30 @@ fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterBool : FfiConverter {
+    typealias FfiType = Int8
+    typealias SwiftType = Bool
+
+    public static func lift(_ value: Int8) throws -> Bool {
+        return value != 0
+    }
+
+    public static func lower(_ value: Bool) -> Int8 {
+        return value ? 1 : 0
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Bool {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Bool, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterString: FfiConverter {
     typealias SwiftType = String
     typealias FfiType = RustBuffer
@@ -535,6 +575,208 @@ fileprivate struct FfiConverterString: FfiConverter {
         writeInt(&buf, len)
         writeBytes(&buf, value.utf8)
     }
+}
+
+
+public struct BaaStatus: Equatable, Hashable {
+    public var baaAccepted: Bool
+    public var acceptedAt: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(baaAccepted: Bool, acceptedAt: String?) {
+        self.baaAccepted = baaAccepted
+        self.acceptedAt = acceptedAt
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BaaStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBaaStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BaaStatus {
+        return
+            try BaaStatus(
+                baaAccepted: FfiConverterBool.read(from: &buf), 
+                acceptedAt: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BaaStatus, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.baaAccepted, into: &buf)
+        FfiConverterOptionString.write(value.acceptedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBaaStatus_lift(_ buf: RustBuffer) throws -> BaaStatus {
+    return try FfiConverterTypeBaaStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBaaStatus_lower(_ value: BaaStatus) -> RustBuffer {
+    return FfiConverterTypeBaaStatus.lower(value)
+}
+
+
+public struct CreatePatientRequest: Equatable, Hashable {
+    public var firstName: String
+    public var lastName: String
+    public var email: String?
+    public var phone: String?
+    public var dateOfBirth: String?
+    public var diagnosis: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(firstName: String, lastName: String, email: String?, phone: String?, dateOfBirth: String?, diagnosis: String?) {
+        self.firstName = firstName
+        self.lastName = lastName
+        self.email = email
+        self.phone = phone
+        self.dateOfBirth = dateOfBirth
+        self.diagnosis = diagnosis
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CreatePatientRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCreatePatientRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CreatePatientRequest {
+        return
+            try CreatePatientRequest(
+                firstName: FfiConverterString.read(from: &buf), 
+                lastName: FfiConverterString.read(from: &buf), 
+                email: FfiConverterOptionString.read(from: &buf), 
+                phone: FfiConverterOptionString.read(from: &buf), 
+                dateOfBirth: FfiConverterOptionString.read(from: &buf), 
+                diagnosis: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CreatePatientRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.firstName, into: &buf)
+        FfiConverterString.write(value.lastName, into: &buf)
+        FfiConverterOptionString.write(value.email, into: &buf)
+        FfiConverterOptionString.write(value.phone, into: &buf)
+        FfiConverterOptionString.write(value.dateOfBirth, into: &buf)
+        FfiConverterOptionString.write(value.diagnosis, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreatePatientRequest_lift(_ buf: RustBuffer) throws -> CreatePatientRequest {
+    return try FfiConverterTypeCreatePatientRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreatePatientRequest_lower(_ value: CreatePatientRequest) -> RustBuffer {
+    return FfiConverterTypeCreatePatientRequest.lower(value)
+}
+
+
+public struct CreateSessionRequest: Equatable, Hashable {
+    public var patientId: String
+    public var scheduledAt: String
+    public var durationMinutes: UInt32?
+    public var videoLink: String?
+    public var videoPlatform: VideoPlatform?
+    public var sessionType: SessionType?
+    public var source: SessionSource?
+    public var notes: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(patientId: String, scheduledAt: String, durationMinutes: UInt32?, videoLink: String?, videoPlatform: VideoPlatform?, sessionType: SessionType?, source: SessionSource?, notes: String?) {
+        self.patientId = patientId
+        self.scheduledAt = scheduledAt
+        self.durationMinutes = durationMinutes
+        self.videoLink = videoLink
+        self.videoPlatform = videoPlatform
+        self.sessionType = sessionType
+        self.source = source
+        self.notes = notes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CreateSessionRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCreateSessionRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CreateSessionRequest {
+        return
+            try CreateSessionRequest(
+                patientId: FfiConverterString.read(from: &buf), 
+                scheduledAt: FfiConverterString.read(from: &buf), 
+                durationMinutes: FfiConverterOptionUInt32.read(from: &buf), 
+                videoLink: FfiConverterOptionString.read(from: &buf), 
+                videoPlatform: FfiConverterOptionTypeVideoPlatform.read(from: &buf), 
+                sessionType: FfiConverterOptionTypeSessionType.read(from: &buf), 
+                source: FfiConverterOptionTypeSessionSource.read(from: &buf), 
+                notes: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CreateSessionRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.patientId, into: &buf)
+        FfiConverterString.write(value.scheduledAt, into: &buf)
+        FfiConverterOptionUInt32.write(value.durationMinutes, into: &buf)
+        FfiConverterOptionString.write(value.videoLink, into: &buf)
+        FfiConverterOptionTypeVideoPlatform.write(value.videoPlatform, into: &buf)
+        FfiConverterOptionTypeSessionType.write(value.sessionType, into: &buf)
+        FfiConverterOptionTypeSessionSource.write(value.source, into: &buf)
+        FfiConverterOptionString.write(value.notes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreateSessionRequest_lift(_ buf: RustBuffer) throws -> CreateSessionRequest {
+    return try FfiConverterTypeCreateSessionRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreateSessionRequest_lower(_ value: CreateSessionRequest) -> RustBuffer {
+    return FfiConverterTypeCreateSessionRequest.lower(value)
 }
 
 
@@ -604,6 +846,232 @@ public func FfiConverterTypeGoogleMeetOptions_lower(_ value: GoogleMeetOptions) 
 }
 
 
+public struct Patient: Equatable, Hashable {
+    public var id: String
+    public var userId: String
+    public var firstName: String
+    public var lastName: String
+    public var email: String?
+    public var phone: String?
+    public var status: String
+    public var dateOfBirth: String?
+    public var diagnosis: String?
+    public var sessionCount: UInt32
+    public var lastSessionDate: String?
+    public var nextSessionDate: String?
+    public var createdAt: String
+    public var updatedAt: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, userId: String, firstName: String, lastName: String, email: String?, phone: String?, status: String, dateOfBirth: String?, diagnosis: String?, sessionCount: UInt32, lastSessionDate: String?, nextSessionDate: String?, createdAt: String, updatedAt: String) {
+        self.id = id
+        self.userId = userId
+        self.firstName = firstName
+        self.lastName = lastName
+        self.email = email
+        self.phone = phone
+        self.status = status
+        self.dateOfBirth = dateOfBirth
+        self.diagnosis = diagnosis
+        self.sessionCount = sessionCount
+        self.lastSessionDate = lastSessionDate
+        self.nextSessionDate = nextSessionDate
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Patient: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePatient: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Patient {
+        return
+            try Patient(
+                id: FfiConverterString.read(from: &buf), 
+                userId: FfiConverterString.read(from: &buf), 
+                firstName: FfiConverterString.read(from: &buf), 
+                lastName: FfiConverterString.read(from: &buf), 
+                email: FfiConverterOptionString.read(from: &buf), 
+                phone: FfiConverterOptionString.read(from: &buf), 
+                status: FfiConverterString.read(from: &buf), 
+                dateOfBirth: FfiConverterOptionString.read(from: &buf), 
+                diagnosis: FfiConverterOptionString.read(from: &buf), 
+                sessionCount: FfiConverterUInt32.read(from: &buf), 
+                lastSessionDate: FfiConverterOptionString.read(from: &buf), 
+                nextSessionDate: FfiConverterOptionString.read(from: &buf), 
+                createdAt: FfiConverterString.read(from: &buf), 
+                updatedAt: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Patient, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterString.write(value.firstName, into: &buf)
+        FfiConverterString.write(value.lastName, into: &buf)
+        FfiConverterOptionString.write(value.email, into: &buf)
+        FfiConverterOptionString.write(value.phone, into: &buf)
+        FfiConverterString.write(value.status, into: &buf)
+        FfiConverterOptionString.write(value.dateOfBirth, into: &buf)
+        FfiConverterOptionString.write(value.diagnosis, into: &buf)
+        FfiConverterUInt32.write(value.sessionCount, into: &buf)
+        FfiConverterOptionString.write(value.lastSessionDate, into: &buf)
+        FfiConverterOptionString.write(value.nextSessionDate, into: &buf)
+        FfiConverterString.write(value.createdAt, into: &buf)
+        FfiConverterString.write(value.updatedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePatient_lift(_ buf: RustBuffer) throws -> Patient {
+    return try FfiConverterTypePatient.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePatient_lower(_ value: Patient) -> RustBuffer {
+    return FfiConverterTypePatient.lower(value)
+}
+
+
+public struct PatientListResponse: Equatable, Hashable {
+    public var data: [Patient]
+    public var total: UInt32
+    public var page: UInt32
+    public var pageSize: UInt32
+    public var hasMore: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(data: [Patient], total: UInt32, page: UInt32, pageSize: UInt32, hasMore: Bool) {
+        self.data = data
+        self.total = total
+        self.page = page
+        self.pageSize = pageSize
+        self.hasMore = hasMore
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PatientListResponse: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePatientListResponse: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PatientListResponse {
+        return
+            try PatientListResponse(
+                data: FfiConverterSequenceTypePatient.read(from: &buf), 
+                total: FfiConverterUInt32.read(from: &buf), 
+                page: FfiConverterUInt32.read(from: &buf), 
+                pageSize: FfiConverterUInt32.read(from: &buf), 
+                hasMore: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PatientListResponse, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypePatient.write(value.data, into: &buf)
+        FfiConverterUInt32.write(value.total, into: &buf)
+        FfiConverterUInt32.write(value.page, into: &buf)
+        FfiConverterUInt32.write(value.pageSize, into: &buf)
+        FfiConverterBool.write(value.hasMore, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePatientListResponse_lift(_ buf: RustBuffer) throws -> PatientListResponse {
+    return try FfiConverterTypePatientListResponse.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePatientListResponse_lower(_ value: PatientListResponse) -> RustBuffer {
+    return FfiConverterTypePatientListResponse.lower(value)
+}
+
+
+public struct PatientSummary: Equatable, Hashable {
+    public var id: String
+    public var firstName: String
+    public var lastName: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, firstName: String, lastName: String) {
+        self.id = id
+        self.firstName = firstName
+        self.lastName = lastName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PatientSummary: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePatientSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PatientSummary {
+        return
+            try PatientSummary(
+                id: FfiConverterString.read(from: &buf), 
+                firstName: FfiConverterString.read(from: &buf), 
+                lastName: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PatientSummary, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.firstName, into: &buf)
+        FfiConverterString.write(value.lastName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePatientSummary_lift(_ buf: RustBuffer) throws -> PatientSummary {
+    return try FfiConverterTypePatientSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePatientSummary_lower(_ value: PatientSummary) -> RustBuffer {
+    return FfiConverterTypePatientSummary.lower(value)
+}
+
+
 public struct RawSegment: Equatable, Hashable {
     public var startMs: Int64
     public var endMs: Int64
@@ -659,6 +1127,178 @@ public func FfiConverterTypeRawSegment_lift(_ buf: RustBuffer) throws -> RawSegm
 #endif
 public func FfiConverterTypeRawSegment_lower(_ value: RawSegment) -> RustBuffer {
     return FfiConverterTypeRawSegment.lower(value)
+}
+
+
+public struct Session: Equatable, Hashable {
+    public var id: String
+    public var patientId: String
+    public var patient: PatientSummary?
+    public var status: SessionStatus
+    public var scheduledAt: String?
+    public var startedAt: String?
+    public var endedAt: String?
+    public var durationMinutes: UInt32
+    public var videoLink: String?
+    public var videoPlatform: VideoPlatform?
+    public var sessionType: SessionType
+    public var source: SessionSource
+    public var notes: String?
+    public var createdAt: String
+    public var updatedAt: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, patientId: String, patient: PatientSummary?, status: SessionStatus, scheduledAt: String?, startedAt: String?, endedAt: String?, durationMinutes: UInt32, videoLink: String?, videoPlatform: VideoPlatform?, sessionType: SessionType, source: SessionSource, notes: String?, createdAt: String, updatedAt: String) {
+        self.id = id
+        self.patientId = patientId
+        self.patient = patient
+        self.status = status
+        self.scheduledAt = scheduledAt
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.durationMinutes = durationMinutes
+        self.videoLink = videoLink
+        self.videoPlatform = videoPlatform
+        self.sessionType = sessionType
+        self.source = source
+        self.notes = notes
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Session: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSession: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Session {
+        return
+            try Session(
+                id: FfiConverterString.read(from: &buf), 
+                patientId: FfiConverterString.read(from: &buf), 
+                patient: FfiConverterOptionTypePatientSummary.read(from: &buf), 
+                status: FfiConverterTypeSessionStatus.read(from: &buf), 
+                scheduledAt: FfiConverterOptionString.read(from: &buf), 
+                startedAt: FfiConverterOptionString.read(from: &buf), 
+                endedAt: FfiConverterOptionString.read(from: &buf), 
+                durationMinutes: FfiConverterUInt32.read(from: &buf), 
+                videoLink: FfiConverterOptionString.read(from: &buf), 
+                videoPlatform: FfiConverterOptionTypeVideoPlatform.read(from: &buf), 
+                sessionType: FfiConverterTypeSessionType.read(from: &buf), 
+                source: FfiConverterTypeSessionSource.read(from: &buf), 
+                notes: FfiConverterOptionString.read(from: &buf), 
+                createdAt: FfiConverterString.read(from: &buf), 
+                updatedAt: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Session, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.patientId, into: &buf)
+        FfiConverterOptionTypePatientSummary.write(value.patient, into: &buf)
+        FfiConverterTypeSessionStatus.write(value.status, into: &buf)
+        FfiConverterOptionString.write(value.scheduledAt, into: &buf)
+        FfiConverterOptionString.write(value.startedAt, into: &buf)
+        FfiConverterOptionString.write(value.endedAt, into: &buf)
+        FfiConverterUInt32.write(value.durationMinutes, into: &buf)
+        FfiConverterOptionString.write(value.videoLink, into: &buf)
+        FfiConverterOptionTypeVideoPlatform.write(value.videoPlatform, into: &buf)
+        FfiConverterTypeSessionType.write(value.sessionType, into: &buf)
+        FfiConverterTypeSessionSource.write(value.source, into: &buf)
+        FfiConverterOptionString.write(value.notes, into: &buf)
+        FfiConverterString.write(value.createdAt, into: &buf)
+        FfiConverterString.write(value.updatedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSession_lift(_ buf: RustBuffer) throws -> Session {
+    return try FfiConverterTypeSession.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSession_lower(_ value: Session) -> RustBuffer {
+    return FfiConverterTypeSession.lower(value)
+}
+
+
+public struct SessionListResponse: Equatable, Hashable {
+    public var data: [Session]
+    public var total: UInt32
+    public var page: UInt32
+    public var pageSize: UInt32
+    public var hasMore: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(data: [Session], total: UInt32, page: UInt32, pageSize: UInt32, hasMore: Bool) {
+        self.data = data
+        self.total = total
+        self.page = page
+        self.pageSize = pageSize
+        self.hasMore = hasMore
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SessionListResponse: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSessionListResponse: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SessionListResponse {
+        return
+            try SessionListResponse(
+                data: FfiConverterSequenceTypeSession.read(from: &buf), 
+                total: FfiConverterUInt32.read(from: &buf), 
+                page: FfiConverterUInt32.read(from: &buf), 
+                pageSize: FfiConverterUInt32.read(from: &buf), 
+                hasMore: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SessionListResponse, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeSession.write(value.data, into: &buf)
+        FfiConverterUInt32.write(value.total, into: &buf)
+        FfiConverterUInt32.write(value.page, into: &buf)
+        FfiConverterUInt32.write(value.pageSize, into: &buf)
+        FfiConverterBool.write(value.hasMore, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionListResponse_lift(_ buf: RustBuffer) throws -> SessionListResponse {
+    return try FfiConverterTypeSessionListResponse.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionListResponse_lower(_ value: SessionListResponse) -> RustBuffer {
+    return FfiConverterTypeSessionListResponse.lower(value)
 }
 
 
@@ -782,6 +1422,64 @@ public func FfiConverterTypeTranscriptSegment_lower(_ value: TranscriptSegment) 
 }
 
 
+public struct TranscriptUploadResponse: Equatable, Hashable {
+    public var id: String
+    public var status: SessionStatus
+    public var message: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, status: SessionStatus, message: String) {
+        self.id = id
+        self.status = status
+        self.message = message
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TranscriptUploadResponse: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranscriptUploadResponse: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TranscriptUploadResponse {
+        return
+            try TranscriptUploadResponse(
+                id: FfiConverterString.read(from: &buf), 
+                status: FfiConverterTypeSessionStatus.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TranscriptUploadResponse, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypeSessionStatus.write(value.status, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptUploadResponse_lift(_ buf: RustBuffer) throws -> TranscriptUploadResponse {
+    return try FfiConverterTypeTranscriptUploadResponse.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptUploadResponse_lower(_ value: TranscriptUploadResponse) -> RustBuffer {
+    return FfiConverterTypeTranscriptUploadResponse.lower(value)
+}
+
+
 public struct TranscriptionConfig: Equatable, Hashable {
     public var modelPath: String
     public var micChannels: UInt8
@@ -848,6 +1546,266 @@ public func FfiConverterTypeTranscriptionConfig_lower(_ value: TranscriptionConf
 }
 
 
+public struct UpdateSessionRequest: Equatable, Hashable {
+    public var scheduledAt: String?
+    public var videoLink: String?
+    public var videoPlatform: VideoPlatform?
+    public var durationMinutes: UInt32?
+    public var notes: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(scheduledAt: String?, videoLink: String?, videoPlatform: VideoPlatform?, durationMinutes: UInt32?, notes: String?) {
+        self.scheduledAt = scheduledAt
+        self.videoLink = videoLink
+        self.videoPlatform = videoPlatform
+        self.durationMinutes = durationMinutes
+        self.notes = notes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UpdateSessionRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUpdateSessionRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UpdateSessionRequest {
+        return
+            try UpdateSessionRequest(
+                scheduledAt: FfiConverterOptionString.read(from: &buf), 
+                videoLink: FfiConverterOptionString.read(from: &buf), 
+                videoPlatform: FfiConverterOptionTypeVideoPlatform.read(from: &buf), 
+                durationMinutes: FfiConverterOptionUInt32.read(from: &buf), 
+                notes: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UpdateSessionRequest, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.scheduledAt, into: &buf)
+        FfiConverterOptionString.write(value.videoLink, into: &buf)
+        FfiConverterOptionTypeVideoPlatform.write(value.videoPlatform, into: &buf)
+        FfiConverterOptionUInt32.write(value.durationMinutes, into: &buf)
+        FfiConverterOptionString.write(value.notes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdateSessionRequest_lift(_ buf: RustBuffer) throws -> UpdateSessionRequest {
+    return try FfiConverterTypeUpdateSessionRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdateSessionRequest_lower(_ value: UpdateSessionRequest) -> RustBuffer {
+    return FfiConverterTypeUpdateSessionRequest.lower(value)
+}
+
+
+public struct UploadResponse: Equatable, Hashable {
+    public var id: String
+    public var status: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, status: String) {
+        self.id = id
+        self.status = status
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UploadResponse: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadResponse: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadResponse {
+        return
+            try UploadResponse(
+                id: FfiConverterString.read(from: &buf), 
+                status: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UploadResponse, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.status, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadResponse_lift(_ buf: RustBuffer) throws -> UploadResponse {
+    return try FfiConverterTypeUploadResponse.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadResponse_lower(_ value: UploadResponse) -> RustBuffer {
+    return FfiConverterTypeUploadResponse.lower(value)
+}
+
+
+public struct UserPreferences: Equatable, Hashable {
+    public var defaultVideoPlatform: VideoPlatform
+    public var defaultSessionType: SessionType
+    public var defaultDurationMinutes: UInt32
+    public var autoTranscribe: Bool
+    public var qualityPreset: QualityPreset
+    public var therapistDisplayName: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(defaultVideoPlatform: VideoPlatform, defaultSessionType: SessionType, defaultDurationMinutes: UInt32, autoTranscribe: Bool, qualityPreset: QualityPreset, therapistDisplayName: String) {
+        self.defaultVideoPlatform = defaultVideoPlatform
+        self.defaultSessionType = defaultSessionType
+        self.defaultDurationMinutes = defaultDurationMinutes
+        self.autoTranscribe = autoTranscribe
+        self.qualityPreset = qualityPreset
+        self.therapistDisplayName = therapistDisplayName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UserPreferences: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUserPreferences: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UserPreferences {
+        return
+            try UserPreferences(
+                defaultVideoPlatform: FfiConverterTypeVideoPlatform.read(from: &buf), 
+                defaultSessionType: FfiConverterTypeSessionType.read(from: &buf), 
+                defaultDurationMinutes: FfiConverterUInt32.read(from: &buf), 
+                autoTranscribe: FfiConverterBool.read(from: &buf), 
+                qualityPreset: FfiConverterTypeQualityPreset.read(from: &buf), 
+                therapistDisplayName: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UserPreferences, into buf: inout [UInt8]) {
+        FfiConverterTypeVideoPlatform.write(value.defaultVideoPlatform, into: &buf)
+        FfiConverterTypeSessionType.write(value.defaultSessionType, into: &buf)
+        FfiConverterUInt32.write(value.defaultDurationMinutes, into: &buf)
+        FfiConverterBool.write(value.autoTranscribe, into: &buf)
+        FfiConverterTypeQualityPreset.write(value.qualityPreset, into: &buf)
+        FfiConverterString.write(value.therapistDisplayName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUserPreferences_lift(_ buf: RustBuffer) throws -> UserPreferences {
+    return try FfiConverterTypeUserPreferences.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUserPreferences_lower(_ value: UserPreferences) -> RustBuffer {
+    return FfiConverterTypeUserPreferences.lower(value)
+}
+
+
+public struct UserProfile: Equatable, Hashable {
+    public var id: String
+    public var email: String
+    public var firstName: String
+    public var lastName: String
+    public var role: String
+    public var createdAt: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, email: String, firstName: String, lastName: String, role: String, createdAt: String) {
+        self.id = id
+        self.email = email
+        self.firstName = firstName
+        self.lastName = lastName
+        self.role = role
+        self.createdAt = createdAt
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UserProfile: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUserProfile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UserProfile {
+        return
+            try UserProfile(
+                id: FfiConverterString.read(from: &buf), 
+                email: FfiConverterString.read(from: &buf), 
+                firstName: FfiConverterString.read(from: &buf), 
+                lastName: FfiConverterString.read(from: &buf), 
+                role: FfiConverterString.read(from: &buf), 
+                createdAt: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UserProfile, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.email, into: &buf)
+        FfiConverterString.write(value.firstName, into: &buf)
+        FfiConverterString.write(value.lastName, into: &buf)
+        FfiConverterString.write(value.role, into: &buf)
+        FfiConverterString.write(value.createdAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUserProfile_lift(_ buf: RustBuffer) throws -> UserProfile {
+    return try FfiConverterTypeUserProfile.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUserProfile_lower(_ value: UserProfile) -> RustBuffer {
+    return FfiConverterTypeUserProfile.lower(value)
+}
+
+
 public enum PabloError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
@@ -857,6 +1815,16 @@ public enum PabloError: Swift.Error, Equatable, Hashable, Foundation.LocalizedEr
     case WhisperInit(message: String
     )
     case WhisperTranscribe(message: String
+    )
+    case ApiClient(statusCode: UInt16, message: String
+    )
+    case JsonParse(message: String
+    )
+    case Unauthenticated
+    case Forbidden
+    case NotFound(resource: String
+    )
+    case ConflictState(message: String
     )
 
     
@@ -896,6 +1864,21 @@ public struct FfiConverterTypePabloError: FfiConverterRustBuffer {
         case 3: return .WhisperTranscribe(
             message: try FfiConverterString.read(from: &buf)
             )
+        case 4: return .ApiClient(
+            statusCode: try FfiConverterUInt16.read(from: &buf), 
+            message: try FfiConverterString.read(from: &buf)
+            )
+        case 5: return .JsonParse(
+            message: try FfiConverterString.read(from: &buf)
+            )
+        case 6: return .Unauthenticated
+        case 7: return .Forbidden
+        case 8: return .NotFound(
+            resource: try FfiConverterString.read(from: &buf)
+            )
+        case 9: return .ConflictState(
+            message: try FfiConverterString.read(from: &buf)
+            )
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -922,6 +1905,35 @@ public struct FfiConverterTypePabloError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(3))
             FfiConverterString.write(message, into: &buf)
             
+        
+        case let .ApiClient(statusCode,message):
+            writeInt(&buf, Int32(4))
+            FfiConverterUInt16.write(statusCode, into: &buf)
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .JsonParse(message):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case .Unauthenticated:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .Forbidden:
+            writeInt(&buf, Int32(7))
+        
+        
+        case let .NotFound(resource):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(resource, into: &buf)
+            
+        
+        case let .ConflictState(message):
+            writeInt(&buf, Int32(9))
+            FfiConverterString.write(message, into: &buf)
+            
         }
     }
 }
@@ -940,6 +1952,80 @@ public func FfiConverterTypePabloError_lift(_ buf: RustBuffer) throws -> PabloEr
 public func FfiConverterTypePabloError_lower(_ value: PabloError) -> RustBuffer {
     return FfiConverterTypePabloError.lower(value)
 }
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum QualityPreset: Equatable, Hashable {
+    
+    case fast
+    case balanced
+    case accurate
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension QualityPreset: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQualityPreset: FfiConverterRustBuffer {
+    typealias SwiftType = QualityPreset
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QualityPreset {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .fast
+        
+        case 2: return .balanced
+        
+        case 3: return .accurate
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: QualityPreset, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .fast:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .balanced:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .accurate:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQualityPreset_lift(_ buf: RustBuffer) throws -> QualityPreset {
+    return try FfiConverterTypeQualityPreset.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQualityPreset_lower(_ value: QualityPreset) -> RustBuffer {
+    return FfiConverterTypeQualityPreset.lower(value)
+}
+
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -1005,6 +2091,263 @@ public func FfiConverterTypeSessionMode_lift(_ buf: RustBuffer) throws -> Sessio
 #endif
 public func FfiConverterTypeSessionMode_lower(_ value: SessionMode) -> RustBuffer {
     return FfiConverterTypeSessionMode.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum SessionSource: Equatable, Hashable {
+    
+    case web
+    case companion
+    case calendar
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SessionSource: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSessionSource: FfiConverterRustBuffer {
+    typealias SwiftType = SessionSource
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SessionSource {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .web
+        
+        case 2: return .companion
+        
+        case 3: return .calendar
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SessionSource, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .web:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .companion:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .calendar:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionSource_lift(_ buf: RustBuffer) throws -> SessionSource {
+    return try FfiConverterTypeSessionSource.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionSource_lower(_ value: SessionSource) -> RustBuffer {
+    return FfiConverterTypeSessionSource.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum SessionStatus: Equatable, Hashable {
+    
+    case scheduled
+    case inProgress
+    case recordingComplete
+    case queued
+    case processing
+    case pendingReview
+    case finalized
+    case cancelled
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SessionStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSessionStatus: FfiConverterRustBuffer {
+    typealias SwiftType = SessionStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SessionStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .scheduled
+        
+        case 2: return .inProgress
+        
+        case 3: return .recordingComplete
+        
+        case 4: return .queued
+        
+        case 5: return .processing
+        
+        case 6: return .pendingReview
+        
+        case 7: return .finalized
+        
+        case 8: return .cancelled
+        
+        case 9: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SessionStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .scheduled:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .inProgress:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .recordingComplete:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .queued:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .processing:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .pendingReview:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .finalized:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .cancelled:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(9))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionStatus_lift(_ buf: RustBuffer) throws -> SessionStatus {
+    return try FfiConverterTypeSessionStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionStatus_lower(_ value: SessionStatus) -> RustBuffer {
+    return FfiConverterTypeSessionStatus.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum SessionType: Equatable, Hashable {
+    
+    case individual
+    case couples
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SessionType: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSessionType: FfiConverterRustBuffer {
+    typealias SwiftType = SessionType
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SessionType {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .individual
+        
+        case 2: return .couples
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SessionType, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .individual:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .couples:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionType_lift(_ buf: RustBuffer) throws -> SessionType {
+    return try FfiConverterTypeSessionType.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionType_lower(_ value: SessionType) -> RustBuffer {
+    return FfiConverterTypeSessionType.lower(value)
 }
 
 
@@ -1096,6 +2439,111 @@ public func FfiConverterTypeSpeakerLabel_lower(_ value: SpeakerLabel) -> RustBuf
 }
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum VideoPlatform: Equatable, Hashable {
+    
+    case zoom
+    case teams
+    case meet
+    case none
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension VideoPlatform: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVideoPlatform: FfiConverterRustBuffer {
+    typealias SwiftType = VideoPlatform
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VideoPlatform {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .zoom
+        
+        case 2: return .teams
+        
+        case 3: return .meet
+        
+        case 4: return .none
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: VideoPlatform, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .zoom:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .teams:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .meet:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .none:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVideoPlatform_lift(_ buf: RustBuffer) throws -> VideoPlatform {
+    return try FfiConverterTypeVideoPlatform.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVideoPlatform_lower(_ value: VideoPlatform) -> RustBuffer {
+    return FfiConverterTypeVideoPlatform.lower(value)
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = UInt32?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt32.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -1115,6 +2563,102 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePatientSummary: FfiConverterRustBuffer {
+    typealias SwiftType = PatientSummary?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePatientSummary.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePatientSummary.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSessionSource: FfiConverterRustBuffer {
+    typealias SwiftType = SessionSource?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSessionSource.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSessionSource.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSessionType: FfiConverterRustBuffer {
+    typealias SwiftType = SessionType?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSessionType.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSessionType.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeVideoPlatform: FfiConverterRustBuffer {
+    typealias SwiftType = VideoPlatform?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeVideoPlatform.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeVideoPlatform.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -1148,6 +2692,31 @@ fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePatient: FfiConverterRustBuffer {
+    typealias SwiftType = [Patient]
+
+    public static func write(_ value: [Patient], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePatient.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Patient] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Patient]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePatient.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeRawSegment: FfiConverterRustBuffer {
     typealias SwiftType = [RawSegment]
 
@@ -1165,6 +2734,31 @@ fileprivate struct FfiConverterSequenceTypeRawSegment: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRawSegment.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSession: FfiConverterRustBuffer {
+    typealias SwiftType = [Session]
+
+    public static func write(_ value: [Session], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSession.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Session] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Session]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSession.read(from: &buf))
         }
         return seq
     }
@@ -1242,11 +2836,179 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
         print("uniffiFutureContinuationCallback invalid handle")
     }
 }
+public func acceptBaa(baseUrl: String, token: String)async throws  -> BaaStatus  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_accept_baa(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeBaaStatus_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
 public func coreVersion() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_pablo_core_fn_func_core_version($0
     )
 })
+}
+public func createPatient(baseUrl: String, token: String, request: CreatePatientRequest)async throws  -> Patient  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_create_patient(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterTypeCreatePatientRequest_lower(request)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePatient_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func createSession(baseUrl: String, token: String, request: CreateSessionRequest)async throws  -> Session  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_create_session(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterTypeCreateSessionRequest_lower(request)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSession_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func fetchBaaStatus(baseUrl: String, token: String)async throws  -> BaaStatus  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_fetch_baa_status(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeBaaStatus_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func fetchPatients(baseUrl: String, token: String, search: String?, page: UInt32, pageSize: UInt32)async throws  -> PatientListResponse  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_fetch_patients(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterOptionString.lower(search),FfiConverterUInt32.lower(page),FfiConverterUInt32.lower(pageSize)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePatientListResponse_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func fetchPreferences(baseUrl: String, token: String)async throws  -> UserPreferences  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_fetch_preferences(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeUserPreferences_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func fetchSession(baseUrl: String, token: String, sessionId: String)async throws  -> Session  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_fetch_session(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSession_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func fetchSessions(baseUrl: String, token: String, page: UInt32, pageSize: UInt32, status: String?)async throws  -> SessionListResponse  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_fetch_sessions(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterUInt32.lower(page),FfiConverterUInt32.lower(pageSize),FfiConverterOptionString.lower(status)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSessionListResponse_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func fetchTodaySessions(baseUrl: String, token: String, timezone: String)async throws  -> [Session]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_fetch_today_sessions(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(timezone)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeSession.lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func fetchUserProfile(baseUrl: String, token: String)async throws  -> UserProfile  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_fetch_user_profile(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeUserProfile_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func finalizeSession(baseUrl: String, token: String, sessionId: String, qualityRating: UInt8)async throws  -> Session  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_finalize_session(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId),FfiConverterUInt8.lower(qualityRating)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSession_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func healthCheck(baseUrl: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_health_check(FfiConverterString.lower(baseUrl)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_void,
+            completeFunc: ffi_pablo_core_rust_future_complete_void,
+            freeFunc: ffi_pablo_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypePabloError_lift
+        )
 }
 public func preprocessPcm(path: String, channels: UInt8, sampleRate: UInt32)async throws  -> [Float]  {
     return
@@ -1269,6 +3031,20 @@ public func renderGoogleMeet(transcript: TranscriptResult, opts: GoogleMeetOptio
         FfiConverterTypeGoogleMeetOptions_lower(opts),$0
     )
 })
+}
+public func savePreferences(baseUrl: String, token: String, preferences: UserPreferences)async throws  -> UserPreferences  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_save_preferences(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterTypeUserPreferences_lower(preferences)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeUserPreferences_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
 }
 public func transcribeAudio(modelPath: String, audio: [Float])async throws  -> [RawSegment]  {
     return
@@ -1298,6 +3074,62 @@ public func transcribeSession1on1(sessionId: String, micPath: String, systemPath
             errorHandler: FfiConverterTypePabloError_lift
         )
 }
+public func updateSession(baseUrl: String, token: String, sessionId: String, request: UpdateSessionRequest)async throws  -> Session  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_update_session(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId),FfiConverterTypeUpdateSessionRequest_lower(request)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSession_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func updateSessionStatus(baseUrl: String, token: String, sessionId: String, status: SessionStatus)async throws  -> Session  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_update_session_status(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId),FfiConverterTypeSessionStatus_lower(status)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSession_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func uploadRecording(baseUrl: String, token: String, filePath: String)async throws  -> UploadResponse  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_upload_recording(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(filePath)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeUploadResponse_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func uploadTranscript(baseUrl: String, token: String, sessionId: String, format: String, content: String)async throws  -> TranscriptUploadResponse  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_upload_transcript(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId),FfiConverterString.lower(format),FfiConverterString.lower(content)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeTranscriptUploadResponse_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
 
 private enum InitializationResult {
     case ok
@@ -1314,7 +3146,43 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_pablo_core_checksum_func_accept_baa() != 46417) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_pablo_core_checksum_func_core_version() != 16817) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_create_patient() != 37923) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_create_session() != 59569) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_fetch_baa_status() != 55426) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_fetch_patients() != 21659) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_fetch_preferences() != 32593) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_fetch_session() != 44651) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_fetch_sessions() != 59792) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_fetch_today_sessions() != 15279) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_fetch_user_profile() != 13309) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_finalize_session() != 27401) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_health_check() != 27002) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_pablo_core_checksum_func_preprocess_pcm() != 9691) {
@@ -1323,10 +3191,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_pablo_core_checksum_func_render_google_meet() != 29351) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_pablo_core_checksum_func_save_preferences() != 46305) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_pablo_core_checksum_func_transcribe_audio() != 50848) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_pablo_core_checksum_func_transcribe_session_1on1() != 37574) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_update_session() != 45663) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_update_session_status() != 39660) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_upload_recording() != 42373) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_upload_transcript() != 56205) {
         return InitializationResult.apiChecksumMismatch
     }
 

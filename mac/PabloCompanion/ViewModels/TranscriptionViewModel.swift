@@ -48,11 +48,17 @@ final class TranscriptionViewModel {
 
     // MARK: - Dependencies
 
-    var backendURL = ""
-    var getToken: (() async throws -> String)?
+    var backendURL = "" {
+        didSet {
+            if URLValidator.validateScheme(backendURL) == nil {
+                apiClient = APIClient(baseURL: backendURL)
+            }
+        }
+    }
 
     // MARK: - Private
 
+    private var apiClient = APIClient()
     private let store = PendingTranscriptStore()
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "TranscriptionViewModel")
 
@@ -60,9 +66,14 @@ final class TranscriptionViewModel {
         UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool ?? true
     }
 
-    private var qualityPreset: QualityPreset {
+    private var qualityPreset: WhisperModelPreset {
         let raw = UserDefaults.standard.string(forKey: "qualityPreset") ?? ""
-        return QualityPreset(rawValue: raw) ?? .balanced
+        return WhisperModelPreset(rawValue: raw) ?? .balanced
+    }
+
+    /// Configures the API client with a token provider for authenticated requests.
+    func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
+        apiClient.getToken = getToken
     }
 
     // MARK: - Public API
@@ -171,32 +182,12 @@ final class TranscriptionViewModel {
         }
     }
 
-    private func postTranscript(sessionID _: String, text _: String) async throws {
-        // Stub: replace with real APIClient call once backend endpoint is ready.
-        // POST /api/sessions/{sessionID}/transcript  body: { "text": "...", "format": "google_meet" }
-        guard !backendURL.isEmpty else {
-            throw TranscriptionError.backendNotConfigured
-        }
-        guard let token = try? await getToken?() else {
-            throw TranscriptionError.notAuthenticated
-        }
-        _ = token // will be used in real implementation
-        throw TranscriptionError.backendNotReady
-    }
-}
-
-// MARK: - TranscriptionError
-
-enum TranscriptionError: LocalizedError {
-    case backendNotConfigured
-    case notAuthenticated
-    case backendNotReady
-
-    var errorDescription: String? {
-        switch self {
-        case .backendNotConfigured: "Backend URL not configured"
-        case .notAuthenticated: "Not authenticated"
-        case .backendNotReady: "Transcript upload endpoint not yet available"
-        }
+    private func postTranscript(sessionID: String, text: String) async throws {
+        let response = try await apiClient.uploadTranscript(
+            sessionId: sessionID,
+            format: "google_meet",
+            content: text
+        )
+        logger.info("Transcript uploaded for session \(sessionID), message: \(response.message)")
     }
 }

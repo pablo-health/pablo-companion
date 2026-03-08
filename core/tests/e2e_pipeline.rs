@@ -190,7 +190,7 @@ fn write_wav(path: &std::path::Path, pcm: &[u8], channels: u16, sample_rate: u32
     buf.extend_from_slice(&byte_rate.to_le_bytes());
     buf.extend_from_slice(&block_align.to_le_bytes());
     buf.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-    // data sub-chunk
+                                                 // data sub-chunk
     buf.extend_from_slice(b"data");
     buf.extend_from_slice(&data_len.to_le_bytes());
     buf.extend_from_slice(pcm);
@@ -605,10 +605,7 @@ async fn e2e_synthetic_therapy_session() {
         meet_output.contains("Alex Rivera:"),
         "Missing client name in turns"
     );
-    assert!(
-        meet_output.contains("Speakers: 2"),
-        "Expected 2 speakers"
-    );
+    assert!(meet_output.contains("Speakers: 2"), "Expected 2 speakers");
     assert!(
         meet_output.contains("Dr. Sarah Chen (Therapist)"),
         "Missing therapist in speaker list"
@@ -755,10 +752,7 @@ async fn e2e_full_therapy_session() {
         meet_output.starts_with("Google Meet Transcript\n"),
         "Missing header"
     );
-    assert!(
-        meet_output.contains("Speakers: 2"),
-        "Expected 2 speakers"
-    );
+    assert!(meet_output.contains("Speakers: 2"), "Expected 2 speakers");
 
     // Write full transcript
     let output_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-output");

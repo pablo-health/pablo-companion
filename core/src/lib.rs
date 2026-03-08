@@ -5,10 +5,15 @@
 
 uniffi::include_scaffolding!("pablo_core");
 
+pub mod api_client;
 pub mod audio_preprocessing;
 pub mod google_meet_renderer;
+pub mod models;
 pub mod session_pipeline;
 pub mod whisper_transcriber;
+
+pub use api_client::*;
+pub use models::*;
 
 pub use whisper_transcriber::RawSegment;
 
@@ -23,6 +28,18 @@ pub enum PabloError {
     WhisperInit { message: String },
     #[error("Whisper transcription error: {message}")]
     WhisperTranscribe { message: String },
+    #[error("API error (HTTP {status_code}): {message}")]
+    ApiClient { status_code: u16, message: String },
+    #[error("JSON parse error: {message}")]
+    JsonParse { message: String },
+    #[error("Unauthenticated — login required")]
+    Unauthenticated,
+    #[error("Forbidden — insufficient permissions")]
+    Forbidden,
+    #[error("Not found: {resource}")]
+    NotFound { resource: String },
+    #[error("Conflict: {message}")]
+    ConflictState { message: String },
 }
 
 // ── Public types exposed via UniFFI ──────────────────────────────────────────

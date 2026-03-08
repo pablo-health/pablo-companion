@@ -1,9 +1,11 @@
 import Foundation
 import os
 
-// MARK: - SessionType
+// MARK: - DisplaySessionType
 
-enum SessionType: String, CaseIterable, Sendable {
+/// UI-facing session type for display in Settings. Distinct from the UniFFI-generated
+/// ``SessionType`` enum used in the API layer.
+enum DisplaySessionType: String, CaseIterable, Sendable {
     case oneToOne = "1:1"
     case couples = "Couples"
 
@@ -12,9 +14,11 @@ enum SessionType: String, CaseIterable, Sendable {
     }
 }
 
-// MARK: - QualityPreset
+// MARK: - WhisperModelPreset
 
-enum QualityPreset: String, CaseIterable, Sendable {
+/// Local Whisper model quality tier. Distinct from the UniFFI-generated
+/// ``QualityPreset`` enum used in the API layer (user preferences).
+enum WhisperModelPreset: String, CaseIterable, Sendable {
     case fast // whisper-small (~200 MB)
     case balanced // whisper-large-v3-turbo Q5_0 (~1.0 GB) — default
     case highAccuracy // whisper-large-v3 (~1.6 GB) — on-demand download
@@ -47,7 +51,7 @@ enum QualityPreset: String, CaseIterable, Sendable {
 // MARK: - ModelError
 
 enum ModelError: Error, LocalizedError {
-    case notFound(QualityPreset)
+    case notFound(WhisperModelPreset)
     case downloadFailed(String)
 
     var errorDescription: String? {
@@ -68,8 +72,8 @@ enum ModelError: Error, LocalizedError {
 final class ModelManager: ObservableObject {
     static let shared = ModelManager()
 
-    @Published var downloadProgress: [QualityPreset: Double] = [:]
-    @Published var downloadingPresets: Set<QualityPreset> = []
+    @Published var downloadProgress: [WhisperModelPreset: Double] = [:]
+    @Published var downloadingPresets: Set<WhisperModelPreset> = []
 
     private let fileManager = FileManager.default
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "ModelManager")
@@ -85,7 +89,7 @@ final class ModelManager: ObservableObject {
 
     /// Returns the URL to the model file for the given preset.
     /// Checks the models directory first, then the app bundle.
-    func modelURL(for preset: QualityPreset) throws -> URL {
+    func modelURL(for preset: WhisperModelPreset) throws -> URL {
         // Check Application Support models directory first
         let cachedURL = modelsDirectory.appendingPathComponent(preset.modelFileName)
         if fileManager.fileExists(atPath: cachedURL.path) {
@@ -106,13 +110,13 @@ final class ModelManager: ObservableObject {
     }
 
     /// Whether the model for this preset is available (cached or bundled).
-    func isAvailable(_ preset: QualityPreset) -> Bool {
+    func isAvailable(_ preset: WhisperModelPreset) -> Bool {
         (try? modelURL(for: preset)) != nil
     }
 
     /// Downloads the model for the given preset from the Hugging Face whisper.cpp repository.
     /// Progress is published via `downloadProgress` and `downloadingPresets`.
-    func downloadModel(_ preset: QualityPreset) async throws {
+    func downloadModel(_ preset: WhisperModelPreset) async throws {
         guard !downloadingPresets.contains(preset) else { return }
 
         let baseURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
