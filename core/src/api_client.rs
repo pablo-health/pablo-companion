@@ -1,6 +1,7 @@
 // HTTP infrastructure layer for the Pablo API.
 // ApiClient struct is internal; public endpoint functions are exposed via UniFFI.
 
+use async_compat::Compat;
 use reqwest::Client;
 use secrecy::{ExposeSecret, SecretString};
 
@@ -125,23 +126,26 @@ pub(crate) async fn handle_error_response(response: reqwest::Response) -> PabloE
 
 /// Check that the Pablo backend is reachable. Unauthenticated.
 pub async fn health_check(base_url: String) -> Result<(), PabloError> {
-    let client = ApiClient::new(base_url);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
 
-    let response =
-        client
-            .get_public("/health")
-            .send()
-            .await
-            .map_err(|e| PabloError::ApiClient {
-                status_code: 0,
-                message: e.to_string(),
-            })?;
+        let response =
+            client
+                .get_public("/api/health")
+                .send()
+                .await
+                .map_err(|e| PabloError::ApiClient {
+                    status_code: 0,
+                    message: e.to_string(),
+                })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 /// Fetch a paginated list of patients, optionally filtered by search term.
@@ -152,37 +156,40 @@ pub async fn fetch_patients(
     page: u32,
     page_size: u32,
 ) -> Result<PatientListResponse, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let mut query_params: Vec<(&str, String)> = vec![
-        ("page", page.to_string()),
-        ("page_size", page_size.to_string()),
-    ];
-    if let Some(ref s) = search {
-        query_params.push(("search", s.clone()));
-    }
+        let mut query_params: Vec<(&str, String)> = vec![
+            ("page", page.to_string()),
+            ("page_size", page_size.to_string()),
+        ];
+        if let Some(ref s) = search {
+            query_params.push(("search", s.clone()));
+        }
 
-    let response = client
-        .get("/api/patients", &token)
-        .query(&query_params)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
+        let response = client
+            .get("/api/patients", &token)
+            .query(&query_params)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
+
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
+
+        let body = response.text().await.map_err(|e| PabloError::JsonParse {
             message: e.to_string(),
         })?;
-
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
-
-    response
-        .json::<PatientListResponse>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
+        serde_json::from_str::<PatientListResponse>(&body).map_err(|e| PabloError::JsonParse {
+            message: format!("{e}\nResponse body: {body}"),
         })
+    })
+    .await
 }
 
 /// Upload a recording file to the backend via multipart form data.
@@ -191,52 +198,55 @@ pub async fn upload_recording(
     token: String,
     file_path: String,
 ) -> Result<UploadResponse, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let file_bytes = tokio::fs::read(&file_path)
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: format!("Failed to read file: {e}"),
-        })?;
+        let file_bytes = tokio::fs::read(&file_path)
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: format!("Failed to read file: {e}"),
+            })?;
 
-    let file_name = std::path::Path::new(&file_path)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+        let file_name = std::path::Path::new(&file_path)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
 
-    let part = reqwest::multipart::Part::bytes(file_bytes)
-        .file_name(file_name)
-        .mime_str("application/octet-stream")
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let part = reqwest::multipart::Part::bytes(file_bytes)
+            .file_name(file_name)
+            .mime_str("application/octet-stream")
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    let form = reqwest::multipart::Form::new().part("file", part);
+        let form = reqwest::multipart::Form::new().part("file", part);
 
-    let response = client
-        .post("/api/recordings/upload", &token)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .post("/api/recordings/upload", &token)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<UploadResponse>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<UploadResponse>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 // ── Group B: New API methods (108.4) ────────────────────────────────────────
@@ -247,29 +257,32 @@ pub async fn fetch_today_sessions(
     token: String,
     timezone: String,
 ) -> Result<Vec<Session>, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .get("/api/sessions/today", &token)
-        .query(&[("timezone", &timezone)])
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .get("/api/sessions/today", &token)
+            .query(&[("timezone", &timezone)])
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<Vec<Session>>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<Vec<Session>>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Create a new scheduled session.
@@ -278,29 +291,32 @@ pub async fn create_session(
     token: String,
     request: CreateSessionRequest,
 ) -> Result<Session, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .post("/api/sessions/schedule", &token)
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .post("/api/sessions/schedule", &token)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<Session>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<Session>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Update the status of a session (e.g. start, complete, cancel).
@@ -310,31 +326,34 @@ pub async fn update_session_status(
     session_id: String,
     status: SessionStatus,
 ) -> Result<Session, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let body = serde_json::json!({ "status": status });
+        let body = serde_json::json!({ "status": status });
 
-    let response = client
-        .patch(&format!("/api/sessions/{session_id}/status"), &token)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .patch(&format!("/api/sessions/{session_id}/status"), &token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<Session>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<Session>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Update editable fields on a session.
@@ -344,29 +363,32 @@ pub async fn update_session(
     session_id: String,
     request: UpdateSessionRequest,
 ) -> Result<Session, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .patch(&format!("/api/sessions/{session_id}"), &token)
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .patch(&format!("/api/sessions/{session_id}"), &token)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<Session>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<Session>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Fetch a single session by ID.
@@ -375,28 +397,31 @@ pub async fn fetch_session(
     token: String,
     session_id: String,
 ) -> Result<Session, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .get(&format!("/api/sessions/{session_id}"), &token)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .get(&format!("/api/sessions/{session_id}"), &token)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<Session>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<Session>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Fetch a paginated list of sessions, optionally filtered by status.
@@ -407,37 +432,40 @@ pub async fn fetch_sessions(
     page_size: u32,
     status: Option<String>,
 ) -> Result<SessionListResponse, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let mut query_params: Vec<(&str, String)> = vec![
-        ("page", page.to_string()),
-        ("page_size", page_size.to_string()),
-    ];
-    if let Some(ref s) = status {
-        query_params.push(("status", s.clone()));
-    }
+        let mut query_params: Vec<(&str, String)> = vec![
+            ("page", page.to_string()),
+            ("page_size", page_size.to_string()),
+        ];
+        if let Some(ref s) = status {
+            query_params.push(("status", s.clone()));
+        }
 
-    let response = client
-        .get("/api/sessions", &token)
-        .query(&query_params)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .get("/api/sessions", &token)
+            .query(&query_params)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<SessionListResponse>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<SessionListResponse>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Upload a transcript for a session.
@@ -448,34 +476,37 @@ pub async fn upload_transcript(
     format: String,
     content: String,
 ) -> Result<TranscriptUploadResponse, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let body = serde_json::json!({
-        "format": format,
-        "content": content,
-    });
+        let body = serde_json::json!({
+            "format": format,
+            "content": content,
+        });
 
-    let response = client
-        .post(&format!("/api/sessions/{session_id}/transcript"), &token)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .post(&format!("/api/sessions/{session_id}/transcript"), &token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<TranscriptUploadResponse>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<TranscriptUploadResponse>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Finalize a session with a quality rating.
@@ -485,31 +516,34 @@ pub async fn finalize_session(
     session_id: String,
     quality_rating: u8,
 ) -> Result<Session, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let body = serde_json::json!({ "quality_rating": quality_rating });
+        let body = serde_json::json!({ "quality_rating": quality_rating });
 
-    let response = client
-        .patch(&format!("/api/sessions/{session_id}/finalize"), &token)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .patch(&format!("/api/sessions/{session_id}/finalize"), &token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<Session>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<Session>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Fetch the authenticated user's profile.
@@ -517,80 +551,89 @@ pub async fn fetch_user_profile(
     base_url: String,
     token: String,
 ) -> Result<UserProfile, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .get("/api/users/me", &token)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .get("/api/users/me", &token)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<UserProfile>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<UserProfile>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Fetch the user's BAA acceptance status.
 pub async fn fetch_baa_status(base_url: String, token: String) -> Result<BaaStatus, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .get("/api/users/me/baa-status", &token)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .get("/api/users/me/baa-status", &token)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<BaaStatus>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<BaaStatus>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Accept the BAA agreement.
 pub async fn accept_baa(base_url: String, token: String) -> Result<BaaStatus, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .post("/api/users/me/accept-baa", &token)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .post("/api/users/me/accept-baa", &token)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<BaaStatus>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<BaaStatus>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Fetch the user's preferences.
@@ -598,28 +641,31 @@ pub async fn fetch_preferences(
     base_url: String,
     token: String,
 ) -> Result<UserPreferences, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .get("/api/users/me/preferences", &token)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .get("/api/users/me/preferences", &token)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<UserPreferences>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<UserPreferences>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Save (replace) the user's preferences.
@@ -628,29 +674,32 @@ pub async fn save_preferences(
     token: String,
     preferences: UserPreferences,
 ) -> Result<UserPreferences, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .put("/api/users/me/preferences", &token)
-        .json(&preferences)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .put("/api/users/me/preferences", &token)
+            .json(&preferences)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<UserPreferences>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<UserPreferences>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 /// Create a new patient record.
@@ -659,29 +708,32 @@ pub async fn create_patient(
     token: String,
     request: CreatePatientRequest,
 ) -> Result<Patient, PabloError> {
-    let client = ApiClient::new(base_url);
-    let token = SecretString::from(token);
+    Compat::new(async move {
+        let client = ApiClient::new(base_url);
+        let token = SecretString::from(token);
 
-    let response = client
-        .post("/api/patients", &token)
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| PabloError::ApiClient {
-            status_code: 0,
-            message: e.to_string(),
-        })?;
+        let response = client
+            .post("/api/patients", &token)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| PabloError::ApiClient {
+                status_code: 0,
+                message: e.to_string(),
+            })?;
 
-    if !response.status().is_success() {
-        return Err(handle_error_response(response).await);
-    }
+        if !response.status().is_success() {
+            return Err(handle_error_response(response).await);
+        }
 
-    response
-        .json::<Patient>()
-        .await
-        .map_err(|e| PabloError::JsonParse {
-            message: e.to_string(),
-        })
+        response
+            .json::<Patient>()
+            .await
+            .map_err(|e| PabloError::JsonParse {
+                message: e.to_string(),
+            })
+    })
+    .await
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -868,8 +920,8 @@ mod tests {
     #[test]
     fn health_check_builds_unauthenticated_get_to_health() {
         let client = ApiClient::new("https://api.pablo.health".to_string());
-        let req = client.get_public("/health").build().unwrap();
-        assert_eq!(req.url().as_str(), "https://api.pablo.health/health");
+        let req = client.get_public("/api/health").build().unwrap();
+        assert_eq!(req.url().as_str(), "https://api.pablo.health/api/health");
         assert_eq!(req.method(), reqwest::Method::GET);
         assert!(req.headers().get("Authorization").is_none());
     }

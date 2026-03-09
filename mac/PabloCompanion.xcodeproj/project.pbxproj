@@ -197,25 +197,22 @@
 /* Begin PBXShellScriptBuildPhase section */
 		BB00000000000001000000 /* Build Rust Core (pablo-core) */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/../core/Cargo.toml",
-				"$(SRCROOT)/../core/src/lib.rs",
-				"$(SRCROOT)/../core/uniffi/pablo_core.udl",
 			);
 			name = "Build Rust Core (pablo-core)";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(SRCROOT)/../core/target/debug/libpablo_core.dylib",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\n\nCARGO=\"$HOME/.cargo/bin/cargo\"\nMANIFEST=\"$SRCROOT/../core/Cargo.toml\"\nDYLIB=\"libpablo_core.dylib\"\n\n# Skip the full Rust build when running under CodeQL.\n# CodeQL's tracer (DYLD_INSERT_LIBRARIES=libtrace.dylib) intercepts all\n# compiler calls and changes the target arch, breaking whisper.cpp's cmake.\n# CodeQL only needs Swift ASTs, not the Rust dylib. Create a stub so the\n# build phase succeeds and Swift compilation can proceed.\nif [ -n \"${CODEQL_TRACER_LOG:-}\" ]; then\n    echo \"CodeQL detected -- creating stub dylib, skipping Rust build\"\n    mkdir -p \"$(dirname \"$SRCROOT/../core/target/debug/$DYLIB\")\"\n    echo \"void __pablo_core_codeql_stub(void){}\" | \\\n        cc -dynamiclib -o \"$SRCROOT/../core/target/debug/$DYLIB\" -x c - \\\n        -install_name \"@rpath/$DYLIB\" 2>/dev/null || \\\n        touch \"$SRCROOT/../core/target/debug/$DYLIB\"\n    exit 0\nfi\n\n# Use the real system compiler path explicitly.\nexport CC=$(xcrun -find cc)\nexport CXX=$(xcrun -find c++)\n\n# Suppress CMake developer warnings (CMP0065, CMP0066 policy warnings).\nexport CMAKE_SUPPRESS_DEVELOPER_WARNINGS=TRUE\n\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    PROFILE=\"--release\"\n    NATIVE_DIR=\"$SRCROOT/../core/target/release\"\n    CROSS_DIR=\"$SRCROOT/../core/target/x86_64-apple-darwin/release\"\nelse\n    PROFILE=\"\"\n    NATIVE_DIR=\"$SRCROOT/../core/target/debug\"\n    CROSS_DIR=\"$SRCROOT/../core/target/x86_64-apple-darwin/debug\"\nfi\n\n# Detect actual hardware architecture, reliable regardless of CI tool wrappers.\nHARDWARE_ARCH=$(uname -m)\n\n# Cross-compile only when arm64 hardware needs to also produce an x86_64 slice.\nif [ \"$HARDWARE_ARCH\" = \"arm64\" ] && echo \"$ARCHS\" | grep -qw \"x86_64\"; then\n    rustup target add x86_64-apple-darwin 2>/dev/null || true\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" $PROFILE\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" --target x86_64-apple-darwin $PROFILE\n    lipo -create \"$NATIVE_DIR/$DYLIB\" \"$CROSS_DIR/$DYLIB\" -output \"$NATIVE_DIR/$DYLIB\"\nelse\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" $PROFILE\nfi\n";
+			shellScript = "set -euo pipefail\n\nCARGO=\"$HOME/.cargo/bin/cargo\"\nMANIFEST=\"$SRCROOT/../core/Cargo.toml\"\nSTATICLIB=\"libpablo_core.a\"\n\n# Skip the full Rust build when running under CodeQL.\n# CodeQL's tracer (DYLD_INSERT_LIBRARIES=libtrace.dylib) intercepts all\n# compiler calls and changes the target arch, breaking whisper.cpp's cmake.\n# CodeQL only needs Swift ASTs, not the Rust static lib. Create a stub so the\n# build phase succeeds and Swift compilation can proceed.\nif [ -n \"${CODEQL_TRACER_LOG:-}\" ]; then\n    echo \"CodeQL detected -- creating stub static lib, skipping Rust build\"\n    STUB_DIR=\"$SRCROOT/../core/target/debug\"\n    mkdir -p \"$STUB_DIR\"\n    echo \"void __pablo_core_codeql_stub(void){}\" | \\\n        cc -c -o /tmp/pablo_core_stub.o -x c - 2>/dev/null && \\\n        ar rcs \"$STUB_DIR/$STATICLIB\" /tmp/pablo_core_stub.o || \\\n        touch \"$STUB_DIR/$STATICLIB\"\n    exit 0\nfi\n\n# Ensure Homebrew tools (cmake, etc.) are on PATH inside Xcode's shell.\nexport PATH=\"/opt/homebrew/bin:$PATH\"\n\n# Use the real system compiler path explicitly.\nexport CC=$(xcrun -find cc)\nexport CXX=$(xcrun -find c++)\n\n# Match the Xcode deployment target so C/C++ deps (whisper.cpp) don't\n# target the host OS version.\nexport MACOSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET:-14.0}\"\n\n# Suppress CMake developer warnings (CMP0065, CMP0066 policy warnings).\nexport CMAKE_SUPPRESS_DEVELOPER_WARNINGS=TRUE\n\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    PROFILE=\"--release\"\n    NATIVE_DIR=\"$SRCROOT/../core/target/release\"\n    CROSS_DIR=\"$SRCROOT/../core/target/x86_64-apple-darwin/release\"\nelse\n    PROFILE=\"\"\n    NATIVE_DIR=\"$SRCROOT/../core/target/debug\"\n    CROSS_DIR=\"$SRCROOT/../core/target/x86_64-apple-darwin/debug\"\nfi\n\n# Detect actual hardware architecture, reliable regardless of CI tool wrappers.\nHARDWARE_ARCH=$(uname -m)\n\n# Cross-compile only when arm64 hardware needs to also produce an x86_64 slice.\nif [ \"$HARDWARE_ARCH\" = \"arm64\" ] && echo \"$ARCHS\" | grep -qw \"x86_64\"; then\n    rustup target add x86_64-apple-darwin 2>/dev/null || true\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" $PROFILE\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" --target x86_64-apple-darwin $PROFILE\n    lipo -create \"$NATIVE_DIR/$STATICLIB\" \"$CROSS_DIR/$STATICLIB\" -output \"$NATIVE_DIR/$STATICLIB\"\nelse\n    \"$CARGO\" build --manifest-path \"$MANIFEST\" $PROFILE\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -390,7 +387,6 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
-					"$(SRCROOT)/../core/target/debug",
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
@@ -400,6 +396,16 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lpablo_core",
+					"-lc++",
+					"-liconv",
+					"-framework",
+					Accelerate,
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					CoreFoundation,
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion;
@@ -440,7 +446,6 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
-					"$(SRCROOT)/../core/target/release",
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
@@ -451,6 +456,16 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lpablo_core",
+					"-lc++",
+					"-liconv",
+					"-framework",
+					Accelerate,
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					CoreFoundation,
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/PabloCompanion/Generated/pablo_coreFFI.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion;

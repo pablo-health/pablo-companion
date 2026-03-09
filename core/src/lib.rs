@@ -3,6 +3,8 @@
 // FFI boundary rule: simple async functions, plain value types.
 // No complex generics, no closures, no shared mutable state across the boundary.
 
+use async_compat::Compat;
+
 uniffi::include_scaffolding!("pablo_core");
 
 pub mod api_client;
@@ -123,7 +125,7 @@ pub async fn preprocess_pcm(
     channels: u8,
     sample_rate: u32,
 ) -> Result<Vec<f32>, PabloError> {
-    audio_preprocessing::preprocess_pcm(path, channels, sample_rate).await
+    Compat::new(audio_preprocessing::preprocess_pcm(path, channels, sample_rate)).await
 }
 
 /// Render a TranscriptResult to Google Meet plain-text format.
@@ -141,7 +143,10 @@ pub async fn transcribe_session_1on1(
     system_path: Option<String>,
     config: TranscriptionConfig,
 ) -> Result<TranscriptResult, PabloError> {
-    session_pipeline::transcribe_session_1on1(session_id, mic_path, system_path, config).await
+    Compat::new(session_pipeline::transcribe_session_1on1(
+        session_id, mic_path, system_path, config,
+    ))
+    .await
 }
 
 /// Transcribe 16 kHz mono f32 audio using the GGML Whisper model at `model_path`.
@@ -151,7 +156,7 @@ pub async fn transcribe_audio(
     model_path: String,
     audio: Vec<f32>,
 ) -> Result<Vec<RawSegment>, PabloError> {
-    whisper_transcriber::transcribe_audio(model_path, audio).await
+    Compat::new(whisper_transcriber::transcribe_audio(model_path, audio)).await
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

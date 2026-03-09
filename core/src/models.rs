@@ -162,6 +162,7 @@ pub struct SessionListResponse {
     pub total: u32,
     pub page: u32,
     pub page_size: u32,
+    #[serde(default)]
     pub has_more: bool,
 }
 
@@ -171,6 +172,7 @@ pub struct PatientListResponse {
     pub total: u32,
     pub page: u32,
     pub page_size: u32,
+    #[serde(default)]
     pub has_more: bool,
 }
 
