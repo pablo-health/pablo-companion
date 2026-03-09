@@ -51,7 +51,9 @@ final class TranscriptionViewModel {
     var backendURL = "" {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
+                let token = apiClient.getToken
                 apiClient = APIClient(baseURL: backendURL)
+                apiClient.getToken = token
             }
         }
     }

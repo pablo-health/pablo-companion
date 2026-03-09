@@ -15,7 +15,9 @@ final class PatientViewModel {
     var backendURL = "http://localhost:8000" {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
+                let token = apiClient.getToken
                 apiClient = APIClient(baseURL: backendURL)
+                apiClient.getToken = token
             }
         }
     }
@@ -29,7 +31,6 @@ final class PatientViewModel {
 
     /// Configures the API client with a token provider for authenticated requests.
     func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
-        apiClient = APIClient(baseURL: backendURL)
         apiClient.getToken = getToken
     }
 
