@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "af06cba0a4f9",
+  "session_id": "5aebd317-3362-428d-aea7-50bb50942fbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-09T02:09:43.641991Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "mac/PabloCompanion/Views/ContentView.swift",
+    "mac/PabloCompanion/Views/DayView.swift"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "5bad9a002134",
+  "token_usage": {
+    "input_tokens": 2771,
+    "cache_creation_tokens": 122927,
+    "cache_read_tokens": 12735718,
+    "output_tokens": 36095,
+    "api_call_count": 161
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-09T02:09:43.264077Z",
+    "agent_lines": 56,
+    "human_added": 3,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 61,
+    "agent_percentage": 91.80327868852459
+  }
+}
