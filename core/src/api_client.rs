@@ -275,12 +275,13 @@ pub async fn fetch_today_sessions(
             return Err(handle_error_response(response).await);
         }
 
-        response
-            .json::<Vec<Session>>()
+        let list = response
+            .json::<SessionListResponse>()
             .await
             .map_err(|e| PabloError::JsonParse {
                 message: e.to_string(),
-            })
+            })?;
+        Ok(list.data)
     })
     .await
 }

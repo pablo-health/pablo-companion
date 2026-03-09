@@ -159,8 +159,11 @@ pub struct CreatePatientRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionListResponse {
     pub data: Vec<Session>,
+    #[serde(default)]
     pub total: u32,
+    #[serde(default)]
     pub page: u32,
+    #[serde(default)]
     pub page_size: u32,
     #[serde(default)]
     pub has_more: bool,
