@@ -2,10 +2,18 @@ import SwiftUI
 
 /// Today's session list — the hero view of Pablo Companion.
 ///
-/// Shows scheduled sessions for the day, auto-refreshes on appear,
-/// and provides the entry point to start a session.
+/// Shows scheduled sessions, provides Start Session + Quick Start flows,
+/// and polls the backend every 30 seconds to keep statuses fresh.
 struct DayView: View {
     var sessionVM: SessionViewModel
+    var patients: [Patient]
+    var isLoadingPatients: Bool
+    @Binding var patientSearchText: String
+    var onStartSession: ((Session) -> Void)?
+    var onQuickStart: ((Patient) -> Void)?
+
+    @State private var lastRefreshDate = Date()
+    @State private var showingQuickStart = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,8 +22,19 @@ struct DayView: View {
             content
         }
         .background(Color.pabloCream)
-        .task { await sessionVM.loadTodaySessions() }
-        .refreshable { await sessionVM.loadTodaySessions() }
+        .task {
+            await sessionVM.loadTodaySessions()
+            lastRefreshDate = Date()
+        }
+        .task { await pollSessions() }
+        .sheet(isPresented: $showingQuickStart) {
+            QuickStartSheet(
+                patients: patients,
+                isLoading: isLoadingPatients,
+                searchText: $patientSearchText,
+                onSelect: { patient in onQuickStart?(patient) }
+            )
+        }
     }
 
     // MARK: - Header
@@ -32,10 +51,10 @@ struct DayView: View {
             }
             Spacer()
             if sessionVM.isLoading {
-                ProgressView()
-                    .controlSize(.small)
+                ProgressView().controlSize(.small)
             }
             sessionCountBadge
+            quickStartButton
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -54,6 +73,19 @@ struct DayView: View {
         }
     }
 
+    private var quickStartButton: some View {
+        Button { showingQuickStart = true } label: {
+            Label("Quick Start", systemImage: "plus.circle.fill")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownDeep)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.pabloHoney)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Content
 
     @ViewBuilder
@@ -68,14 +100,28 @@ struct DayView: View {
     }
 
     private var sessionList: some View {
-        List {
-            ForEach(sessionVM.todaySessions, id: \.id) { session in
-                SessionRowView(session: session)
+        VStack(spacing: 0) {
+            List {
+                ForEach(sessionVM.todaySessions, id: \.id) { session in
+                    SessionRowView(session: session) {
+                        onStartSession?(session)
+                    }
                     .pabloListRowStyle()
                     .padding(.vertical, 2)
+                }
             }
+            .pabloListStyle()
+
+            lastUpdatedLabel
         }
-        .pabloListStyle()
+    }
+
+    private var lastUpdatedLabel: some View {
+        Text("Updated \(lastRefreshDate, format: .relative(presentation: .named))")
+            .font(.pabloBody(11))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
     }
 
     // MARK: - Empty state
@@ -83,8 +129,6 @@ struct DayView: View {
     private var emptyState: some View {
         VStack(spacing: 20) {
             Spacer()
-
-            // Warm honey circle with calendar icon
             ZStack {
                 Circle()
                     .fill(Color.pabloHoney.opacity(0.12))
@@ -93,17 +137,14 @@ struct DayView: View {
                     .font(.system(size: 32, weight: .light))
                     .foregroundStyle(Color.pabloHoney)
             }
-
             Text("No sessions today")
                 .font(.pabloDisplay(20))
                 .foregroundStyle(Color.pabloBrownDeep)
-
             Text("Your schedule is clear.\nSessions scheduled in Pablo will appear here.")
                 .font(.pabloBody(14))
                 .foregroundStyle(Color.pabloBrownSoft)
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)
-
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -126,6 +167,17 @@ struct DayView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Polling
+
+    private func pollSessions() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled else { break }
+            await sessionVM.loadTodaySessions()
+            lastRefreshDate = Date()
+        }
+    }
+
     // MARK: - Helpers
 
     private var formattedDate: String {
@@ -144,21 +196,26 @@ struct DayView: View {
     }
 }
 
-// MARK: - Preview helpers
-
-private func previewVM(sessions: [Session] = []) -> SessionViewModel {
-    let vm = SessionViewModel()
-    vm.todaySessions = sessions
-    return vm
-}
+// MARK: - Preview
 
 #Preview("With sessions") {
-    DayView(sessionVM: previewVM(sessions: [
-        PreviewData.scheduled,
-        PreviewData.inProgress,
-    ]))
+    DayView(
+        sessionVM: {
+            let vm = SessionViewModel()
+            vm.todaySessions = [PreviewData.scheduled, PreviewData.inProgress]
+            return vm
+        }(),
+        patients: [],
+        isLoadingPatients: false,
+        patientSearchText: .constant("")
+    )
 }
 
 #Preview("Empty") {
-    DayView(sessionVM: previewVM())
+    DayView(
+        sessionVM: SessionViewModel(),
+        patients: [],
+        isLoadingPatients: false,
+        patientSearchText: .constant("")
+    )
 }

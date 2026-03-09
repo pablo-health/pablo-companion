@@ -3,49 +3,20 @@ import SwiftUI
 /// A single session row for the day view — shows patient name, time, status badge, and video platform.
 struct SessionRowView: View {
     let session: Session
+    var onStart: (() -> Void)?
+    @State private var isPulsing = false
 
     var body: some View {
         HStack(spacing: 12) {
-            // Initials avatar (matches PatientRow style)
             initialsAvatar
-
-            // Time
-            VStack(alignment: .leading, spacing: 2) {
-                Text(formattedTime)
-                    .font(.pabloBody(14).weight(.medium))
-                    .foregroundStyle(Color.pabloBrownDeep)
-                Text(durationLabel)
-                    .font(.pabloBody(12))
-                    .foregroundStyle(Color.pabloBrownSoft)
-            }
-            .frame(width: 72, alignment: .leading)
-
-            Divider()
-                .frame(height: 32)
-
-            // Patient name + notes
-            VStack(alignment: .leading, spacing: 2) {
-                Text(patientName)
-                    .font(.pabloDisplay(15))
-                    .foregroundStyle(Color.pabloBrownDeep)
-                    .lineLimit(1)
-                if let notes = session.notes, !notes.isEmpty {
-                    Text(notes)
-                        .font(.pabloBody(12))
-                        .foregroundStyle(Color.pabloBrownSoft)
-                        .lineLimit(1)
-                }
-            }
-
+            timeColumn
+            Divider().frame(height: 32)
+            patientInfo
             Spacer()
-
-            // Video platform icon
             if let platform = session.videoPlatform {
                 videoPlatformIcon(platform)
             }
-
-            // Status badge
-            statusBadge
+            trailingContent
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -59,13 +30,22 @@ struct SessionRowView: View {
             Circle()
                 .fill(avatarColor.opacity(0.18))
                 .frame(width: 36, height: 36)
+                .overlay {
+                    Circle()
+                        .stroke(Color.pabloSage, lineWidth: 2)
+                        .opacity(isPulsing ? 0.35 : 0.18)
+                        .animation(pulseAnimation, value: isPulsing)
+                        .opacity(session.status == .inProgress ? 1 : 0)
+                }
             Text(initials)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.pabloBrownDeep)
         }
+        .onAppear {
+            if session.status == .inProgress { isPulsing = true }
+        }
     }
 
-    /// Honey by default; sage when in progress (matches branding: sage = active session).
     private var avatarColor: Color {
         session.status == .inProgress ? Color.pabloSage : Color.pabloHoney
     }
@@ -77,16 +57,86 @@ struct SessionRowView: View {
         return "\(first)\(last)".uppercased()
     }
 
+    private var pulseAnimation: Animation? {
+        session.status == .inProgress
+            ? .easeInOut(duration: 1.5).repeatForever(autoreverses: true)
+            : nil
+    }
+
+    // MARK: - Time column
+
+    private var timeColumn: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(formattedTime)
+                .font(.pabloBody(14).weight(.medium))
+                .foregroundStyle(Color.pabloBrownDeep)
+            Text(durationLabel)
+                .font(.pabloBody(12))
+                .foregroundStyle(Color.pabloBrownSoft)
+        }
+        .frame(width: 72, alignment: .leading)
+    }
+
+    // MARK: - Patient info
+
+    private var patientInfo: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(patientName)
+                .font(.pabloDisplay(15))
+                .foregroundStyle(Color.pabloBrownDeep)
+                .lineLimit(1)
+            if let notes = session.notes, !notes.isEmpty {
+                Text(notes)
+                    .font(.pabloBody(12))
+                    .foregroundStyle(Color.pabloBrownSoft)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    // MARK: - Trailing content (button or badge)
+
+    @ViewBuilder
+    private var trailingContent: some View {
+        if session.status == .scheduled, let onStart {
+            startButton(onStart)
+        } else {
+            statusBadge
+        }
+    }
+
+    private func startButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text("Start Session")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownDeep)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.pabloHoney)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Status badge
 
     private var statusBadge: some View {
-        Text(statusLabel)
-            .font(.pabloBody(12))
-            .foregroundStyle(statusForeground)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(statusBackground)
-            .clipShape(Capsule())
+        HStack(spacing: 4) {
+            if session.status == .processing || session.status == .queued {
+                ProgressView().controlSize(.mini)
+            }
+            if session.status == .finalized {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            Text(statusLabel)
+        }
+        .font(.pabloBody(12))
+        .foregroundStyle(statusForeground)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(statusBackground)
+        .clipShape(Capsule())
     }
 
     private var statusLabel: String {
@@ -156,14 +206,23 @@ struct SessionRowView: View {
     }
 
     private var formattedTime: String {
-        guard let scheduledAt = session.scheduledAt,
-              let date = ISO8601DateFormatter().date(from: scheduledAt)
-        else {
-            return "--:--"
+        guard let scheduledAt = session.scheduledAt else { return "--:--" }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: scheduledAt) {
+            return timeString(from: date)
         }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: date)
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: scheduledAt) {
+            return timeString(from: date)
+        }
+        return "--:--"
+    }
+
+    private func timeString(from date: Date) -> String {
+        let df = DateFormatter()
+        df.dateFormat = "h:mm a"
+        return df.string(from: date)
     }
 
     private var durationLabel: String {
@@ -213,7 +272,7 @@ enum PreviewData {
 
 #Preview {
     VStack(spacing: 8) {
-        SessionRowView(session: PreviewData.scheduled)
+        SessionRowView(session: PreviewData.scheduled, onStart: {})
         SessionRowView(session: PreviewData.inProgress)
     }
     .padding()
