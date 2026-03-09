@@ -1,0 +1,21 @@
+can you put latest main and merge/fx the beads issue if neceessary
+
+---
+
+can we commit push up beads file
+
+---
+
+can you take a look at the errors and warnings
+
+---
+
+yes please lets fix
+
+---
+
+does any of these chages have to do with auth - app crashed on signing ni
+
+---
+
+ok let's commit these.   when i click quick start - choose patent i get an auth error
