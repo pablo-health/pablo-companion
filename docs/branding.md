@@ -35,6 +35,7 @@ _Adapted from pablo-health marketing site and web app design system._
 | Text Secondary | Soft Brown | `#6B5344` | Secondary labels, metadata |
 | Surface | White | `#FFFFFF` | Cards, session rows |
 | Blush | Soft Blush | `#E8B4A2` | Warm accent, patient/care contexts |
+| Error | Terracotta Red | `#C45B4A` | Errors, stop/destructive actions, alerts |
 
 ### SwiftUI Color Extension
 
@@ -47,6 +48,7 @@ extension Color {
     static let pabloBrownDeep  = Color(hex: "#2C1810")
     static let pabloBrownSoft  = Color(hex: "#6B5344")
     static let pabloBlush      = Color(hex: "#E8B4A2")
+    static let pabloError      = Color(hex: "#C45B4A")
 }
 ```
 

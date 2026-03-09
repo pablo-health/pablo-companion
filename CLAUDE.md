@@ -150,6 +150,7 @@ See `docs/branding.md` for the full design system.
 | Background | Warm Cream `#FDF6EC` |
 | Text primary | Deep Brown `#2C1810` |
 | Active / recording | Sage Green `#7A9E7E` |
+| Error / destructive | Terracotta Red `#C45B4A` |
 | Mascot | Pablo Bear |
 | Tagline | "Pablo's got it." |
 | Body font | DM Sans |

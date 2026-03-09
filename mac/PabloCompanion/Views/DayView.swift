@@ -9,8 +9,11 @@ struct DayView: View {
     var patients: [Patient]
     var isLoadingPatients: Bool
     @Binding var patientSearchText: String
+    var recordingState: RecordingUIState = .idle
+    var recordingDuration: TimeInterval = 0
     var onStartSession: ((Session) -> Void)?
     var onQuickStart: ((Patient) -> Void)?
+    var onStopRecording: (() -> Void)?
 
     @State private var lastRefreshDate = Date()
     @State private var showingQuickStart = false
@@ -18,6 +21,9 @@ struct DayView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if recordingState != .idle {
+                recordingBanner
+            }
             Divider()
             content
         }
@@ -84,6 +90,54 @@ struct DayView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Recording Banner
+
+    private var recordingBanner: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(Color.pabloSage)
+                .frame(width: 10, height: 10)
+                .overlay(
+                    Circle()
+                        .fill(Color.pabloSage.opacity(0.4))
+                        .frame(width: 18, height: 18)
+                )
+
+            Text(recordingState == .paused ? "Paused" : "Recording")
+                .font(.pabloBody(14))
+                .fontWeight(.medium)
+                .foregroundStyle(Color.pabloBrownDeep)
+
+            Text(formattedDuration(recordingDuration))
+                .font(.system(size: 14, design: .monospaced))
+                .foregroundStyle(Color.pabloBrownSoft)
+
+            Spacer()
+
+            Button {
+                onStopRecording?()
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+                    .font(.pabloBody(13))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.pabloError)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(Color.pabloSage.opacity(0.1))
+    }
+
+    private func formattedDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 
     // MARK: - Content

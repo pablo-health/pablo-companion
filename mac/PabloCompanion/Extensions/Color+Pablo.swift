@@ -8,4 +8,5 @@ extension Color {
     static let pabloBrownDeep = Color(red: 0.173, green: 0.094, blue: 0.063) // #2C1810
     static let pabloBrownSoft = Color(red: 0.420, green: 0.325, blue: 0.267) // #6B5344
     static let pabloBlush = Color(red: 0.910, green: 0.706, blue: 0.635) // #E8B4A2
+    static let pabloError = Color(red: 0.769, green: 0.357, blue: 0.290) // #C45B4A
 }

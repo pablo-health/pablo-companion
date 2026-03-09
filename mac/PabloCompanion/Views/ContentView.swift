@@ -121,8 +121,11 @@ struct ContentView: View {
             patients: patientVM.patients,
             isLoadingPatients: patientVM.isLoading,
             patientSearchText: $patientVM.searchText,
+            recordingState: recordingVM.recordingState,
+            recordingDuration: recordingVM.duration,
             onStartSession: { startSession($0) },
-            onQuickStart: { handleQuickStart($0) }
+            onQuickStart: { handleQuickStart($0) },
+            onStopRecording: { Task { await recordingVM.stopRecording() } }
         )
         .tabItem { Label("Today", systemImage: "calendar") }
         .tag(0)
