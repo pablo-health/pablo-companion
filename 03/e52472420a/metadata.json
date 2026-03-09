@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "03e52472420a",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+  ],
+  "sessions": [
+    {
+      "metadata": "/03/e52472420a/0/metadata.json",
+      "transcript": "/03/e52472420a/0/full.jsonl",
+      "context": "/03/e52472420a/0/context.md",
+      "content_hash": "/03/e52472420a/0/content_hash.txt",
+      "prompt": "/03/e52472420a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 44334,
+    "cache_read_tokens": 6051783,
+    "output_tokens": 12058,
+    "api_call_count": 64
+  }
+}
