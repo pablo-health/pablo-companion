@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "27c6a7dfbaf0",
+  "session_id": "5aebd317-3362-428d-aea7-50bb50942fbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-09T02:24:28.891022Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "d14c26efa577",
+  "token_usage": {
+    "input_tokens": 2820,
+    "cache_creation_tokens": 150033,
+    "cache_read_tokens": 19250255,
+    "output_tokens": 45700,
+    "api_call_count": 206
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-09T02:24:28.363302Z",
+    "agent_lines": 2,
+    "human_added": 7,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 9,
+    "agent_percentage": 22.22222222222222
+  }
+}
