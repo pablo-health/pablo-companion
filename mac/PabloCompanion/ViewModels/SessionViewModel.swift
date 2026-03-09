@@ -104,7 +104,7 @@ final class SessionViewModel {
                 durationMinutes: 50,
                 videoLink: nil,
                 videoPlatform: nil,
-                sessionType: nil,
+                sessionType: .individual,
                 source: .companion,
                 notes: nil
             )
