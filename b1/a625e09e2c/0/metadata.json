@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "b1a625e09e2c",
+  "session_id": "5aebd317-3362-428d-aea7-50bb50942fbe",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-09T01:48:36.188195Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "mac/PabloCompanion/ViewModels/PatientViewModel.swift",
+    "mac/PabloCompanion/ViewModels/SessionViewModel.swift",
+    "mac/PabloCompanion/ViewModels/TranscriptionViewModel.swift",
+    "mac/PabloCompanion/ViewModels/UploadViewModel.swift"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "a85c9ccb4459",
+  "checkpoint_transcript_start": 196,
+  "transcript_lines_at_start": 196,
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 20937,
+    "cache_read_tokens": 1343418,
+    "output_tokens": 5093,
+    "api_call_count": 22
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-09T01:48:35.973782Z",
+    "agent_lines": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 1,
+    "total_committed": 7,
+    "agent_percentage": 100
+  }
+}

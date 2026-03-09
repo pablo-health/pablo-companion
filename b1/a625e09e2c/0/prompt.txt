@@ -1,0 +1,29 @@
+can you put latest main and merge/fx the beads issue if neceessary
+
+---
+
+can we commit push up beads file
+
+---
+
+can you take a look at the errors and warnings
+
+---
+
+yes please lets fix
+
+---
+
+does any of these chages have to do with auth - app crashed on signing ni
+
+---
+
+ok let's commit these.   when i click quick start - choose patent i get an auth error
+
+---
+
+session error.   not authenticated.  please sign in
+
+---
+
+commit please.   progress :-)  Failed to create ad-hoc session: Pablo.PabloError.ApiClient(statusCode: 422, message: "{\"detail\":[{\"type\":\"enum\",\"loc\":[\"body\",\"session_type\"],\"msg\":\"Input should be \'individual\' or \'couples\'\",\"input\":null,\"ctx\":{\"expected\":\"\'individual\' or \'couples\'\"}}]}")  - i'm thinking we should just default to individual until we support couples
