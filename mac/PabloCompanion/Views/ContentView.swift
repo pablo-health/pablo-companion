@@ -3,6 +3,7 @@ import SwiftUI
 /// Main view combining recording controls, recording list, and settings.
 struct ContentView: View {
     @State private var authVM = AuthViewModel()
+    @State private var sessionVM = SessionViewModel()
     @State private var recordingVM = RecordingViewModel()
     @State private var uploadVM = UploadViewModel()
     @State private var patientVM = PatientViewModel()
@@ -27,6 +28,7 @@ struct ContentView: View {
 
     private var authenticatedContent: some View {
         TabView(selection: $selectedTab) {
+            todayTab
             recorderTab
             patientsTab
             settingsTab
@@ -62,6 +64,7 @@ struct ContentView: View {
         }
         .onChange(of: uploadVM.backendURL) { _, newURL in
             patientVM.backendURL = newURL
+            sessionVM.backendURL = newURL
         }
     }
 
@@ -78,6 +81,7 @@ struct ContentView: View {
         ) {
             uploadVM.backendURL = config.apiUrl
             patientVM.backendURL = config.apiUrl
+            sessionVM.backendURL = config.apiUrl
             if KeychainManager.getToken(forKey: .firebaseAPIKey) == nil {
                 if let key = config.firebaseApiKey, !key.isEmpty {
                     KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
@@ -90,6 +94,9 @@ struct ContentView: View {
             try await authVM.getValidToken()
         }
         patientVM.configureAuth { [authVM] in
+            try await authVM.getValidToken()
+        }
+        sessionVM.configureAuth { [authVM] in
             try await authVM.getValidToken()
         }
 
@@ -117,6 +124,14 @@ struct ContentView: View {
 
     // MARK: - Tabs
 
+    private var todayTab: some View {
+        DayView(sessionVM: sessionVM)
+            .tabItem {
+                Label("Today", systemImage: "calendar")
+            }
+            .tag(0)
+    }
+
     private var recorderTab: some View {
         VStack(spacing: 0) {
             RecordingControlsView(
@@ -143,7 +158,7 @@ struct ContentView: View {
         .tabItem {
             Label("Recorder", systemImage: "waveform")
         }
-        .tag(0)
+        .tag(1)
     }
 
     private var recordingList: some View {
@@ -198,7 +213,7 @@ struct ContentView: View {
             .tabItem {
                 Label("Patients", systemImage: "person.2")
             }
-            .tag(1)
+            .tag(2)
     }
 
     private var settingsTab: some View {
@@ -230,6 +245,6 @@ struct ContentView: View {
         .tabItem {
             Label("Settings", systemImage: "gear")
         }
-        .tag(2)
+        .tag(3)
     }
 }
