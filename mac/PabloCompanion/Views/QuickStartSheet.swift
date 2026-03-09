@@ -166,13 +166,13 @@ private enum QuickStartPreviewData {
             id: "1", userId: "u1", firstName: "Jane", lastName: "Smith",
             email: "jane@example.com", phone: nil, status: "active",
             dateOfBirth: nil, diagnosis: nil, sessionCount: 12,
-            lastSessionDate: nil, createdAt: "", updatedAt: ""
+            lastSessionDate: nil, nextSessionDate: nil, createdAt: "", updatedAt: ""
         ),
         Patient(
             id: "2", userId: "u2", firstName: "Bob", lastName: "Jones",
             email: nil, phone: nil, status: "active",
             dateOfBirth: nil, diagnosis: nil, sessionCount: 5,
-            lastSessionDate: nil, createdAt: "", updatedAt: ""
+            lastSessionDate: nil, nextSessionDate: nil, createdAt: "", updatedAt: ""
         ),
     ]
 }

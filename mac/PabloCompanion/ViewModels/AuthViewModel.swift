@@ -55,11 +55,8 @@ final class AuthViewModel {
         authState = .authenticating
         errorMessage = nil
 
-        // Launch from a file-scope free function that creates the completion
-        // closure internally, so it is NOT defined in a @MainActor context.
-        // This prevents Swift 6 from inserting a runtime isolation assert
-        // (dispatch_assert_queue_fail) when the framework calls back on an
-        // XPC thread. See: https://github.com/swiftlang/swift/issues/75453
+        // Launch from a file-scope free function so the completion closure
+        // is NOT defined in a @MainActor context. (swiftlang/swift#75453)
         launchWebAuthSession(url: url, viewModel: self)
         logger.info("ASWebAuthenticationSession started")
     }
@@ -297,7 +294,9 @@ private struct WeakRef<T: AnyObject>: @unchecked Sendable {
 /// when the framework calls back on an XPC thread. (swiftlang/swift#75453)
 private func launchWebAuthSession(url: URL, viewModel: AuthViewModel) {
     let ref = WeakRef(value: viewModel)
-    let contextProvider = WebAuthContextProvider()
+    // This function is always called from MainActor but must stay nonisolated
+    // (see above). Use assumeIsolated just for the NSObject.init() call.
+    let contextProvider = MainActor.assumeIsolated { WebAuthContextProvider() }
     let session = ASWebAuthenticationSession(
         url: url,
         callbackURLScheme: "therapyrecorder"
@@ -314,7 +313,7 @@ private func launchWebAuthSession(url: URL, viewModel: AuthViewModel) {
 
 // MARK: - ASWebAuthenticationPresentationContextProviding
 
-private final class WebAuthContextProvider: NSObject, @preconcurrency ASWebAuthenticationPresentationContextProviding {
+private final class WebAuthContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
         // swiftlint:disable:next force_unwrapping
         NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first!

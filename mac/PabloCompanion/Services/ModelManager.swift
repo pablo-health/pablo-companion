@@ -153,9 +153,9 @@ final class ModelManager: ObservableObject {
 // MARK: - ModelDownloadDelegate
 
 private final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate {
-    private let onProgress: (Double) -> Void
+    private let onProgress: @Sendable (Double) -> Void
 
-    init(onProgress: @escaping (Double) -> Void) {
+    init(onProgress: @escaping @Sendable (Double) -> Void) {
         self.onProgress = onProgress
     }
 
