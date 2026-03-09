@@ -1,14 +1,15 @@
 import Foundation
 import os
 
-/// ViewModel for session management — powers the day view and session lifecycle.
+/// ViewModel for session management — powers the day view, session history, and session lifecycle.
 ///
-/// Provides today's sessions, ad-hoc session creation, and session status transitions.
+/// Provides today's sessions, paginated session history, ad-hoc session creation,
+/// and session status transitions.
 /// Wired to the Rust API client via APIClient (thin wrapper over UniFFI).
 @MainActor
 @Observable
 final class SessionViewModel {
-    // MARK: - Published state
+    // MARK: - Published state (today)
 
     /// Today's scheduled sessions, refreshed by `loadTodaySessions()`.
     var todaySessions: [Session] = []
@@ -19,6 +20,28 @@ final class SessionViewModel {
     /// User-facing error message (set on failure, cleared on next success).
     var errorMessage: String?
     var showError = false
+
+    // MARK: - Published state (session history)
+
+    /// All sessions (paginated), refreshed by `loadSessions()`.
+    var sessions: [Session] = []
+
+    /// Total number of sessions matching the current filter.
+    var totalSessions: UInt32 = 0
+
+    /// Current page for paginated session fetching.
+    var currentPage = 1
+
+    /// Whether more sessions are available beyond the current page.
+    var hasMoreSessions = false
+
+    /// Optional status filter for session history (nil = all statuses).
+    var statusFilter: String? {
+        didSet { Task { await loadSessions() } }
+    }
+
+    /// Whether a session history load is in progress (separate from today's loading).
+    var isLoadingSessions = false
 
     // MARK: - Dependencies
 
@@ -136,6 +159,57 @@ final class SessionViewModel {
             logger.error("Failed to end session \(sessionId): \(error.localizedDescription)")
             return nil
         }
+    }
+
+    // MARK: - Session history
+
+    /// Fetches the first page of sessions from the backend, replacing the current list.
+    func loadSessions() async {
+        isLoadingSessions = true
+        currentPage = 1
+        errorMessage = nil
+
+        do {
+            let response = try await apiClient.fetchSessions(
+                page: currentPage,
+                pageSize: 20,
+                status: statusFilter
+            )
+            sessions = response.data
+            totalSessions = response.total
+            hasMoreSessions = response.hasMore
+            logger.info("Loaded \(response.data.count) of \(response.total) sessions")
+        } catch {
+            errorMessage = error.localizedDescription
+            logger.error("Failed to load sessions: \(error.localizedDescription)")
+        }
+
+        isLoadingSessions = false
+    }
+
+    /// Fetches the next page of sessions and appends them to the current list.
+    func loadMoreSessions() async {
+        guard hasMoreSessions, !isLoadingSessions else { return }
+        isLoadingSessions = true
+        currentPage += 1
+
+        do {
+            let response = try await apiClient.fetchSessions(
+                page: currentPage,
+                pageSize: 20,
+                status: statusFilter
+            )
+            sessions.append(contentsOf: response.data)
+            totalSessions = response.total
+            hasMoreSessions = response.hasMore
+            logger.info("Loaded page \(self.currentPage): \(response.data.count) more sessions")
+        } catch {
+            currentPage -= 1
+            errorMessage = error.localizedDescription
+            logger.error("Failed to load more sessions: \(error.localizedDescription)")
+        }
+
+        isLoadingSessions = false
     }
 
     // MARK: - Private helpers
