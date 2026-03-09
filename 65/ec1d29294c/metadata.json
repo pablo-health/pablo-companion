@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "65ec1d29294c",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 10,
+  "files_touched": [
+    "core/Cargo.toml",
+    "core/src/api_client.rs",
+    "core/src/lib.rs",
+    "core/src/models.rs",
+    "mac/PabloCompanion.xcodeproj/project.pbxproj"
+  ],
+  "sessions": [
+    {
+      "metadata": "/65/ec1d29294c/0/metadata.json",
+      "transcript": "/65/ec1d29294c/0/full.jsonl",
+      "context": "/65/ec1d29294c/0/context.md",
+      "content_hash": "/65/ec1d29294c/0/content_hash.txt",
+      "prompt": "/65/ec1d29294c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 151,
+    "cache_creation_tokens": 250309,
+    "cache_read_tokens": 10278740,
+    "output_tokens": 42916,
+    "api_call_count": 119
+  }
+}

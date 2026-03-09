@@ -1,0 +1,84 @@
+hi when i run the app in xcode - i get '/Users/kurtn/Developer/pablo-companion/core/target/debug/deps/libpablo_core.dylib' not valid for use in process: mapping process and mapped file (non-platform) have different Team IDs)
+
+---
+
+ok i did a clean build - same problem
+
+---
+
+would apple allow me to submit on mac app store with that
+
+---
+
+ummm...we need to fix now
+
+---
+
+progress -- thread '<unnamed>' (70851842) panicked at /Users/kurtn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/connect/dns.rs:119:24:
+there is no reactor running, must be called from the context of a Tokio 1.x runtime
+Health check failed: there is no reactor running, must be called from the context of a Tokio 1.x runtime
+
+---
+
+more progress i guess - Failed to load patients: Pablo.PabloError.JsonParse(message: "error decoding response body")
+
+---
+
+oh could it be that we haven't deployed the backend with the changes?  i suspect that cuold be why - but it mgiht be that - Health check failed: Pablo.PabloError.NotFound(resource: "{\"detail\":\"Not Found\"}")
+
+---
+
+https://therapy-backend-kpxd4hcjmq-uc.a.run.app
+
+---
+
+ok what about the openapi.json
+
+---
+
+i manage it :-)   do i have to do a clean build everytime the rust code changes
+
+---
+
+so if i click the build and run button - shouldn't that do the build
+
+---
+
+Object file (/Users/kurtn/Developer/pablo-companion/core/target/debug/libpablo_core.a[370](whisper.cpp.o)) was built for newer 'macOS' version (26.2) than being linked (14.0)
+
+---
+
+build error
+
+---
+
+Showing Recent Issues
+  --- stderr
+
+  running: cd "/Users/kurtn/Developer/pablo-companion/core/target/debug/build/whisper-rs-sys-ebadd62fcd262bde/out/build" && CMAKE_PREFIX_PATH="" LC_ALL="C" SDKROOT="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk" "cmake" "-Wdev" "--debug-output" "/Users/kurtn/Developer/pablo-companion/core/target/debug/build/whisper-rs-sys-ebadd62fcd262bde/out/whisper.cpp/" "-B" "/Users/kurtn/Developer/pablo-companion/core/target/debug/build/whisper-rs-sys-ebadd62fcd262bde/out/build" "-DCMAKE_OSX_ARCHITECTURES=arm64" "-DBUILD_SHARED_LIBS=OFF" "-DWHISPER_ALL_WARNINGS=OFF" "-DWHISPER_ALL_WARNINGS_3RD_PARTY=OFF" "-DWHISPER_BUILD_TESTS=OFF" "-DWHISPER_BUILD_EXAMPLES=OFF" "-DGGML_METAL=OFF" "REDACTED" "-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=TRUE" "-DGGML_OPENMP=OFF" "-DCMAKE_INSTALL_PREFIX=/Users/kurtn/Developer/pablo-companion/core/target/debug/build/whisper-rs-sys-ebadd62fcd262bde/out" "-DCMAKE_C_FLAGS= -ffunction-sections -fdata-sections -fPIC --target=arm64-apple-macosx -mmacosx-version-min=14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -w" "-DCMAKE_C_COMPILER=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc" "-DCMAKE_CXX_FLAGS= -DWHISPER_DEBUG -ffunction-sections -fdata-sections -fPIC --target=arm64-apple-macosx -mmacosx-version-min=14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -w" "-DCMAKE_CXX_COMPILER=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++" "-DCMAKE_ASM_FLAGS= -ffunction-sections -fdata-sections -fPIC --target=arm64-apple-macosx -mmacosx-version-min=14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -w" "-DCMAKE_ASM_COMPILER=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc" "-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON"
+
+
+
+  thread 'main' (71526322) panicked at /Users/kurtn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cmake-0.1.57/src/lib.rs:1132:5:
+
+
+
+  failed to execute command: No such file or directory (os error 2)
+
+  is `cmake` not installed?
+
+
+
+  build script failed, must exit now
+
+failed to run custom build command for `whisper-rs-sys v0.14.1`
+
+---
+
+better one more warning - i want to fix 
+Showing Recent Issues
+Run script build phase 'Build Rust Core (pablo-core)' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase.
+
+---
+
+lets go ahead and commit and push
