@@ -3,7 +3,7 @@
   "checkpoint_id": "b892c2ee22a0",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 9,
+  "checkpoints_count": 10,
   "files_touched": [
     "mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
     "mac/PabloCompanion/Services/RecordingService.swift",
@@ -25,13 +25,20 @@
       "context": "/b8/92c2ee22a0/1/context.md",
       "content_hash": "/b8/92c2ee22a0/1/content_hash.txt",
       "prompt": "/b8/92c2ee22a0/1/prompt.txt"
+    },
+    {
+      "metadata": "/b8/92c2ee22a0/2/metadata.json",
+      "transcript": "/b8/92c2ee22a0/2/full.jsonl",
+      "context": "/b8/92c2ee22a0/2/context.md",
+      "content_hash": "/b8/92c2ee22a0/2/content_hash.txt",
+      "prompt": "/b8/92c2ee22a0/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 2994,
-    "cache_creation_tokens": 286604,
-    "cache_read_tokens": 30974079,
-    "output_tokens": 94174,
-    "api_call_count": 320
+    "input_tokens": 3006,
+    "cache_creation_tokens": 301033,
+    "cache_read_tokens": 31179752,
+    "output_tokens": 95724,
+    "api_call_count": 330
   }
 }
