@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "b892c2ee22a0",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "mac/PabloCompanion/ViewModels/SessionViewModel.swift",
+    "mac/PabloCompanion/Views/ContentView.swift",
+    "mac/PabloCompanion/Views/DayView.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b8/92c2ee22a0/0/metadata.json",
+      "transcript": "/b8/92c2ee22a0/0/full.jsonl",
+      "context": "/b8/92c2ee22a0/0/context.md",
+      "content_hash": "/b8/92c2ee22a0/0/content_hash.txt",
+      "prompt": "/b8/92c2ee22a0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2829,
+    "cache_creation_tokens": 150875,
+    "cache_read_tokens": 20049756,
+    "output_tokens": 45945,
+    "api_call_count": 211
+  }
+}

@@ -1,0 +1,88 @@
+can you put latest main and merge/fx the beads issue if neceessary
+
+---
+
+can we commit push up beads file
+
+---
+
+can you take a look at the errors and warnings
+
+---
+
+yes please lets fix
+
+---
+
+does any of these chages have to do with auth - app crashed on signing ni
+
+---
+
+ok let's commit these.   when i click quick start - choose patent i get an auth error
+
+---
+
+session error.   not authenticated.  please sign in
+
+---
+
+commit please.   progress :-)  Failed to create ad-hoc session: Pablo.PabloError.ApiClient(statusCode: 422, message: "{\"detail\":[{\"type\":\"enum\",\"loc\":[\"body\",\"session_type\"],\"msg\":\"Input should be \'individual\' or \'couples\'\",\"input\":null,\"ctx\":{\"expected\":\"\'individual\' or \'couples\'\"}}]}")  - i'm thinking we should just default to individual until we support couples
+
+---
+
+ok let's commit if we haven't.   i noticed buffer overflow - after 35 seconds apture state: capturing(duration: 35.465677976608276)
+Buffer overflow: dropping 256 oldest samples
+Buffer overflow: dropping 512 oldest samples
+
+---
+
+audiocapturekit is our repo - we have it locally we can make a change to it
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+do we need a similar fix for windows platform, and should we extend to make it configurable maybe??
+
+---
+
+yes please
+
+---
+
+can we do it in this pr?
+
+---
+
+v1.0.2 please
+
+---
+
+admin is fine
+
+---
+
+almost - Failed to load today's sessions: Pablo.PabloError.JsonParse(message: "error decoding response body")
+- if i start a new session and then get an error fetchinc sessions - i'm assuming our session would show up and i ccould click stop record - i have no way of doing it
+
+---
+
+yes let's do that - update the doc on our ui style
+
+---
+
+yes if you could do that please - i think we still might have a problem just later on in losing buffers - it's longer now
+
+---
+
+yes plese
+
+---
+
+can we update our pr
+
+---
+
+push on main
