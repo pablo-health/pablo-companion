@@ -28,10 +28,6 @@ struct DayView: View {
             content
         }
         .background(Color.pabloCream)
-        .task {
-            await sessionVM.loadTodaySessions()
-            lastRefreshDate = Date()
-        }
         .task { await pollSessions() }
         .sheet(isPresented: $showingQuickStart) {
             QuickStartSheet(
@@ -227,6 +223,7 @@ struct DayView: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(30))
             guard !Task.isCancelled else { break }
+            guard recordingState == .idle else { continue }
             await sessionVM.loadTodaySessions()
             lastRefreshDate = Date()
         }

@@ -87,6 +87,7 @@ struct ContentView: View {
             authVM.signOut()
         }
 
+        await sessionVM.loadTodaySessions()
         await patientVM.loadPatients()
         await recordingVM.loadAudioSources()
         await uploadVM.checkBackendHealth()

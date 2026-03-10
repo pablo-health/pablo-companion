@@ -95,6 +95,7 @@ final class RecordingService {
         do {
             try captureSession.configure(config)
             try await captureSession.startCapture()
+            delegateAdapter.startLevelsPolling()
             currentRecordingState = .recording
             onCaptureStateUpdate?(.recording, nil)
             onSystemAudioActiveChange?(systemAudioAvailableAtStart)
@@ -136,6 +137,7 @@ final class RecordingService {
 
     func stopRecording() async {
         guard let session else { return }
+        delegateAdapter.stopLevelsPolling()
         do {
             let result = try await session.stopCapture()
             logger.info("Recording stopped: \(result.fileURL.lastPathComponent)")
@@ -274,27 +276,29 @@ final class RecordingService {
     }
 
     private func handleCaptureState(_ state: CaptureState) {
-        logger.debug("Capture state: \(String(describing: state))")
         switch state {
         case .idle:
+            logger.debug("Capture state: idle")
             currentRecordingState = .idle
             onCaptureStateUpdate?(.idle, nil)
         case let .capturing(elapsed):
             currentRecordingState = .recording
             onCaptureStateUpdate?(.recording, elapsed)
-            if let session {
-                onDiagnosticsUpdate?(session.diagnostics)
-            }
         case let .paused(elapsed):
+            logger.debug("Capture state: paused")
             currentRecordingState = .paused
             onCaptureStateUpdate?(.paused, elapsed)
         case .stopping:
+            logger.debug("Capture state: stopping")
+            delegateAdapter.stopLevelsPolling()
             currentRecordingState = .idle
             onCaptureStateUpdate?(.idle, nil)
             if let session {
                 onDiagnosticsUpdate?(session.diagnostics)
             }
         case let .failed(error):
+            logger.error("Capture state: failed — \(error.localizedDescription)")
+            delegateAdapter.stopLevelsPolling()
             currentRecordingState = .idle
             onCaptureStateUpdate?(.idle, nil)
             onSystemAudioActiveChange?(false)
@@ -359,10 +363,50 @@ final class RecordingService {
 }
 
 /// Bridges the non-isolated AudioCaptureDelegate callbacks to MainActor closures.
+///
+/// Audio levels use a latest-value slot (NSLock-protected) so the audio callback
+/// just writes and returns immediately — no dispatch, no Task creation.
+/// A DispatchSourceTimer polls the slot at ~15fps and delivers batched updates on main.
+/// State changes and errors are infrequent and dispatch to main via the existing
+/// Task { @MainActor in } pattern set up by RecordingService.
 private final class CaptureDelegateAdapter: AudioCaptureDelegate, @unchecked Sendable {
     var onStateChange: (@Sendable (CaptureState) -> Void)?
     var onLevelsUpdate: (@Sendable (AudioLevels) -> Void)?
     var onError: (@Sendable (CaptureError) -> Void)?
+
+    private let levelsLock = NSLock()
+    private var latestLevels: AudioLevels?
+    private var levelsTimer: DispatchSourceTimer?
+
+    // MARK: - Levels Polling
+
+    func startLevelsPolling() {
+        stopLevelsPolling()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(66))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.levelsLock.lock()
+            let levels = self.latestLevels
+            self.latestLevels = nil
+            self.levelsLock.unlock()
+            if let levels {
+                self.onLevelsUpdate?(levels)
+            }
+        }
+        timer.resume()
+        levelsTimer = timer
+    }
+
+    func stopLevelsPolling() {
+        levelsTimer?.cancel()
+        levelsTimer = nil
+        levelsLock.lock()
+        latestLevels = nil
+        levelsLock.unlock()
+    }
+
+    // MARK: - AudioCaptureDelegate
 
     func captureSession(
         _: any AudioCaptureSession,
@@ -375,7 +419,10 @@ private final class CaptureDelegateAdapter: AudioCaptureDelegate, @unchecked Sen
         _: any AudioCaptureSession,
         didUpdateLevels levels: AudioLevels
     ) {
-        onLevelsUpdate?(levels)
+        // Atomic write — returns immediately, never blocks the audio thread.
+        levelsLock.lock()
+        latestLevels = levels
+        levelsLock.unlock()
     }
 
     func captureSession(

@@ -111,7 +111,7 @@ final class SessionViewModel {
             let session = try await apiClient.createSession(request: request)
             logger.info("Created ad-hoc session: \(session.id)")
 
-            // Refresh today's list to include the new session
+            // Refresh today's list — safe because recording hasn't started yet.
             await loadTodaySessions()
 
             isLoading = false
