@@ -3,8 +3,9 @@
   "checkpoint_id": "36701ccc8e67",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
+    "core/uniffi/pablo_core.udl",
     "mac/PabloCompanion/Services/ModelManager.swift",
     "mac/PabloCompanion/ViewModels/RecordingViewModel.swift",
     "mac/PabloCompanion/ViewModels/TranscriptionViewModel.swift",
@@ -20,13 +21,20 @@
       "context": "/36/701ccc8e67/0/context.md",
       "content_hash": "/36/701ccc8e67/0/content_hash.txt",
       "prompt": "/36/701ccc8e67/0/prompt.txt"
+    },
+    {
+      "metadata": "/36/701ccc8e67/1/metadata.json",
+      "transcript": "/36/701ccc8e67/1/full.jsonl",
+      "context": "/36/701ccc8e67/1/context.md",
+      "content_hash": "/36/701ccc8e67/1/content_hash.txt",
+      "prompt": "/36/701ccc8e67/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 72,
-    "cache_creation_tokens": 118925,
-    "cache_read_tokens": 5327187,
-    "output_tokens": 49729,
-    "api_call_count": 58
+    "input_tokens": 3445,
+    "cache_creation_tokens": 332830,
+    "cache_read_tokens": 15029502,
+    "output_tokens": 80270,
+    "api_call_count": 170
   }
 }
