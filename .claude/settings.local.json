@@ -25,7 +25,31 @@
       "Bash(bd update:*)",
       "Bash(bd update PABLO-D-99 --status=closed 2>/dev/null || bd close PABLO-D-99 2>/dev/null)",
       "WebFetch(domain:firebase.google.com)",
-      "WebFetch(domain:docs.cloud.google.com)"
+      "WebFetch(domain:docs.cloud.google.com)",
+      "Bash(gh run:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(bd ready:*)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:crates.io)",
+      "Bash(cargo build:*)",
+      "Bash(cargo:*)",
+      "Bash(gh pr:*)",
+      "Bash(WHISPER_MODEL=small cargo test:*)",
+      "Bash(mkdir:*)",
+      "Bash(poetry run:*)",
+      "Bash(bd close:*)",
+      "Bash(git commit:*)",
+      "Bash(cp core/src/api_client.rs /tmp/api_client_full.rs)",
+      "Bash(cp core/src/models.rs /tmp/models_full.rs)",
+      "Bash(cp core/src/lib.rs /tmp/lib_full.rs)",
+      "Bash(cp core/uniffi/pablo_core.udl /tmp/pablo_core_full.udl)",
+      "Bash(cp /tmp/api_client_full.rs core/src/api_client.rs)",
+      "Bash(cp /tmp/pablo_core_full.udl core/uniffi/pablo_core.udl)",
+      "Bash(rm:*)",
+      "Bash(export:*)",
+      "Bash(swift build:*)",
+      "Bash(swift test:*)"
     ]
   }
 }

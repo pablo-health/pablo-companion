@@ -74,6 +74,9 @@ pub struct TranscriptionConfig {
     pub system_channels: u8,
     /// Sample rate of the system audio recording.
     pub system_sample_rate: u32,
+    /// When true, mic audio is labeled Client and system audio is labeled Therapist.
+    /// Default false: mic = Therapist, system = Client.
+    pub swap_speakers: bool,
 }
 
 /// Who spoke a given transcript segment.

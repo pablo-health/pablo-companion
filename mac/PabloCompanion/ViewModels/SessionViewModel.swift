@@ -178,7 +178,7 @@ final class SessionViewModel {
                 pageSize: 20,
                 status: statusFilter
             )
-            sessions = response.data
+            sessions = response.data.filter { matchesFilter($0) }
             totalSessions = response.total
             hasMoreSessions = response.hasMore
             logger.info("Loaded \(response.data.count) of \(response.total) sessions")
@@ -202,7 +202,7 @@ final class SessionViewModel {
                 pageSize: 20,
                 status: statusFilter
             )
-            sessions.append(contentsOf: response.data)
+            sessions.append(contentsOf: response.data.filter { matchesFilter($0) })
             totalSessions = response.total
             hasMoreSessions = response.hasMore
             logger.info("Loaded page \(self.currentPage): \(response.data.count) more sessions")
@@ -213,6 +213,19 @@ final class SessionViewModel {
         }
 
         isLoadingSessions = false
+    }
+
+    /// Client-side filter — ensures correct filtering even if the backend ignores the `status` param.
+    private func matchesFilter(_ session: Session) -> Bool {
+        guard let filter = statusFilter else { return true }
+        switch filter {
+        case "scheduled": return session.status == .scheduled
+        case "in_progress": return session.status == .inProgress
+        case "recording_complete": return session.status == .recordingComplete
+        case "finalized": return session.status == .finalized
+        case "cancelled": return session.status == .cancelled
+        default: return true
+        }
     }
 
     // MARK: - Private helpers

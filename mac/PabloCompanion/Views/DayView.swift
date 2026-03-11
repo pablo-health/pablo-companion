@@ -11,9 +11,19 @@ struct DayView: View {
     @Binding var patientSearchText: String
     var recordingState: RecordingUIState = .idle
     var recordingDuration: TimeInterval = 0
+    var pendingUploadCount = 0
+    var awaitingModelCount = 0
+    var transcriptForSession: ((String) -> String?)?
+    var hasRecordingForSession: ((String) -> Bool)?
+    var playingSessionId: String?
     var onStartSession: ((Session) -> Void)?
     var onQuickStart: ((Patient) -> Void)?
     var onStopRecording: (() -> Void)?
+    var onRetryUploads: (() -> Void)?
+    var onSwitchToSettings: (() -> Void)?
+    var onViewTranscript: ((Session) -> Void)?
+    var onPlaySession: ((Session) -> Void)?
+    var onStopPlayback: (() -> Void)?
 
     @State private var lastRefreshDate = Date()
     @State private var showingQuickStart = false
@@ -23,6 +33,12 @@ struct DayView: View {
             header
             if recordingState != .idle {
                 recordingBanner
+            }
+            if pendingUploadCount > 0 {
+                transcriptionPendingBanner
+            }
+            if awaitingModelCount > 0 {
+                awaitingModelBanner
             }
             Divider()
             content
@@ -153,17 +169,35 @@ struct DayView: View {
         VStack(spacing: 0) {
             List {
                 ForEach(sessionVM.todaySessions, id: \.id) { session in
-                    SessionRowView(session: session) {
-                        onStartSession?(session)
-                    }
-                    .pabloListRowStyle()
-                    .padding(.vertical, 2)
+                    sessionRow(session)
+                        .pabloListRowStyle()
+                        .padding(.vertical, 2)
                 }
             }
             .pabloListStyle()
 
             lastUpdatedLabel
         }
+    }
+
+    private func sessionRow(_ session: Session) -> some View {
+        let transcript = transcriptForSession?(session.id)
+        let hasRecording = hasRecordingForSession?(session.id) ?? false
+        let isPlaying = playingSessionId == session.id
+
+        return SessionRowView(
+            session: session,
+            patientLookup: { id in patients.first { $0.id == id } },
+            transcriptText: transcript,
+            isPlaying: isPlaying,
+            onStart: { onStartSession?(session) },
+            onViewTranscript: transcript != nil
+                ? { onViewTranscript?(session) } : nil,
+            onPlay: hasRecording
+                ? { onPlaySession?(session) } : nil,
+            onStopPlayback: isPlaying
+                ? { onStopPlayback?() } : nil
+        )
     }
 
     private var lastUpdatedLabel: some View {
@@ -215,6 +249,44 @@ struct DayView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Transcription status banners
+
+    private var transcriptionPendingBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .foregroundStyle(Color.pabloHoney)
+            Text("\(pendingUploadCount) transcript\(pendingUploadCount == 1 ? "" : "s") pending upload")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownDeep)
+            Spacer()
+            Button("Retry Now") { onRetryUploads?() }
+                .font(.pabloBody(12))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(Color.pabloHoney.opacity(0.12))
+    }
+
+    private var awaitingModelBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.down.circle")
+                .foregroundStyle(Color.pabloHoney)
+            Text("\(awaitingModelCount) session\(awaitingModelCount == 1 ? "" : "s") awaiting model download")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownDeep)
+            Spacer()
+            Button("Go to Settings") { onSwitchToSettings?() }
+                .font(.pabloBody(12))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(Color.pabloHoney.opacity(0.12))
     }
 
     // MARK: - Polling

@@ -27,6 +27,9 @@ final class RecordingViewModel {
     var showError = false
     var playingRecordingID: UUID?
     var onRecordingCompleted: ((LocalRecording) -> Void)?
+    var activeSessionId: String?
+    /// Maps session IDs to recording IDs for correlating sessions with local recordings.
+    var sessionRecordingMap: [String: UUID] = [:]
     var systemAudioActive = false
     var bluetoothRoutingConflict = false
     var bluetoothRecommendation: String?
@@ -148,6 +151,18 @@ final class RecordingViewModel {
         }
     }
 
+    /// Returns the local recording associated with a session, if captured this session.
+    func recordingForSession(_ sessionId: String) -> LocalRecording? {
+        guard let recordingId = sessionRecordingMap[sessionId] else { return nil }
+        return recordings.first { $0.id == recordingId }
+    }
+
+    /// The session ID whose recording is currently playing, if any.
+    var playingSessionId: String? {
+        guard let playingRecordingID else { return nil }
+        return sessionRecordingMap.first { $0.value == playingRecordingID }?.key
+    }
+
     func stopPlayback() {
         audioPlayer?.stop()
         audioPlayer = nil
@@ -185,6 +200,9 @@ final class RecordingViewModel {
         }
         service.onRecordingCompleted = { [weak self] recording in
             self?.recordings.insert(recording, at: 0)
+            if let sessionId = self?.activeSessionId {
+                self?.sessionRecordingMap[sessionId] = recording.id
+            }
             self?.onRecordingCompleted?(recording)
         }
     }

@@ -75,6 +75,9 @@ final class ModelManager: ObservableObject {
     @Published var downloadProgress: [WhisperModelPreset: Double] = [:]
     @Published var downloadingPresets: Set<WhisperModelPreset> = []
 
+    /// Called after a model download completes successfully.
+    var onModelDownloaded: ((WhisperModelPreset) -> Void)?
+
     private let fileManager = FileManager.default
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "ModelManager")
 
@@ -129,39 +132,99 @@ final class ModelManager: ObservableObject {
             downloadProgress.removeValue(forKey: preset)
         }
 
-        let delegate = ModelDownloadDelegate { [weak self] progress in
-            Task { @MainActor [weak self] in
-                self?.downloadProgress[preset] = progress
-            }
-        }
+        let destination = modelsDirectory.appendingPathComponent(preset.modelFileName)
 
         do {
-            let (tempURL, _) = try await URLSession.shared.download(from: url, delegate: delegate)
-            let destination = modelsDirectory.appendingPathComponent(preset.modelFileName)
-            if fileManager.fileExists(atPath: destination.path) {
-                try fileManager.removeItem(at: destination)
-            }
-            try fileManager.moveItem(at: tempURL, to: destination)
+            try await performDownload(from: url, to: destination, preset: preset)
             logger.info("Model downloaded: \(preset.modelFileName)")
+            onModelDownloaded?(preset)
         } catch {
             logger.error("Model download failed for \(preset.modelFileName): \(error.localizedDescription)")
             throw ModelError.downloadFailed(error.localizedDescription)
+        }
+    }
+
+    /// Performs the actual download using a delegate-based URLSession wrapped in a continuation.
+    /// Using a dedicated session (not URLSession.shared) ensures progress delegate callbacks fire.
+    nonisolated private func performDownload(
+        from url: URL,
+        to destination: URL,
+        preset: WhisperModelPreset
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let delegate = ModelDownloadDelegate(
+                destination: destination,
+                onProgress: { [weak self] fraction in
+                    Task { @MainActor [weak self] in
+                        self?.downloadProgress[preset] = fraction
+                    }
+                },
+                onComplete: { error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                }
+            )
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            session.downloadTask(with: url).resume()
         }
     }
 }
 
 // MARK: - ModelDownloadDelegate
 
-private final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate {
-    private let onProgress: @Sendable (Double) -> Void
+/// Session-level delegate for model downloads. Handles progress reporting, file
+/// moves (must happen inside `didFinishDownloadingTo` before the temp file is deleted),
+/// and error handling. The URLSession retains this delegate strongly.
+private final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let destination: URL
+    private let onProgress: (Double) -> Void
+    private let onComplete: (Error?) -> Void
+    private var didFinish = false
 
-    init(onProgress: @escaping @Sendable (Double) -> Void) {
+    init(
+        destination: URL,
+        onProgress: @escaping (Double) -> Void,
+        onComplete: @escaping (Error?) -> Void
+    ) {
+        self.destination = destination
         self.onProgress = onProgress
+        self.onComplete = onComplete
     }
 
-    /// Required by URLSessionDownloadDelegate.
-    /// The async/await wrapper owns the temp file — this is intentionally a no-op.
-    func urlSession(_: URLSession, downloadTask _: URLSessionDownloadTask, didFinishDownloadingTo _: URL) {}
+    func urlSession(
+        _ session: URLSession,
+        downloadTask _: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        guard !didFinish else { return }
+        didFinish = true
+        do {
+            let fm = FileManager.default
+            if fm.fileExists(atPath: destination.path) {
+                try fm.removeItem(at: destination)
+            }
+            try fm.moveItem(at: location, to: destination)
+            session.finishTasksAndInvalidate()
+            onComplete(nil)
+        } catch {
+            session.invalidateAndCancel()
+            onComplete(error)
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task _: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        guard !didFinish, let error else { return }
+        didFinish = true
+        session.invalidateAndCancel()
+        onComplete(error)
+    }
 
     func urlSession(
         _: URLSession,

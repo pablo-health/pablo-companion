@@ -178,6 +178,7 @@ dictionary TranscriptionConfig {
     u32 mic_sample_rate;
     u8 system_channels;
     u32 system_sample_rate;
+    boolean swap_speakers;
 };
 
 // A raw ASR segment from Whisper. Timestamps are milliseconds.

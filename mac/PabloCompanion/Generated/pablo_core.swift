@@ -1486,15 +1486,17 @@ public struct TranscriptionConfig: Equatable, Hashable {
     public var micSampleRate: UInt32
     public var systemChannels: UInt8
     public var systemSampleRate: UInt32
+    public var swapSpeakers: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(modelPath: String, micChannels: UInt8, micSampleRate: UInt32, systemChannels: UInt8, systemSampleRate: UInt32) {
+    public init(modelPath: String, micChannels: UInt8, micSampleRate: UInt32, systemChannels: UInt8, systemSampleRate: UInt32, swapSpeakers: Bool) {
         self.modelPath = modelPath
         self.micChannels = micChannels
         self.micSampleRate = micSampleRate
         self.systemChannels = systemChannels
         self.systemSampleRate = systemSampleRate
+        self.swapSpeakers = swapSpeakers
     }
 
     
@@ -1513,11 +1515,12 @@ public struct FfiConverterTypeTranscriptionConfig: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TranscriptionConfig {
         return
             try TranscriptionConfig(
-                modelPath: FfiConverterString.read(from: &buf), 
-                micChannels: FfiConverterUInt8.read(from: &buf), 
-                micSampleRate: FfiConverterUInt32.read(from: &buf), 
-                systemChannels: FfiConverterUInt8.read(from: &buf), 
-                systemSampleRate: FfiConverterUInt32.read(from: &buf)
+                modelPath: FfiConverterString.read(from: &buf),
+                micChannels: FfiConverterUInt8.read(from: &buf),
+                micSampleRate: FfiConverterUInt32.read(from: &buf),
+                systemChannels: FfiConverterUInt8.read(from: &buf),
+                systemSampleRate: FfiConverterUInt32.read(from: &buf),
+                swapSpeakers: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -1527,6 +1530,7 @@ public struct FfiConverterTypeTranscriptionConfig: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.micSampleRate, into: &buf)
         FfiConverterUInt8.write(value.systemChannels, into: &buf)
         FfiConverterUInt32.write(value.systemSampleRate, into: &buf)
+        FfiConverterBool.write(value.swapSpeakers, into: &buf)
     }
 }
 

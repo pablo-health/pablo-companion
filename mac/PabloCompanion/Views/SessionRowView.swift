@@ -3,7 +3,13 @@ import SwiftUI
 /// A single session row for the day view — shows patient name, time, status badge, and video platform.
 struct SessionRowView: View {
     let session: Session
+    var patientLookup: ((String) -> Patient?)?
+    var transcriptText: String?
+    var isPlaying = false
     var onStart: (() -> Void)?
+    var onViewTranscript: (() -> Void)?
+    var onPlay: (() -> Void)?
+    var onStopPlayback: (() -> Void)?
     @State private var isPulsing = false
 
     var body: some View {
@@ -51,10 +57,17 @@ struct SessionRowView: View {
     }
 
     private var initials: String {
-        guard let patient = session.patient else { return "?" }
-        let first = patient.firstName.first.map(String.init) ?? ""
-        let last = patient.lastName.first.map(String.init) ?? ""
-        return "\(first)\(last)".uppercased()
+        if let patient = session.patient {
+            let first = patient.firstName.first.map(String.init) ?? ""
+            let last = patient.lastName.first.map(String.init) ?? ""
+            return "\(first)\(last)".uppercased()
+        }
+        if let id = session.patientId, let patient = patientLookup?(id) {
+            let first = patient.firstName.first.map(String.init) ?? ""
+            let last = patient.lastName.first.map(String.init) ?? ""
+            return "\(first)\(last)".uppercased()
+        }
+        return "?"
     }
 
     private var pulseAnimation: Animation? {
@@ -101,7 +114,24 @@ struct SessionRowView: View {
         if session.status == .scheduled, let onStart {
             startButton(onStart)
         } else {
-            statusBadge
+            HStack(spacing: 8) {
+                if let action = isPlaying ? onStopPlayback : onPlay {
+                    Button(action: action) {
+                        Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                            .font(.pabloBody(11))
+                            .foregroundStyle(Color.pabloHoney)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(isPlaying ? "Stop" : "Play recording")
+                }
+                if transcriptText != nil, let onViewTranscript {
+                    Button("View") { onViewTranscript() }
+                        .font(.pabloBody(11))
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                }
+                statusBadge
+            }
         }
     }
 
@@ -200,6 +230,9 @@ struct SessionRowView: View {
 
     private var patientName: String {
         if let patient = session.patient {
+            return "\(patient.firstName) \(patient.lastName)"
+        }
+        if let id = session.patientId, let patient = patientLookup?(id) {
             return "\(patient.firstName) \(patient.lastName)"
         }
         return "Unknown Patient"

@@ -3,11 +3,23 @@ import SwiftUI
 /// Browsable, paginated list of all sessions with status filtering.
 struct SessionHistoryView: View {
     @Bindable var viewModel: SessionViewModel
+    var patients: [Patient] = []
+    var pendingUploadCount = 0
+    var transcriptForSession: ((String) -> String?)?
+    var hasRecordingForSession: ((String) -> Bool)?
+    var playingSessionId: String?
+    var onRetryUploads: (() -> Void)?
+    var onViewTranscript: ((Session) -> Void)?
+    var onPlaySession: ((Session) -> Void)?
+    var onStopPlayback: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
             header
             filterBar
+            if pendingUploadCount > 0 {
+                pendingUploadBanner
+            }
             Divider()
             sessionContent
         }
@@ -162,7 +174,7 @@ struct SessionHistoryView: View {
     private var sessionList: some View {
         List {
             ForEach(viewModel.sessions, id: \.id) { session in
-                SessionRowView(session: session)
+                sessionRow(session)
                     .pabloListRowStyle()
             }
             if viewModel.hasMoreSessions {
@@ -171,6 +183,25 @@ struct SessionHistoryView: View {
             }
         }
         .pabloListStyle()
+    }
+
+    private func sessionRow(_ session: Session) -> some View {
+        let transcript = transcriptForSession?(session.id)
+        let hasRecording = hasRecordingForSession?(session.id) ?? false
+        let isPlaying = playingSessionId == session.id
+
+        return SessionRowView(
+            session: session,
+            patientLookup: { id in patients.first { $0.id == id } },
+            transcriptText: transcript,
+            isPlaying: isPlaying,
+            onViewTranscript: transcript != nil
+                ? { onViewTranscript?(session) } : nil,
+            onPlay: hasRecording
+                ? { onPlaySession?(session) } : nil,
+            onStopPlayback: isPlaying
+                ? { onStopPlayback?() } : nil
+        )
     }
 
     private var loadMoreButton: some View {
@@ -195,6 +226,26 @@ struct SessionHistoryView: View {
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Transcription status banner
+
+    private var pendingUploadBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .foregroundStyle(Color.pabloHoney)
+            Text("\(pendingUploadCount) transcript\(pendingUploadCount == 1 ? "" : "s") pending upload")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownDeep)
+            Spacer()
+            Button("Retry Now") { onRetryUploads?() }
+                .font(.pabloBody(12))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(Color.pabloHoney.opacity(0.12))
     }
 
     // MARK: - Filter colors

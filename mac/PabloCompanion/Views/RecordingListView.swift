@@ -125,6 +125,13 @@ struct RecordingRow: View {
                     .font(.pabloBody(11))
                     .foregroundStyle(.secondary)
             }
+        case .awaitingModel:
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text("Downloading model…")
+                    .font(.pabloBody(11))
+                    .foregroundStyle(.secondary)
+            }
         case .done, .pendingUpload:
             Button {
                 onViewTranscript()

@@ -7,6 +7,7 @@ enum TranscriptionState: Sendable {
     case running
     case done(transcript: String)
     case pendingUpload(transcript: String)
+    case awaitingModel
     case failed(message: String)
 
     var transcript: String? {
@@ -42,6 +43,17 @@ final class TranscriptionViewModel {
 
     /// Number of transcripts waiting to be uploaded.
     var pendingUploadCount = 0
+
+    /// Recordings waiting for a Whisper model download before transcription.
+    var awaitingModelRecordings: [LocalRecording] = []
+
+    /// Count derived from actual states — avoids stale banner when state transitions happen.
+    var awaitingModelCount: Int {
+        states.values.count(where: {
+            if case .awaitingModel = $0 { return true }
+            return false
+        })
+    }
 
     var errorMessage: String?
     var showError = false
@@ -91,7 +103,8 @@ final class TranscriptionViewModel {
     }
 
     /// Unconditionally runs the full transcription pipeline for a recording.
-    func transcribe(_ recording: LocalRecording) async {
+    /// - Parameter presetOverride: If provided, uses this model preset instead of the user's configured quality preset.
+    func transcribe(_ recording: LocalRecording, using presetOverride: WhisperModelPreset? = nil) async {
         guard let micPath = recording.micPCMFileURL?.path else {
             states[recording.id] = .failed(message: "No mic audio file available")
             return
@@ -101,35 +114,20 @@ final class TranscriptionViewModel {
         logger.info("Starting transcription for \(recording.id)")
 
         do {
-            let modelURL = try ModelManager.shared.modelURL(for: qualityPreset)
-
-            let config = TranscriptionConfig(
-                modelPath: modelURL.path,
-                micChannels: 1,
-                micSampleRate: 48000,
-                systemChannels: 2,
-                systemSampleRate: 48000
-            )
-
+            let config = try buildTranscriptionConfig(using: presetOverride)
             let result = try await transcribeSession1on1(
                 sessionId: recording.id.uuidString,
                 micPath: micPath,
                 systemPath: recording.systemPCMFileURL?.path,
                 config: config
             )
-
-            let opts = GoogleMeetOptions(
-                sessionDate: recording.createdAt.formatted(date: .long, time: .omitted),
-                therapistName: "Therapist",
-                clientName: "Client",
-                clientAName: "Client A",
-                clientBName: "Client B"
-            )
-
-            let text = renderGoogleMeet(transcript: result, opts: opts)
+            let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: recording))
             logger.info("Transcription complete for \(recording.id), \(result.segments.count) segments")
-
             await uploadOrQueue(recording: recording, text: text)
+        } catch is ModelError {
+            states[recording.id] = .awaitingModel
+            awaitingModelRecordings.append(recording)
+            logger.info("Transcription deferred for \(recording.id): model not downloaded")
         } catch {
             let message = error.localizedDescription
             states[recording.id] = .failed(message: message)
@@ -137,7 +135,9 @@ final class TranscriptionViewModel {
         }
     }
 
-    /// Retry all pending transcripts that failed to upload. Call on app launch.
+    /// Retry all pending transcripts that failed to upload.
+    /// Uses exponential backoff: skips items that have been retried too many times recently.
+    /// After 10 retries, stops auto-retrying (manual "Retry Now" still works).
     func retryPendingUploads() async {
         let pending = store.loadAll()
         pendingUploadCount = pending.count
@@ -145,11 +145,18 @@ final class TranscriptionViewModel {
         logger.info("Retrying \(pending.count) pending transcript uploads")
 
         for var item in pending {
+            // Exponential backoff: skip items past their retry window
+            if item.retryCount > 10 { continue }
+            if item.retryCount > 0 {
+                let backoffSeconds = min(14400, 300 * Int(pow(2.0, Double(item.retryCount - 1))))
+                let elapsed = Date().timeIntervalSince(item.createdAt)
+                if elapsed < Double(backoffSeconds) { continue }
+            }
+
             do {
                 try await postTranscript(sessionID: item.sessionID, text: item.text)
                 store.delete(recordingID: item.recordingID)
                 pendingUploadCount = max(0, pendingUploadCount - 1)
-                // Restore done state if we have it, else just mark uploaded
                 if case let .pendingUpload(text) = states[item.recordingID] {
                     states[item.recordingID] = .done(transcript: text)
                 }
@@ -162,7 +169,67 @@ final class TranscriptionViewModel {
         }
     }
 
+    /// Force-retry all pending uploads immediately, ignoring backoff. Called by the "Retry Now" button.
+    func forceRetryPendingUploads() async {
+        let pending = store.loadAll()
+        pendingUploadCount = pending.count
+        guard !pending.isEmpty else { return }
+        logger.info("Force-retrying \(pending.count) pending transcript uploads")
+
+        for var item in pending {
+            do {
+                try await postTranscript(sessionID: item.sessionID, text: item.text)
+                store.delete(recordingID: item.recordingID)
+                pendingUploadCount = max(0, pendingUploadCount - 1)
+                if case let .pendingUpload(text) = states[item.recordingID] {
+                    states[item.recordingID] = .done(transcript: text)
+                }
+                logger.info("Force retry upload succeeded for \(item.recordingID)")
+            } catch {
+                item.retryCount += 1
+                store.save(item)
+                logger.warning("Force retry upload failed for \(item.recordingID): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Process recordings that were deferred because the Whisper model wasn't available.
+    /// Called after a model download completes. Uses the just-downloaded preset so we
+    /// don't fail again looking for a different model than what the user downloaded.
+    func processAwaitingModelRecordings(downloadedPreset: WhisperModelPreset) async {
+        let pending = awaitingModelRecordings
+        awaitingModelRecordings.removeAll()
+        for recording in pending {
+            await transcribe(recording, using: downloadedPreset)
+        }
+    }
+
     // MARK: - Private
+
+    private func buildTranscriptionConfig(
+        using presetOverride: WhisperModelPreset? = nil
+    ) throws -> TranscriptionConfig {
+        let preset = presetOverride ?? qualityPreset
+        let modelURL = try ModelManager.shared.modelURL(for: preset)
+        return TranscriptionConfig(
+            modelPath: modelURL.path,
+            micChannels: 1,
+            micSampleRate: 48000,
+            systemChannels: 2,
+            systemSampleRate: 48000,
+            swapSpeakers: UserDefaults.standard.bool(forKey: "swapSpeakers")
+        )
+    }
+
+    private func renderOptions(for recording: LocalRecording) -> GoogleMeetOptions {
+        GoogleMeetOptions(
+            sessionDate: recording.createdAt.formatted(date: .long, time: .omitted),
+            therapistName: "Therapist",
+            clientName: "Client",
+            clientAName: "Client A",
+            clientBName: "Client B"
+        )
+    }
 
     private func uploadOrQueue(recording: LocalRecording, text: String) async {
         do {

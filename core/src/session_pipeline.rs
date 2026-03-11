@@ -27,17 +27,28 @@ pub async fn transcribe_session_1on1(
     let mic_raw =
         whisper_transcriber::transcribe_audio(config.model_path.clone(), mic_audio).await?;
 
+    let mic_label = if config.swap_speakers {
+        SpeakerLabel::Client
+    } else {
+        SpeakerLabel::Therapist
+    };
+    let sys_label = if config.swap_speakers {
+        SpeakerLabel::Therapist
+    } else {
+        SpeakerLabel::Client
+    };
+
     let mut segments: Vec<TranscriptSegment> = mic_raw
         .into_iter()
         .map(|s| TranscriptSegment {
-            speaker: SpeakerLabel::Therapist,
+            speaker: mic_label.clone(),
             start_seconds: s.start_ms as f64 / 1000.0,
             end_seconds: s.end_ms as f64 / 1000.0,
             text: s.text,
         })
         .collect();
 
-    // ── System audio pass: all segments → CLIENT ─────────────────────────────
+    // ── System audio pass: all segments → sys_label ──────────────────────────
     if let Some(sys_path) = system_path {
         let sys_audio = audio_preprocessing::preprocess_pcm(
             sys_path,
@@ -50,7 +61,7 @@ pub async fn transcribe_session_1on1(
 
         for s in sys_raw {
             segments.push(TranscriptSegment {
-                speaker: SpeakerLabel::Client,
+                speaker: sys_label.clone(),
                 start_seconds: s.start_ms as f64 / 1000.0,
                 end_seconds: s.end_ms as f64 / 1000.0,
                 text: s.text,
@@ -86,6 +97,7 @@ mod tests {
             mic_sample_rate: 48000,
             system_channels: 2,
             system_sample_rate: 48000,
+            swap_speakers: false,
         }
     }
 

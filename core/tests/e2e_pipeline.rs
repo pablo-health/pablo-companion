@@ -419,6 +419,7 @@ async fn run_pipeline(
         mic_sample_rate: TTS_SAMPLE_RATE,
         system_channels: 2,
         system_sample_rate: TTS_SAMPLE_RATE,
+        swap_speakers: false,
     };
 
     let result = transcribe_session_1on1(

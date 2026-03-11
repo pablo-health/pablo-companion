@@ -158,6 +158,7 @@ struct SettingsView: View {
     @AppStorage("qualityPreset") private var qualityPreset = WhisperModelPreset.balanced.rawValue
     @AppStorage("sessionType") private var sessionType = DisplaySessionType.oneToOne.rawValue
     @AppStorage("autoTranscribe") private var autoTranscribe = true
+    @AppStorage("swapSpeakers") private var swapSpeakers = false
 
     @ObservedObject private var modelManager = ModelManager.shared
     private let hardware = HardwareCapabilityService()
@@ -194,6 +195,11 @@ struct SettingsView: View {
                     Text(type.displayName).tag(type.rawValue)
                 }
             }
+
+            Toggle("Swap mic/speaker labels", isOn: $swapSpeakers)
+            Text("Enable when your microphone captures the patient and system audio carries the therapist.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             if let warning = transcriptionWarning {
                 Label {
