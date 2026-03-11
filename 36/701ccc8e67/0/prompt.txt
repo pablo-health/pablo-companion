@@ -1,0 +1,29 @@
+do we have a ui display issue - i clicked download high accuract model and i don't see anything updaiting on download
+
+---
+
+[Request interrupted by user]
+
+---
+
+nevermind it finished - it just didn't update the progress UI
+
+---
+
+bug we have a model downloaded - yet a completed session shows up as 1 session awaiting model download
+
+---
+
+let's get that scoped out
+
+---
+
+phase 1 and then beads tasks for the rest
+
+---
+
+any lint errros?
+
+---
+
+oh and commit and push everything including beads tasks
