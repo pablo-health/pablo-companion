@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "959e1ecced3c",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "mac/PabloCompanion/ViewModels/SessionViewModel.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/95/9e1ecced3c/0/metadata.json",
+      "transcript": "/95/9e1ecced3c/0/full.jsonl",
+      "context": "/95/9e1ecced3c/0/context.md",
+      "content_hash": "/95/9e1ecced3c/0/content_hash.txt",
+      "prompt": "/95/9e1ecced3c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3372,
+    "cache_creation_tokens": 213601,
+    "cache_read_tokens": 9576564,
+    "output_tokens": 30516,
+    "api_call_count": 111
+  }
+}
