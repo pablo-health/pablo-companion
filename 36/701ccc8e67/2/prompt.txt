@@ -1,0 +1,277 @@
+Implement the following plan:
+
+# Plan: Session Bugs, Transcription Resilience, and Channel Swap
+
+## Context
+
+Three bugs and three feature requests affecting the therapist experience:
+
+**Bugs:**
+1. Sessions always show "Unknown Patient" — backend returns `patient: null`, no client-side fallback
+2. Session history filtering (Scheduled, In Progress, etc.) does nothing — backend likely ignores `status` query param
+3. Quick start: after stopping recording, session still shows "Start Session" — `endSession()` never called, session stays at `.scheduled`
+
+**Features:**
+4. Mic/speaker swap toggle — for setups where mic captures patient and system audio carries therapist (default OFF)
+5. Deferred transcription — if Whisper model not downloaded, queue sessions and process after download
+6. Auto-retry + transcript viewing — resilient upload retry, surface pending status to therapist, wire existing transcript viewer
+
+---
+
+## 1. Bug Fix: "Unknown Patient" fallback
+
+**Problem:** `SessionRowView.patientName` returns "Unknown Patient" when `session.patient` is nil, even though `session.patientId` is populated and patients are loaded locally.
+
+**Files:**
+- `mac/PabloCompanion/Views/SessionRowView.swift` (lines 53-58, 201-205)
+- `mac/PabloCompanion/Views/DayView.swift` (line 156 — already has `patients`)
+- `mac/PabloCompanion/Views/SessionHistoryView.swift` (line 165 — needs patients)
+- `mac/PabloCompanion/Views/ContentView.swift` (line 136 — wire patients to SessionHistoryView)
+
+**Changes:**
+- Add `var patientLookup: ((String) -> Patient?)? = nil` to `SessionRowView`
+- Update `patientName` and `initials` to fall back to `patientLookup(session.patientId)` when `session.patient` is nil
+- In `DayView.sessionList`, pass the lookup using existing `patients` array
+- Add `patients: [Patient]` param to `SessionHistoryView`, wire from ContentView
+- In `SessionHistoryView.sessionList`, pass lookup to each `SessionRowView`
+
+---
+
+## 2. Bug Fix: Client-side session filtering
+
+**Problem:** Backend may ignore `status` query param. All sessions returned regardless of filter.
+
+**File:** `mac/PabloCompanion/ViewModels/SessionViewModel.swift` (lines 170-216)
+
+**Changes:**
+- After receiving `response.data` in `loadSessions()`, if `statusFilter` is non-nil, filter client-side:
+  ```swift
+  private func matchesFilter(_ session: Session) -> Bool {
+      guard let filter = statusFilter else { return true }
+      switch filter {
+      case "scheduled": return session.status == .scheduled
+      case "in_progress": return session.status == .inProgress
+      case "recording_complete": return session.status == .recordingComplete
+      case "finalized": return session.status == .finalized
+      case "cancelled": return session.status == .cancelled
+      default: return true
+      }
+  }
+  ```
+- Apply same filter in `loadMoreSessions()` when appending
+
+---
+
+## 3. Bug Fix: End session when recording stops
+
+**Problem:** `ContentView` never calls `sessionVM.endSession()` — no active session tracking, `onStopRecording` only calls `recordingVM.stopRecording()`.
+
+**File:** `mac/PabloCompanion/Views/ContentView.swift` (lines 102-115, 129)
+
+**Changes:**
+- Add `@State private var activeSessionId: String?`
+- In `startSession(_:)`: set `activeSessionId = session.id` after `sessionVM.startSession` succeeds
+- In `handleQuickStart(_:)`: set `activeSessionId = session.id` after `createAdHocSession` succeeds
+- In `onStopRecording` closure:
+  ```swift
+  onStopRecording: {
+      Task {
+          await recordingVM.stopRecording()
+          if let sessionId = activeSessionId {
+              _ = await sessionVM.endSession(sessionId)
+              activeSessionId = nil
+          }
+          await sessionVM.loadTodaySessions()
+      }
+  }
+  ```
+
+---
+
+## 4. Feature: Mic/Speaker channel swap toggle
+
+**Problem:** Currently hardcoded: mic → Therapist, system audio → Client. Some setups need the inverse.
+
+**Decision:** Labels-only swap. Audio capture/routing stays the same. The toggle only changes which channel gets labeled Therapist vs Client in the transcription output.
+
+**Files:**
+- `core/src/lib.rs` — add `swap_speakers` to `TranscriptionConfig`
+- `core/src/session_pipeline.rs` — use flag when assigning `SpeakerLabel`
+- `core/uniffi/pablo_core.udl` — update `TranscriptionConfig` dictionary
+- `mac/PabloCompanion/ViewModels/TranscriptionViewModel.swift` — pass setting to config
+- `mac/PabloCompanion/Views/SettingsView.swift` — add toggle UI
+
+**Changes:**
+
+Rust (`TranscriptionConfig` in `lib.rs`):
+```rust
+pub struct TranscriptionConfig {
+    // ... existing fields ...
+    /// When true, mic audio is labeled Client and system audio is labeled Therapist.
+    pub swap_speakers: bool,
+}
+```
+
+Rust (`session_pipeline.rs`):
+```rust
+let mic_label = if config.swap_speakers { SpeakerLabel::Client } else { SpeakerLabel::Therapist };
+let sys_label = if config.swap_speakers { SpeakerLabel::Therapist } else { SpeakerLabel::Client };
+```
+
+Swift (`TranscriptionViewModel.transcribe()`): read `UserDefaults.standard.bool(forKey: "swapSpeakers")` and pass to `TranscriptionConfig`.
+
+Swift (`SettingsView`): Add a toggle with explanation text: "Enable when your microphone captures the patient and system audio carries the therapist."
+
+---
+
+## 5. Feature: Deferred transcription (awaiting model)
+
+**Problem:** If Whisper model not downloaded, transcription fails silently. Should queue and process after download.
+
+**Files:**
+- `mac/PabloCompanion/ViewModels/TranscriptionViewModel.swift`
+- `mac/PabloCompanion/Services/ModelManager.swift`
+- `mac/PabloCompanion/Views/ContentView.swift`
+
+**Changes:**
+
+Add `TranscriptionState.awaitingModel` case:
+```swift
+case awaitingModel
+```
+
+Add tracking to `TranscriptionViewModel`:
+```swift
+var awaitingModelRecordings: [LocalRecording] = []
+
+func processAwaitingModelRecordings() async {
+    let pending = awaitingModelRecordings
+    awaitingModelRecordings.removeAll()
+    for recording in pending {
+        await transcribe(recording)
+    }
+}
+```
+
+In `transcribe()`, catch `ModelError.notFound` specifically:
+```swift
+} catch is ModelError {
+    states[recording.id] = .awaitingModel
+    awaitingModelRecordings.append(recording)
+    logger.info("Transcription deferred for \(recording.id): model not downloaded")
+}
+```
+
+Add callback to `ModelManager`:
+```swift
+var onModelDownloaded: ((WhisperModelPreset) -> Void)?
+// Call after successful download in downloadModel()
+```
+
+Wire in `ContentView.configureAndLoad()`:
+```swift
+ModelManager.shared.onModelDownloaded = { [transcriptionVM] _ in
+    Task { await transcriptionVM.processAwaitingModelRecordings() }
+}
+```
+
+Show banner in DayView when recordings are queued (count passed from ContentView).
+
+---
+
+## 6. Feature: Auto-retry + transcript viewing
+
+**Problem:** Upload retry only runs on app launch. Transcript viewer exists but isn't wired. Therapists need visibility into what's pending so they don't open support tickets.
+
+**Files:**
+- `mac/PabloCompanion/Views/ContentView.swift`
+- `mac/PabloCompanion/Views/DayView.swift`
+- `mac/PabloCompanion/ViewModels/TranscriptionViewModel.swift`
+
+**Changes:**
+
+### Wire recording completion → transcription
+In `ContentView.configureAndLoad()`:
+```swift
+recordingVM.onRecordingCompleted = { [transcriptionVM] recording in
+    transcriptionVM.transcribeIfNeeded(recording)
+}
+```
+
+### Periodic auto-retry (every 5 minutes)
+Add a `.task` on `authenticatedContent`:
+```swift
+.task {
+    while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(300))
+        guard !Task.isCancelled else { break }
+        await transcriptionVM.retryPendingUploads()
+    }
+}
+```
+
+### Exponential backoff for pending uploads
+In `TranscriptionViewModel.retryPendingUploads()`, skip items where `retryCount` exceeds a threshold based on time since creation (e.g., retry at 5m, 15m, 1h, 4h). Simple approach: skip if `retryCount > 10` and flag for manual retry.
+
+### Wire transcript viewer
+Add to `authenticatedContent`:
+```swift
+.sheet(item: $viewingTranscript) { item in
+    TranscriptViewerView(transcript: item.text, recordingDate: item.recordingDate)
+}
+```
+
+### Status banners in Today tab + Sessions tab
+Pass transcription state to both DayView and SessionHistoryView (counts + callbacks). Show non-intrusive banners:
+
+- "2 transcripts pending upload" (with "Retry Now" button)
+- "3 sessions awaiting model download" (with "Go to Settings" link)
+- "Transcription failed" (with "Retry" button)
+
+Banners stack below the recording banner (DayView) or below the filter bar (SessionHistoryView), only when relevant. Color-coded: honey for pending, terracotta for failed.
+
+### Auto-retry with backoff + manual retry
+- Auto-retry every 5 minutes via `.task` loop
+- Exponential backoff: skip items where `retryCount` exceeds threshold (retry at 5m, 15m, 1h, 4h intervals). After 10 retries, stop auto-retrying and show "Retry" button only
+- Manual "Retry Now" button in banner forces immediate retry of all pending items
+- Goal: zero support tickets — the therapist either sees it resolve automatically or has a clear action to take
+
+### Add "View Transcript" to session row
+When a transcript is available (keyed by recording ID), show a small "View" button in `SessionRowView`. This requires mapping session ID ↔ recording ID — for now, pass a `transcriptText: String?` to `SessionRowView` and show button when non-nil.
+
+---
+
+## Implementation Order
+
+| # | Item | Dependencies | Risk |
+|---|------|-------------|------|
+| 1 | Bug 2: Client-side filtering | None | Low |
+| 2 | Bug 1: Patient name fallback | None | Low |
+| 3 | Bug 3: End session on stop | None | Medium |
+| 4 | Feature 6: Auto-retry + transcript viewer | Bug 3 (shared ContentView changes) | Medium |
+| 5 | Feature 5: Deferred transcription | Feature 6 (recording→transcription wiring) | Medium |
+| 6 | Feature 4: Channel swap toggle | Rust + Swift + UDL | Medium |
+
+Items 1-3 are independent bug fixes. Feature 6 wires the recording→transcription pipeline that Feature 5 depends on. Feature 4 (channel swap) is independent but touches Rust + UDL + generated Swift, so saved for last.
+
+---
+
+## Verification
+
+1. **Bug 1:** Create session via Quick Start → verify patient name shows (not "Unknown Patient") in both Today and Sessions tabs
+2. **Bug 2:** Go to Sessions tab → click filter capsules → verify list actually filters
+3. **Bug 3:** Quick Start → record briefly → Stop → verify session shows "Complete" badge (not "Start Session")
+4. **Feature 4:** Toggle swap in Settings → record → stop → transcribe → verify speaker labels are swapped in transcript
+5. **Feature 5:** Delete model file → record + stop → verify "awaiting model" banner → download model → verify transcription runs automatically
+6. **Feature 6:** Record → stop → disconnect network → verify "pending upload" banner appears → reconnect → verify auto-retry succeeds. Click "View Transcript" to verify viewer opens.
+
+Build check: `make check` (SwiftLint + SwiftFormat + build + tests)
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/kurtn/.claude/projects/-Users-kurtn-Developer-pablo-companion/0c2add26-8caf-409b-9c9a-2f2827f82a76.jsonl
+
+If this plan can be broken down into multiple independent tasks, consider using the TeamCreate tool to create a team and parallelize the work.
+
+---
+
+what new statusues did we add - i think the backend needs a change as we got Failed to end session 7dfdb039-80cf-4e8c-a875-924a8064d08c: Pablo.PabloError.ApiClient(statusCode: 400, message: "{\"detail\":{\"detail\":\"Cannot transition from \'scheduled\' to \'recording_complete\'\",\"error_code\":\"INVALID_STATUS_TRANSITION\"}}")

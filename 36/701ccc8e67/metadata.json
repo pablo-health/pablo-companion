@@ -3,16 +3,22 @@
   "checkpoint_id": "36701ccc8e67",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 4,
+  "checkpoints_count": 6,
   "files_touched": [
+    "core/src/lib.rs",
+    "core/src/session_pipeline.rs",
+    "core/tests/e2e_pipeline.rs",
     "core/uniffi/pablo_core.udl",
+    "mac/PabloCompanion/Generated/pablo_core.swift",
     "mac/PabloCompanion/Services/ModelManager.swift",
     "mac/PabloCompanion/ViewModels/RecordingViewModel.swift",
+    "mac/PabloCompanion/ViewModels/SessionViewModel.swift",
     "mac/PabloCompanion/ViewModels/TranscriptionViewModel.swift",
     "mac/PabloCompanion/Views/ContentView.swift",
     "mac/PabloCompanion/Views/DayView.swift",
     "mac/PabloCompanion/Views/SessionHistoryView.swift",
-    "mac/PabloCompanion/Views/SessionRowView.swift"
+    "mac/PabloCompanion/Views/SessionRowView.swift",
+    "mac/PabloCompanion/Views/SettingsView.swift"
   ],
   "sessions": [
     {
@@ -28,13 +34,20 @@
       "context": "/36/701ccc8e67/1/context.md",
       "content_hash": "/36/701ccc8e67/1/content_hash.txt",
       "prompt": "/36/701ccc8e67/1/prompt.txt"
+    },
+    {
+      "metadata": "/36/701ccc8e67/2/metadata.json",
+      "transcript": "/36/701ccc8e67/2/full.jsonl",
+      "context": "/36/701ccc8e67/2/context.md",
+      "content_hash": "/36/701ccc8e67/2/content_hash.txt",
+      "prompt": "/36/701ccc8e67/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 3445,
-    "cache_creation_tokens": 332830,
-    "cache_read_tokens": 15029502,
-    "output_tokens": 80270,
-    "api_call_count": 170
+    "input_tokens": 3522,
+    "cache_creation_tokens": 425818,
+    "cache_read_tokens": 20801028,
+    "output_tokens": 106244,
+    "api_call_count": 243
   }
 }
