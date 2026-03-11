@@ -265,20 +265,20 @@ dictionary PatientSummary {
 // A therapy session.
 dictionary Session {
     string id;
-    string patient_id;
+    string? patient_id;
     PatientSummary? patient;
     SessionStatus status;
     string? scheduled_at;
     string? started_at;
     string? ended_at;
-    u32 duration_minutes;
+    u32? duration_minutes;
     string? video_link;
     VideoPlatform? video_platform;
-    SessionType session_type;
-    SessionSource source;
+    SessionType? session_type;
+    SessionSource? source;
     string? notes;
-    string created_at;
-    string updated_at;
+    string? created_at;
+    string? updated_at;
 };
 
 // Request body for creating a new session.

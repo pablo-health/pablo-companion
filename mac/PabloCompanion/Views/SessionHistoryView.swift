@@ -100,6 +100,8 @@ struct SessionHistoryView: View {
     private var sessionContent: some View {
         if viewModel.isLoadingSessions, viewModel.sessions.isEmpty {
             loadingState
+        } else if let error = viewModel.errorMessage, viewModel.sessions.isEmpty {
+            errorState(error)
         } else if viewModel.sessions.isEmpty {
             emptyState
         } else {
@@ -112,6 +114,31 @@ struct SessionHistoryView: View {
             Spacer()
             ProgressView("Loading sessions...")
                 .font(.pabloBody(14))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func errorState(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 36))
+                .foregroundStyle(Color.pabloError)
+            Text("Failed to Load Sessions")
+                .font(.pabloDisplay(18))
+                .foregroundStyle(Color.pabloBrownDeep)
+            Text(message)
+                .font(.pabloBody(12))
+                .foregroundStyle(Color.pabloBrownSoft)
+                .multilineTextAlignment(.center)
+                .lineLimit(4)
+                .padding(.horizontal, 40)
+            Button("Retry") {
+                Task { await viewModel.loadSessions() }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.pabloHoney)
             Spacer()
         }
         .frame(maxWidth: .infinity)

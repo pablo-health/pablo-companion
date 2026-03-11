@@ -1132,24 +1132,24 @@ public func FfiConverterTypeRawSegment_lower(_ value: RawSegment) -> RustBuffer 
 
 public struct Session: Equatable, Hashable {
     public var id: String
-    public var patientId: String
+    public var patientId: String?
     public var patient: PatientSummary?
     public var status: SessionStatus
     public var scheduledAt: String?
     public var startedAt: String?
     public var endedAt: String?
-    public var durationMinutes: UInt32
+    public var durationMinutes: UInt32?
     public var videoLink: String?
     public var videoPlatform: VideoPlatform?
-    public var sessionType: SessionType
-    public var source: SessionSource
+    public var sessionType: SessionType?
+    public var source: SessionSource?
     public var notes: String?
-    public var createdAt: String
-    public var updatedAt: String
+    public var createdAt: String?
+    public var updatedAt: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, patientId: String, patient: PatientSummary?, status: SessionStatus, scheduledAt: String?, startedAt: String?, endedAt: String?, durationMinutes: UInt32, videoLink: String?, videoPlatform: VideoPlatform?, sessionType: SessionType, source: SessionSource, notes: String?, createdAt: String, updatedAt: String) {
+    public init(id: String, patientId: String?, patient: PatientSummary?, status: SessionStatus, scheduledAt: String?, startedAt: String?, endedAt: String?, durationMinutes: UInt32?, videoLink: String?, videoPlatform: VideoPlatform?, sessionType: SessionType?, source: SessionSource?, notes: String?, createdAt: String?, updatedAt: String?) {
         self.id = id
         self.patientId = patientId
         self.patient = patient
@@ -1184,39 +1184,39 @@ public struct FfiConverterTypeSession: FfiConverterRustBuffer {
         return
             try Session(
                 id: FfiConverterString.read(from: &buf), 
-                patientId: FfiConverterString.read(from: &buf), 
+                patientId: FfiConverterOptionString.read(from: &buf), 
                 patient: FfiConverterOptionTypePatientSummary.read(from: &buf), 
                 status: FfiConverterTypeSessionStatus.read(from: &buf), 
                 scheduledAt: FfiConverterOptionString.read(from: &buf), 
                 startedAt: FfiConverterOptionString.read(from: &buf), 
                 endedAt: FfiConverterOptionString.read(from: &buf), 
-                durationMinutes: FfiConverterUInt32.read(from: &buf), 
+                durationMinutes: FfiConverterOptionUInt32.read(from: &buf), 
                 videoLink: FfiConverterOptionString.read(from: &buf), 
                 videoPlatform: FfiConverterOptionTypeVideoPlatform.read(from: &buf), 
-                sessionType: FfiConverterTypeSessionType.read(from: &buf), 
-                source: FfiConverterTypeSessionSource.read(from: &buf), 
+                sessionType: FfiConverterOptionTypeSessionType.read(from: &buf), 
+                source: FfiConverterOptionTypeSessionSource.read(from: &buf), 
                 notes: FfiConverterOptionString.read(from: &buf), 
-                createdAt: FfiConverterString.read(from: &buf), 
-                updatedAt: FfiConverterString.read(from: &buf)
+                createdAt: FfiConverterOptionString.read(from: &buf), 
+                updatedAt: FfiConverterOptionString.read(from: &buf)
         )
     }
 
     public static func write(_ value: Session, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
-        FfiConverterString.write(value.patientId, into: &buf)
+        FfiConverterOptionString.write(value.patientId, into: &buf)
         FfiConverterOptionTypePatientSummary.write(value.patient, into: &buf)
         FfiConverterTypeSessionStatus.write(value.status, into: &buf)
         FfiConverterOptionString.write(value.scheduledAt, into: &buf)
         FfiConverterOptionString.write(value.startedAt, into: &buf)
         FfiConverterOptionString.write(value.endedAt, into: &buf)
-        FfiConverterUInt32.write(value.durationMinutes, into: &buf)
+        FfiConverterOptionUInt32.write(value.durationMinutes, into: &buf)
         FfiConverterOptionString.write(value.videoLink, into: &buf)
         FfiConverterOptionTypeVideoPlatform.write(value.videoPlatform, into: &buf)
-        FfiConverterTypeSessionType.write(value.sessionType, into: &buf)
-        FfiConverterTypeSessionSource.write(value.source, into: &buf)
+        FfiConverterOptionTypeSessionType.write(value.sessionType, into: &buf)
+        FfiConverterOptionTypeSessionSource.write(value.source, into: &buf)
         FfiConverterOptionString.write(value.notes, into: &buf)
-        FfiConverterString.write(value.createdAt, into: &buf)
-        FfiConverterString.write(value.updatedAt, into: &buf)
+        FfiConverterOptionString.write(value.createdAt, into: &buf)
+        FfiConverterOptionString.write(value.updatedAt, into: &buf)
     }
 }
 

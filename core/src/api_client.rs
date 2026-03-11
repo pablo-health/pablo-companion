@@ -116,6 +116,33 @@ pub(crate) async fn handle_error_response(response: reqwest::Response) -> PabloE
     }
 }
 
+/// Format a JSON parse error with context around the error position.
+fn format_json_error(err: &serde_json::Error, body: &str) -> String {
+    let col = err.column();
+    if col > 0 && col <= body.len() {
+        let start = col.saturating_sub(40);
+        let end = (col + 40).min(body.len());
+        let snippet = &body[start..end];
+        // Show hex bytes around the error position for debugging
+        let error_byte = body.as_bytes().get(col.saturating_sub(1));
+        let hex = error_byte.map_or("N/A".to_string(), |b| format!("0x{b:02X}"));
+        format!(
+            "{err}\nByte at column {col}: {hex}\nContext: ...{snippet}..."
+        )
+    } else {
+        format!("{err}\nBody length: {}", body.len())
+    }
+}
+
+/// Sanitize a JSON response body by fixing invalid escape sequences.
+///
+/// The backend may store transcript content with Python-style `\'` escapes
+/// which are not valid JSON (JSON only allows `\"`, `\\`, `\/`, `\b`, `\f`,
+/// `\n`, `\r`, `\t`, `\uXXXX`). This replaces `\'` with `'` before parsing.
+fn sanitize_json(input: &str) -> String {
+    input.replace("\\'", "'")
+}
+
 // ── Public endpoint functions ────────────────────────────────────────────────
 // These are the public API that gets exposed via UniFFI.
 // Each function creates its own ApiClient (stateless, cheap).
@@ -275,11 +302,13 @@ pub async fn fetch_today_sessions(
             return Err(handle_error_response(response).await);
         }
 
-        let list = response
-            .json::<SessionListResponse>()
-            .await
-            .map_err(|e| PabloError::JsonParse {
-                message: e.to_string(),
+        let body = response.text().await.map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })?;
+        let sanitized = sanitize_json(&body);
+        let list: SessionListResponse =
+            serde_json::from_str(&sanitized).map_err(|e| PabloError::JsonParse {
+                message: format_json_error(&e, &sanitized),
             })?;
         Ok(list.data)
     })
@@ -459,12 +488,13 @@ pub async fn fetch_sessions(
             return Err(handle_error_response(response).await);
         }
 
-        response
-            .json::<SessionListResponse>()
-            .await
-            .map_err(|e| PabloError::JsonParse {
-                message: e.to_string(),
-            })
+        let body = response.text().await.map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })?;
+        let sanitized = sanitize_json(&body);
+        serde_json::from_str::<SessionListResponse>(&sanitized).map_err(|e| PabloError::JsonParse {
+            message: format_json_error(&e, &sanitized),
+        })
     })
     .await
 }
@@ -1284,5 +1314,22 @@ mod tests {
         let url = req.url().to_string();
         assert!(!url.contains("search="));
         assert!(url.contains("page=1"));
+    }
+
+    #[test]
+    fn sanitize_json_fixes_invalid_apostrophe_escapes() {
+        let input = r#"{"content": "I\'ve been working on it"}"#;
+        let sanitized = sanitize_json(input);
+        assert_eq!(sanitized, r#"{"content": "I've been working on it"}"#);
+        // Verify it's now valid JSON
+        let _: serde_json::Value = serde_json::from_str(&sanitized).unwrap();
+    }
+
+    #[test]
+    fn sanitize_json_preserves_valid_escapes() {
+        let input = r#"{"content": "line1\nline2", "path": "C:\\Users"}"#;
+        let sanitized = sanitize_json(input);
+        assert_eq!(sanitized, input); // No change — all escapes are valid
+        let _: serde_json::Value = serde_json::from_str(&sanitized).unwrap();
     }
 }

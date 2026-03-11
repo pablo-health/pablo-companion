@@ -63,20 +63,20 @@ pub struct PatientSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
-    pub patient_id: String,
+    pub patient_id: Option<String>,
     pub patient: Option<PatientSummary>,
     pub status: SessionStatus,
     pub scheduled_at: Option<String>,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
-    pub duration_minutes: u32,
+    pub duration_minutes: Option<u32>,
     pub video_link: Option<String>,
     pub video_platform: Option<VideoPlatform>,
-    pub session_type: SessionType,
-    pub source: SessionSource,
+    pub session_type: Option<SessionType>,
+    pub source: Option<SessionSource>,
     pub notes: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,9 +238,9 @@ mod tests {
         let session: Session = serde_json::from_str(json).unwrap();
         assert_eq!(session.id, "sess-001");
         assert_eq!(session.status, SessionStatus::Scheduled);
-        assert_eq!(session.session_type, SessionType::Individual);
-        assert_eq!(session.source, SessionSource::Companion);
-        assert_eq!(session.duration_minutes, 50);
+        assert_eq!(session.session_type, Some(SessionType::Individual));
+        assert_eq!(session.source, Some(SessionSource::Companion));
+        assert_eq!(session.duration_minutes, Some(50));
     }
 
     #[test]

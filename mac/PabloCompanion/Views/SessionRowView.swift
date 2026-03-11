@@ -226,7 +226,7 @@ struct SessionRowView: View {
     }
 
     private var durationLabel: String {
-        "\(session.durationMinutes) min"
+        "\(session.durationMinutes ?? 0) min"
     }
 }
 
