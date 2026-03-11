@@ -47,9 +47,15 @@ final class TranscriptionViewModel {
     /// Recordings waiting for a Whisper model download before transcription.
     var awaitingModelRecordings: [LocalRecording] = []
 
-    /// Count derived from actual states — avoids stale banner when state transitions happen.
+    /// Count derived from actual states. Returns 0 if any model is available
+    /// (stale `.awaitingModel` entries from before a download completed).
     var awaitingModelCount: Int {
-        states.values.count(where: {
+        let manager = ModelManager.shared
+        let anyModelAvailable = WhisperModelPreset.allCases.contains {
+            manager.isAvailable($0)
+        }
+        if anyModelAvailable { return 0 }
+        return states.values.count(where: {
             if case .awaitingModel = $0 { return true }
             return false
         })
