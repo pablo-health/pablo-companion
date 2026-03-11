@@ -317,7 +317,7 @@ final class RecordingService {
             return
         }
 
-        guard let outputUID = Self.defaultOutputDeviceUID() else {
+        guard let outputUID = defaultOutputDeviceUID() else {
             onBluetoothConflict?(false, nil)
             return
         }
@@ -336,30 +336,31 @@ final class RecordingService {
         }
     }
 
-    private static func defaultOutputDeviceUID() -> String? {
-        var deviceID: AudioDeviceID = 0
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
+}
 
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address, 0, nil, &size, &deviceID
-        )
-        guard status == noErr else { return nil }
+private func defaultOutputDeviceUID() -> String? {
+    var deviceID: AudioDeviceID = 0
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
 
-        address.mSelector = kAudioDevicePropertyDeviceUID
-        var uid: Unmanaged<CFString>?
-        size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        let uidStatus = AudioObjectGetPropertyData(
-            deviceID, &address, 0, nil, &size, &uid
-        )
-        guard uidStatus == noErr, let uid = uid?.takeUnretainedValue() else { return nil }
-        return uid as String
-    }
+    let status = AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject),
+        &address, 0, nil, &size, &deviceID
+    )
+    guard status == noErr else { return nil }
+
+    address.mSelector = kAudioDevicePropertyDeviceUID
+    var uid: Unmanaged<CFString>?
+    size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    let uidStatus = AudioObjectGetPropertyData(
+        deviceID, &address, 0, nil, &size, &uid
+    )
+    guard uidStatus == noErr, let uid = uid?.takeUnretainedValue() else { return nil }
+    return uid as String
 }
 
 /// Bridges the non-isolated AudioCaptureDelegate callbacks to MainActor closures.
