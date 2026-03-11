@@ -74,7 +74,8 @@ final class SessionViewModel {
 
     /// Fetches today's sessions from the backend.
     func loadTodaySessions() async {
-        isLoading = true
+        let isFirstLoad = todaySessions.isEmpty
+        if isFirstLoad { isLoading = true }
         errorMessage = nil
 
         do {
