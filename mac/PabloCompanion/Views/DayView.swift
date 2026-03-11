@@ -13,7 +13,7 @@ struct DayView: View {
     var recordingDuration: TimeInterval = 0
     var pendingUploadCount = 0
     var awaitingModelCount = 0
-    var transcriptForSession: ((String) -> String?)?
+    var transcriptionStateForSession: ((String) -> TranscriptionState?)?
     var hasRecordingForSession: ((String) -> Bool)?
     var playingSessionId: String?
     var onStartSession: ((Session) -> Void)?
@@ -22,6 +22,7 @@ struct DayView: View {
     var onRetryUploads: (() -> Void)?
     var onSwitchToSettings: (() -> Void)?
     var onViewTranscript: ((Session) -> Void)?
+    var onTranscribeSession: ((Session) -> Void)?
     var onPlaySession: ((Session) -> Void)?
     var onStopPlayback: (() -> Void)?
 
@@ -181,18 +182,21 @@ struct DayView: View {
     }
 
     private func sessionRow(_ session: Session) -> some View {
-        let transcript = transcriptForSession?(session.id)
+        let state = transcriptionStateForSession?(session.id)
         let hasRecording = hasRecordingForSession?(session.id) ?? false
         let isPlaying = playingSessionId == session.id
 
         return SessionRowView(
             session: session,
             patientLookup: { id in patients.first { $0.id == id } },
-            transcriptText: transcript,
+            transcriptionState: state,
+            hasRecording: hasRecording,
             isPlaying: isPlaying,
             onStart: { onStartSession?(session) },
-            onViewTranscript: transcript != nil
+            onViewTranscript: state?.transcript != nil
                 ? { onViewTranscript?(session) } : nil,
+            onTranscribe: hasRecording
+                ? { onTranscribeSession?(session) } : nil,
             onPlay: hasRecording
                 ? { onPlaySession?(session) } : nil,
             onStopPlayback: isPlaying

@@ -140,19 +140,27 @@ struct ContentView: View {
 
     // MARK: - Lookups
 
-    private func transcriptForSession(_ sessionId: String) -> String? {
+    private func transcriptionStateForSession(_ sessionId: String) -> TranscriptionState? {
         guard let recordingId = recordingVM.sessionRecordingMap[sessionId] else {
             return nil
         }
-        return transcriptionVM.states[recordingId]?.transcript
+        return transcriptionVM.states[recordingId]
     }
 
     private func hasRecordingForSession(_ sessionId: String) -> Bool {
         recordingVM.recordingForSession(sessionId) != nil
     }
 
+    private func transcribeSession(_ session: Session) {
+        guard let recording = recordingVM.recordingForSession(session.id) else {
+            return
+        }
+        Task { await transcriptionVM.transcribe(recording) }
+    }
+
     private func showTranscript(for session: Session) {
-        guard let text = transcriptForSession(session.id) else { return }
+        guard let text = transcriptionStateForSession(session.id)?.transcript
+        else { return }
         let date = ISO8601DateFormatter().date(from: session.scheduledAt ?? "")
             ?? Date()
         viewingTranscript = TranscriptViewerItem(
@@ -181,7 +189,7 @@ struct ContentView: View {
             recordingDuration: recordingVM.duration,
             pendingUploadCount: transcriptionVM.pendingUploadCount,
             awaitingModelCount: transcriptionVM.awaitingModelCount,
-            transcriptForSession: { transcriptForSession($0) },
+            transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
             onStartSession: { startSession($0) },
@@ -200,6 +208,7 @@ struct ContentView: View {
             onRetryUploads: { Task { await transcriptionVM.forceRetryPendingUploads() } },
             onSwitchToSettings: { selectedTab = 3 },
             onViewTranscript: { showTranscript(for: $0) },
+            onTranscribeSession: { transcribeSession($0) },
             onPlaySession: { playSession($0) },
             onStopPlayback: { recordingVM.stopPlayback() }
         )
@@ -212,11 +221,12 @@ struct ContentView: View {
             viewModel: sessionVM,
             patients: patientVM.patients,
             pendingUploadCount: transcriptionVM.pendingUploadCount,
-            transcriptForSession: { transcriptForSession($0) },
+            transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
             onRetryUploads: { Task { await transcriptionVM.forceRetryPendingUploads() } },
             onViewTranscript: { showTranscript(for: $0) },
+            onTranscribeSession: { transcribeSession($0) },
             onPlaySession: { playSession($0) },
             onStopPlayback: { recordingVM.stopPlayback() }
         )

@@ -5,11 +5,12 @@ struct SessionHistoryView: View {
     @Bindable var viewModel: SessionViewModel
     var patients: [Patient] = []
     var pendingUploadCount = 0
-    var transcriptForSession: ((String) -> String?)?
+    var transcriptionStateForSession: ((String) -> TranscriptionState?)?
     var hasRecordingForSession: ((String) -> Bool)?
     var playingSessionId: String?
     var onRetryUploads: (() -> Void)?
     var onViewTranscript: ((Session) -> Void)?
+    var onTranscribeSession: ((Session) -> Void)?
     var onPlaySession: ((Session) -> Void)?
     var onStopPlayback: (() -> Void)?
 
@@ -186,17 +187,20 @@ struct SessionHistoryView: View {
     }
 
     private func sessionRow(_ session: Session) -> some View {
-        let transcript = transcriptForSession?(session.id)
+        let state = transcriptionStateForSession?(session.id)
         let hasRecording = hasRecordingForSession?(session.id) ?? false
         let isPlaying = playingSessionId == session.id
 
         return SessionRowView(
             session: session,
             patientLookup: { id in patients.first { $0.id == id } },
-            transcriptText: transcript,
+            transcriptionState: state,
+            hasRecording: hasRecording,
             isPlaying: isPlaying,
-            onViewTranscript: transcript != nil
+            onViewTranscript: state?.transcript != nil
                 ? { onViewTranscript?(session) } : nil,
+            onTranscribe: hasRecording
+                ? { onTranscribeSession?(session) } : nil,
             onPlay: hasRecording
                 ? { onPlaySession?(session) } : nil,
             onStopPlayback: isPlaying

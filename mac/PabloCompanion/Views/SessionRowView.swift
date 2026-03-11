@@ -4,10 +4,12 @@ import SwiftUI
 struct SessionRowView: View {
     let session: Session
     var patientLookup: ((String) -> Patient?)?
-    var transcriptText: String?
+    var transcriptionState: TranscriptionState?
+    var hasRecording = false
     var isPlaying = false
     var onStart: (() -> Void)?
     var onViewTranscript: (() -> Void)?
+    var onTranscribe: (() -> Void)?
     var onPlay: (() -> Void)?
     var onStopPlayback: (() -> Void)?
     @State private var isPulsing = false
@@ -124,13 +126,50 @@ struct SessionRowView: View {
                     .buttonStyle(.borderless)
                     .help(isPlaying ? "Stop" : "Play recording")
                 }
-                if transcriptText != nil, let onViewTranscript {
-                    Button("View") { onViewTranscript() }
-                        .font(.pabloBody(11))
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                }
+                transcriptionButton
                 statusBadge
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var transcriptionButton: some View {
+        switch transcriptionState {
+        case nil:
+            if hasRecording, let onTranscribe {
+                Button("Transcribe") { onTranscribe() }
+                    .font(.pabloBody(11))
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+            }
+        case .running:
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text("Transcribing…")
+                    .font(.pabloBody(11))
+                    .foregroundStyle(.secondary)
+            }
+        case .awaitingModel:
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text("Awaiting model…")
+                    .font(.pabloBody(11))
+                    .foregroundStyle(.secondary)
+            }
+        case .done, .pendingUpload:
+            if let onViewTranscript {
+                Button("View") { onViewTranscript() }
+                    .font(.pabloBody(11))
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+            }
+        case .failed:
+            if let onTranscribe {
+                Button("Retry") { onTranscribe() }
+                    .font(.pabloBody(11))
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .tint(Color.pabloError)
             }
         }
     }
