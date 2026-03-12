@@ -19,6 +19,10 @@ struct DayView: View {
     var onStartSession: ((Session) -> Void)?
     var onQuickStart: ((Patient) -> Void)?
     var onStopRecording: (() -> Void)?
+    var recordingStalled = false
+    var recordingError: String?
+    var onRetryCapture: (() -> Void)?
+    var onDismissError: (() -> Void)?
     var onRetryUploads: (() -> Void)?
     var onSwitchToSettings: (() -> Void)?
     var onViewTranscript: ((Session) -> Void)?
@@ -37,6 +41,12 @@ struct DayView: View {
             header
             if recordingState != .idle {
                 recordingBanner
+            }
+            if recordingState != .idle, recordingStalled {
+                stallWarningBanner
+            }
+            if let error = recordingError {
+                persistentErrorBanner(error)
             }
             if pendingUploadCount > 0 {
                 transcriptionPendingBanner
@@ -152,12 +162,6 @@ struct DayView: View {
         .background(Color.pabloSage.opacity(0.1))
     }
 
-    private func formattedDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-
     // MARK: - Content
 
     @ViewBuilder
@@ -266,9 +270,63 @@ struct DayView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Transcription status banners
+}
 
-    private var transcriptionPendingBanner: some View {
+// MARK: - DayView Banners & Helpers
+
+extension DayView {
+    var stallWarningBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.pabloHoney)
+                .accessibilityHidden(true)
+            Text("Audio capture may have stalled — no new data in the last 60 seconds")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownDeep)
+            Spacer()
+            Button("Retry Capture") { onRetryCapture?() }
+                .font(.pabloBody(12))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Retry audio capture")
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(Color.pabloHoney.opacity(0.2))
+    }
+
+    func persistentErrorBanner(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(Color.pabloError)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownDeep)
+                .lineLimit(2)
+            Spacer()
+            Button {
+                onDismissError?()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.pabloBody(12))
+                    .foregroundStyle(Color.pabloBrownSoft)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(Color.pabloError.opacity(0.12))
+    }
+
+    func formattedDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    var transcriptionPendingBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .foregroundStyle(Color.pabloHoney)
@@ -288,7 +346,7 @@ struct DayView: View {
         .background(Color.pabloHoney.opacity(0.12))
     }
 
-    private var awaitingModelBanner: some View {
+    var awaitingModelBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.down.circle")
                 .foregroundStyle(Color.pabloHoney)
@@ -308,9 +366,7 @@ struct DayView: View {
         .background(Color.pabloHoney.opacity(0.12))
     }
 
-    // MARK: - Polling
-
-    private func pollSessions() async {
+    func pollSessions() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(30))
             guard !Task.isCancelled else { break }
@@ -320,15 +376,13 @@ struct DayView: View {
         }
     }
 
-    // MARK: - Helpers
-
-    private var formattedDate: String {
+    var formattedDate: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE, MMMM d"
         return formatter.string(from: Date())
     }
 
-    private var greeting: String {
+    var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
         case 0 ..< 12: return "Good morning"

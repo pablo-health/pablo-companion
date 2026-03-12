@@ -121,6 +121,14 @@ final class TranscriptionViewModel {
             states[recording.id] = .failed(message: "No mic audio file available")
             return
         }
+        let micSize = (try? FileManager.default.attributesOfItem(atPath: micPath)[.size] as? Int) ?? 0
+        if micSize == 0 {
+            states[recording.id] = .failed(
+                message: "Mic audio file is empty (0 bytes) — recording may have stalled"
+            )
+            logger.warning("Skipping transcription for \(recording.id): mic PCM file is 0 bytes")
+            return
+        }
 
         let backendSessionId = sessionId ?? recording.id.uuidString
         states[recording.id] = .running
@@ -280,7 +288,7 @@ final class TranscriptionViewModel {
     private func postTranscript(sessionID: String, text: String) async throws {
         let response = try await apiClient.uploadTranscript(
             sessionId: sessionID,
-            format: "google_meet",
+            format: "txt",
             content: text
         )
         logger.info("Transcript uploaded for session \(sessionID), message: \(response.message)")

@@ -32,6 +32,8 @@ final class RecordingViewModel {
     var sessionRecordingMap: [String: UUID] = [:]
     private let recordingStore = SessionRecordingStore()
     var systemAudioActive = false
+    var recordingStalled = false
+    var persistentError: String?
     var bluetoothRoutingConflict = false
     var bluetoothRecommendation: String?
     var systemAudioPermitted: Bool = CGPreflightScreenCaptureAccess()
@@ -60,6 +62,8 @@ final class RecordingViewModel {
     }
 
     func startRecording() async {
+        persistentError = nil
+        recordingStalled = false
         await service.startRecording(
             encryptionEnabled: encryptionEnabled,
             debugEnableMic: debugEnableMic,
@@ -78,6 +82,13 @@ final class RecordingViewModel {
     func stopRecording() async {
         await service.stopRecording()
         resetLevels()
+        recordingStalled = false
+    }
+
+    func retryCapture() async {
+        recordingStalled = false
+        persistentError = nil
+        await service.retryCapture()
     }
 
     // MARK: - Test Tone
@@ -249,6 +260,16 @@ final class RecordingViewModel {
         }
         service.onError = { [weak self] message in
             self?.showErrorAlert(message)
+            self?.persistentError = message
+        }
+        service.onRecordingStalled = { [weak self] in
+            self?.recordingStalled = true
+        }
+        service.onRecordingResumed = { [weak self] in
+            self?.recordingStalled = false
+        }
+        service.onRecordingRestarted = { [weak self] in
+            self?.recordingStalled = false
         }
         service.onRecordingCompleted = { [weak self] recording in
             self?.recordings.insert(recording, at: 0)

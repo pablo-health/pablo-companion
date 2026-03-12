@@ -250,6 +250,10 @@ struct ContentView: View {
                     await sessionVM.loadTodaySessions()
                 }
             },
+            recordingStalled: recordingVM.recordingStalled,
+            recordingError: recordingVM.persistentError,
+            onRetryCapture: { Task { await recordingVM.retryCapture() } },
+            onDismissError: { recordingVM.persistentError = nil },
             onRetryUploads: { Task { await transcriptionVM.forceRetryPendingUploads() } },
             onSwitchToSettings: { selectedTab = 3 },
             onViewTranscript: { showTranscript(for: $0) },
