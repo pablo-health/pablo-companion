@@ -210,7 +210,14 @@ struct ContentView: View {
             onViewTranscript: { showTranscript(for: $0) },
             onTranscribeSession: { transcribeSession($0) },
             onPlaySession: { playSession($0) },
-            onStopPlayback: { recordingVM.stopPlayback() }
+            onStopPlayback: { recordingVM.stopPlayback() },
+            onEndSession: { session in
+                Task {
+                    _ = await sessionVM.endSession(session.id)
+                    await sessionVM.loadTodaySessions()
+                }
+            },
+            activeSessionId: activeSessionId
         )
         .tabItem { Label("Today", systemImage: "calendar") }
         .tag(0)

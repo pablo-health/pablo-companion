@@ -25,6 +25,8 @@ struct DayView: View {
     var onTranscribeSession: ((Session) -> Void)?
     var onPlaySession: ((Session) -> Void)?
     var onStopPlayback: (() -> Void)?
+    var onEndSession: ((Session) -> Void)?
+    var activeSessionId: String?
 
     @State private var lastRefreshDate = Date()
     @State private var showingQuickStart = false
@@ -185,6 +187,7 @@ struct DayView: View {
         let state = transcriptionStateForSession?(session.id)
         let hasRecording = hasRecordingForSession?(session.id) ?? false
         let isPlaying = playingSessionId == session.id
+        let isStaleInProgress = session.status == .inProgress && session.id != activeSessionId
 
         return SessionRowView(
             session: session,
@@ -200,7 +203,9 @@ struct DayView: View {
             onPlay: hasRecording
                 ? { onPlaySession?(session) } : nil,
             onStopPlayback: isPlaying
-                ? { onStopPlayback?() } : nil
+                ? { onStopPlayback?() } : nil,
+            onEndSession: isStaleInProgress
+                ? { onEndSession?(session) } : nil
         )
     }
 

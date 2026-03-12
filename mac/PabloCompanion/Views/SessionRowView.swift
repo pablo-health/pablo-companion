@@ -12,6 +12,7 @@ struct SessionRowView: View {
     var onTranscribe: (() -> Void)?
     var onPlay: (() -> Void)?
     var onStopPlayback: (() -> Void)?
+    var onEndSession: (() -> Void)?
     @State private var isPulsing = false
 
     var body: some View {
@@ -115,6 +116,8 @@ struct SessionRowView: View {
     private var trailingContent: some View {
         if session.status == .scheduled, let onStart {
             startButton(onStart)
+        } else if session.status == .inProgress, let onEndSession {
+            endSessionButton(onEndSession)
         } else {
             HStack(spacing: 8) {
                 if let action = isPlaying ? onStopPlayback : onPlay {
@@ -172,6 +175,20 @@ struct SessionRowView: View {
                     .tint(Color.pabloError)
             }
         }
+    }
+
+    private func endSessionButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text("End Session")
+                .font(.pabloBody(13))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.pabloError)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .help("End this stale in-progress session")
     }
 
     private func startButton(_ action: @escaping () -> Void) -> some View {
@@ -346,6 +363,7 @@ enum PreviewData {
     VStack(spacing: 8) {
         SessionRowView(session: PreviewData.scheduled, onStart: {})
         SessionRowView(session: PreviewData.inProgress)
+        SessionRowView(session: PreviewData.inProgress, onEndSession: {})
     }
     .padding()
     .background(Color.pabloCream)
