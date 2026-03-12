@@ -49,6 +49,7 @@ struct TranscriptViewerView: View {
                     .font(.title2)
             }
             .buttonStyle(.borderless)
+            .accessibilityLabel("Close transcript viewer")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
@@ -86,6 +87,7 @@ struct TranscriptViewerView: View {
             .buttonStyle(.borderedProminent)
             .tint(copied ? Color.pabloSage : Color.pabloHoney)
             .controlSize(.regular)
+            .accessibilityLabel(copied ? "Transcript copied to clipboard" : "Copy entire transcript to clipboard")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

@@ -105,6 +105,7 @@ struct DayView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Quick start new session")
     }
 
     // MARK: - Recording Banner
@@ -143,6 +144,7 @@ struct DayView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Stop recording session")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
@@ -229,6 +231,7 @@ struct DayView: View {
                 Image(systemName: "calendar")
                     .font(.system(size: 32, weight: .light))
                     .foregroundStyle(Color.pabloHoney)
+                    .accessibilityHidden(true)
             }
             Text("No sessions today")
                 .font(.pabloDisplay(20))
@@ -266,6 +269,7 @@ struct DayView: View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .foregroundStyle(Color.pabloHoney)
+                .accessibilityHidden(true)
             Text("\(pendingUploadCount) transcript\(pendingUploadCount == 1 ? "" : "s") pending upload")
                 .font(.pabloBody(13))
                 .foregroundStyle(Color.pabloBrownDeep)
@@ -274,6 +278,7 @@ struct DayView: View {
                 .font(.pabloBody(12))
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityLabel("Retry uploading pending transcripts")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
@@ -284,6 +289,7 @@ struct DayView: View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.down.circle")
                 .foregroundStyle(Color.pabloHoney)
+                .accessibilityHidden(true)
             Text("\(awaitingModelCount) session\(awaitingModelCount == 1 ? "" : "s") awaiting model download")
                 .font(.pabloBody(13))
                 .foregroundStyle(Color.pabloBrownDeep)
@@ -292,6 +298,7 @@ struct DayView: View {
                 .font(.pabloBody(12))
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityLabel("Go to Settings to download transcription model")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)

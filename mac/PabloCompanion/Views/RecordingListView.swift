@@ -29,6 +29,7 @@ struct RecordingListView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 80, height: 80)
+                .accessibilityHidden(true)
             Text("No recordings yet")
                 .font(.pabloDisplay(17))
                 .foregroundStyle(Color.pabloBrownDeep)
@@ -80,6 +81,7 @@ struct RecordingRow: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.borderless)
+            .accessibilityLabel(isPlaying ? "Stop playback" : "Play recording")
             .help(isPlaying ? "Stop" : "Play")
 
             VStack(alignment: .leading, spacing: 4) {
@@ -117,6 +119,7 @@ struct RecordingRow: View {
                     .font(.pabloBody(11))
                     .buttonStyle(.borderless)
                     .foregroundStyle(Color.pabloHoney)
+                    .accessibilityLabel("Transcribe this recording")
             }
         case .running:
             HStack(spacing: 4) {
@@ -145,6 +148,7 @@ struct RecordingRow: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.pabloHoney)
+            .accessibilityLabel("View transcript for this recording")
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.pabloBody(11))
@@ -171,6 +175,7 @@ struct RecordingRow: View {
             Button("Upload", action: onUpload)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityLabel("Upload this recording")
         }
     }
 }

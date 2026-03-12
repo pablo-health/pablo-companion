@@ -17,6 +17,7 @@ struct StatusIndicator: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -34,6 +34,7 @@ struct PatientListView: View {
         HStack {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField("Search patients...", text: $viewModel.searchText)
                 .textFieldStyle(.plain)
             if !viewModel.searchText.isEmpty {
@@ -44,6 +45,7 @@ struct PatientListView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(8)

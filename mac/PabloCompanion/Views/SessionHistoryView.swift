@@ -105,6 +105,7 @@ struct SessionHistoryView: View {
                 )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(label) filter\(isSelected ? ", selected" : "")")
     }
 
     // MARK: - Content
@@ -138,6 +139,7 @@ struct SessionHistoryView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 36))
                 .foregroundStyle(Color.pabloError)
+                .accessibilityHidden(true)
             Text("Failed to Load Sessions")
                 .font(.pabloDisplay(18))
                 .foregroundStyle(Color.pabloBrownDeep)
@@ -152,6 +154,7 @@ struct SessionHistoryView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.pabloHoney)
+            .accessibilityLabel("Retry loading sessions")
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -230,6 +233,7 @@ struct SessionHistoryView: View {
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(viewModel.isLoadingSessions ? "Loading more sessions" : "Load more sessions")
     }
 
     // MARK: - Transcription status banner
@@ -238,6 +242,7 @@ struct SessionHistoryView: View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .foregroundStyle(Color.pabloHoney)
+                .accessibilityHidden(true)
             Text("\(pendingUploadCount) transcript\(pendingUploadCount == 1 ? "" : "s") pending upload")
                 .font(.pabloBody(13))
                 .foregroundStyle(Color.pabloBrownDeep)
@@ -246,6 +251,7 @@ struct SessionHistoryView: View {
                 .font(.pabloBody(12))
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityLabel("Retry uploading pending transcripts")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)

@@ -14,6 +14,7 @@ struct SessionRowView: View {
     var onStopPlayback: (() -> Void)?
     var onEndSession: (() -> Void)?
     @State private var isPulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 12) {
@@ -74,7 +75,7 @@ struct SessionRowView: View {
     }
 
     private var pulseAnimation: Animation? {
-        session.status == .inProgress
+        session.status == .inProgress && !reduceMotion
             ? .easeInOut(duration: 1.5).repeatForever(autoreverses: true)
             : nil
     }
@@ -127,6 +128,7 @@ struct SessionRowView: View {
                             .foregroundStyle(Color.pabloHoney)
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel(isPlaying ? "Stop playback" : "Play recording")
                     .help(isPlaying ? "Stop" : "Play recording")
                 }
                 transcriptionButton
@@ -144,6 +146,7 @@ struct SessionRowView: View {
                     .font(.pabloBody(11))
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
+                    .accessibilityLabel("Transcribe session for \(patientName)")
             }
         case .running:
             HStack(spacing: 4) {
@@ -165,6 +168,7 @@ struct SessionRowView: View {
                     .font(.pabloBody(11))
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
+                    .accessibilityLabel("View transcript")
             }
         case .failed:
             if let onTranscribe {
@@ -173,6 +177,7 @@ struct SessionRowView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .tint(Color.pabloError)
+                    .accessibilityLabel("Retry transcription")
             }
         }
     }
@@ -188,6 +193,7 @@ struct SessionRowView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("End session with \(patientName)")
         .help("End this stale in-progress session")
     }
 
@@ -202,6 +208,7 @@ struct SessionRowView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Start session with \(patientName)")
     }
 
     // MARK: - Status badge
@@ -223,6 +230,7 @@ struct SessionRowView: View {
         .padding(.vertical, 3)
         .background(statusBackground)
         .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
     }
 
     private var statusLabel: String {
@@ -269,12 +277,15 @@ struct SessionRowView: View {
             case .zoom:
                 Image(systemName: "video.fill")
                     .foregroundStyle(Color.pabloSky)
+                    .accessibilityLabel("Zoom call")
             case .teams:
                 Image(systemName: "person.2.fill")
                     .foregroundStyle(Color.pabloSky)
+                    .accessibilityLabel("Teams call")
             case .meet:
                 Image(systemName: "globe")
                     .foregroundStyle(Color.pabloSky)
+                    .accessibilityLabel("Google Meet call")
             case .none:
                 EmptyView()
             }

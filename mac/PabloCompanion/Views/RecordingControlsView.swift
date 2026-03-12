@@ -70,6 +70,7 @@ struct RecordingControlsView: View {
         .buttonStyle(.borderedProminent)
         .tint(.pabloHoney)
         .controlSize(.large)
+        .accessibilityLabel("Start recording")
     }
 
     private var recordingButtons: some View {
@@ -80,6 +81,7 @@ struct RecordingControlsView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
+            .accessibilityLabel("Pause recording")
 
             stopButton
         }
@@ -93,6 +95,7 @@ struct RecordingControlsView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
+            .accessibilityLabel("Resume recording")
 
             stopButton
         }
@@ -106,6 +109,7 @@ struct RecordingControlsView: View {
         .buttonStyle(.borderedProminent)
         .tint(.pabloBrownDeep)
         .controlSize(.large)
+        .accessibilityLabel("Stop recording")
     }
 
     private var formattedDuration: String {
@@ -151,6 +155,9 @@ struct LevelMeter: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label) audio level")
+        .accessibilityValue(String(format: "%.0f percent", clampedLevel * 100))
     }
 
     private var clampedLevel: Float {
