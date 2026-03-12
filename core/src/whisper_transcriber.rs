@@ -28,6 +28,11 @@ const VAD_WINDOW_SAMPLES: usize = (WHISPER_SAMPLE_RATE * 20) / 1000;
 /// are treated as part of the same utterance (natural pauses within a sentence).
 const MIN_SILENCE_GAP_MS: usize = 500;
 
+/// Minimum speech region duration in samples. Whisper requires at least 100ms
+/// of audio; regions shorter than this are discarded to avoid the
+/// "input is too short" warning.
+const MIN_REGION_SAMPLES: usize = WHISPER_SAMPLE_RATE / 10; // 1600 samples = 100ms
+
 // ── Public types ──────────────────────────────────────────────────────────────
 
 /// A single raw ASR segment as returned by Whisper.
@@ -207,6 +212,9 @@ fn detect_speech_regions(audio: &[f32]) -> Vec<SpeechRegion> {
             end_sample: audio.len(),
         });
     }
+
+    // Drop regions shorter than Whisper's minimum input (100ms)
+    regions.retain(|r| r.end_sample - r.start_sample >= MIN_REGION_SAMPLES);
 
     regions
 }
