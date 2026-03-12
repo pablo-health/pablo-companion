@@ -45,7 +45,8 @@ final class TranscriptionViewModel {
     var pendingUploadCount = 0
 
     /// Recordings waiting for a Whisper model download before transcription.
-    var awaitingModelRecordings: [LocalRecording] = []
+    /// Each entry pairs the recording with the backend session ID (if known).
+    var awaitingModelRecordings: [(recording: LocalRecording, sessionId: String?)] = []
 
     /// Count derived from actual states. Returns 0 if any model is available
     /// (stale `.awaitingModel` entries from before a download completed).
@@ -99,40 +100,46 @@ final class TranscriptionViewModel {
     // MARK: - Public API
 
     /// Triggers transcription for a recording if auto-transcribe is enabled.
-    func transcribeIfNeeded(_ recording: LocalRecording) {
+    func transcribeIfNeeded(_ recording: LocalRecording, sessionId: String? = nil) {
         guard autoTranscribe else { return }
         guard recording.micPCMFileURL != nil else {
             logger.info("Skipping transcription: no PCM sidecar for \(recording.id)")
             return
         }
-        Task { await transcribe(recording) }
+        Task { await transcribe(recording, sessionId: sessionId) }
     }
 
     /// Unconditionally runs the full transcription pipeline for a recording.
+    /// - Parameter sessionId: The backend session UUID. Falls back to recording UUID if nil.
     /// - Parameter presetOverride: If provided, uses this model preset instead of the user's configured quality preset.
-    func transcribe(_ recording: LocalRecording, using presetOverride: WhisperModelPreset? = nil) async {
+    func transcribe(
+        _ recording: LocalRecording,
+        sessionId: String? = nil,
+        using presetOverride: WhisperModelPreset? = nil
+    ) async {
         guard let micPath = recording.micPCMFileURL?.path else {
             states[recording.id] = .failed(message: "No mic audio file available")
             return
         }
 
+        let backendSessionId = sessionId ?? recording.id.uuidString
         states[recording.id] = .running
-        logger.info("Starting transcription for \(recording.id)")
+        logger.info("Starting transcription for \(recording.id) (session: \(backendSessionId))")
 
         do {
             let config = try buildTranscriptionConfig(using: presetOverride)
             let result = try await transcribeSession1on1(
-                sessionId: recording.id.uuidString,
+                sessionId: backendSessionId,
                 micPath: micPath,
                 systemPath: recording.systemPCMFileURL?.path,
                 config: config
             )
             let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: recording))
             logger.info("Transcription complete for \(recording.id), \(result.segments.count) segments")
-            await uploadOrQueue(recording: recording, text: text)
+            await uploadOrQueue(recording: recording, sessionId: backendSessionId, text: text)
         } catch is ModelError {
             states[recording.id] = .awaitingModel
-            awaitingModelRecordings.append(recording)
+            awaitingModelRecordings.append((recording: recording, sessionId: sessionId))
             logger.info("Transcription deferred for \(recording.id): model not downloaded")
         } catch {
             let message = error.localizedDescription
@@ -205,8 +212,8 @@ final class TranscriptionViewModel {
     func processAwaitingModelRecordings(downloadedPreset: WhisperModelPreset) async {
         let pending = awaitingModelRecordings
         awaitingModelRecordings.removeAll()
-        for recording in pending {
-            await transcribe(recording, using: downloadedPreset)
+        for entry in pending {
+            await transcribe(entry.recording, sessionId: entry.sessionId, using: downloadedPreset)
         }
     }
 
@@ -250,16 +257,16 @@ final class TranscriptionViewModel {
         )
     }
 
-    private func uploadOrQueue(recording: LocalRecording, text: String) async {
+    private func uploadOrQueue(recording: LocalRecording, sessionId: String, text: String) async {
         do {
-            try await postTranscript(sessionID: recording.id.uuidString, text: text)
+            try await postTranscript(sessionID: sessionId, text: text)
             states[recording.id] = .done(transcript: text)
-            logger.info("Transcript uploaded for \(recording.id)")
+            logger.info("Transcript uploaded for \(recording.id) (session: \(sessionId))")
         } catch {
             logger.warning("Upload failed, queuing for retry: \(error.localizedDescription)")
             let pending = PendingTranscriptStore.PendingTranscript(
                 recordingID: recording.id,
-                sessionID: recording.id.uuidString,
+                sessionID: sessionId,
                 text: text,
                 createdAt: Date(),
                 retryCount: 0

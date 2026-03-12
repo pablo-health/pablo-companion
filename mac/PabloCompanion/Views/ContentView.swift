@@ -112,8 +112,8 @@ struct ContentView: View {
         transcriptionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
         await transcriptionVM.retryPendingUploads()
 
-        recordingVM.onRecordingCompleted = { [transcriptionVM] recording in
-            transcriptionVM.transcribeIfNeeded(recording)
+        recordingVM.onRecordingCompleted = { [recordingVM, transcriptionVM] recording in
+            transcriptionVM.transcribeIfNeeded(recording, sessionId: recordingVM.activeSessionId)
         }
 
         ModelManager.shared.onModelDownloaded = { [transcriptionVM] preset in
@@ -160,7 +160,7 @@ struct ContentView: View {
         guard let recording = recordingVM.recordingForSession(session.id) else {
             return
         }
-        Task { await transcriptionVM.transcribe(recording) }
+        Task { await transcriptionVM.transcribe(recording, sessionId: session.id) }
     }
 
     private func showTranscript(for session: Session) {
