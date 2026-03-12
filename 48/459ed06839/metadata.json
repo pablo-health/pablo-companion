@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.4.7",
+  "checkpoint_id": "48459ed06839",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".claude/skills/a11y.md",
+    "CLAUDE.md",
+    "docs/accessibility.md",
+    "docs/branding.md",
+    "mac/PabloCompanion/Extensions/Color+Pablo.swift",
+    "mac/PabloCompanion/Views/DayView.swift",
+    "mac/PabloCompanion/Views/DebugRecordingView.swift",
+    "mac/PabloCompanion/Views/PatientListView.swift",
+    "mac/PabloCompanion/Views/QuickStartSheet.swift",
+    "mac/PabloCompanion/Views/RecordingControlsView.swift",
+    "mac/PabloCompanion/Views/RecordingListView.swift",
+    "mac/PabloCompanion/Views/SessionHistoryView.swift",
+    "mac/PabloCompanion/Views/SessionRowView.swift",
+    "mac/PabloCompanion/Views/SettingsView.swift",
+    "mac/PabloCompanion/Views/StatusIndicator.swift",
+    "mac/PabloCompanion/Views/TranscriptViewerView.swift"
+  ],
+  "sessions": [
+    {
+      "metadata": "/48/459ed06839/0/metadata.json",
+      "transcript": "/48/459ed06839/0/full.jsonl",
+      "context": "/48/459ed06839/0/context.md",
+      "content_hash": "/48/459ed06839/0/content_hash.txt",
+      "prompt": "/48/459ed06839/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1562,
+    "cache_creation_tokens": 340250,
+    "cache_read_tokens": 5946356,
+    "output_tokens": 36129,
+    "api_call_count": 75
+  }
+}
