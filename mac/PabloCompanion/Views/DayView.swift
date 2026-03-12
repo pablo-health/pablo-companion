@@ -27,6 +27,7 @@ struct DayView: View {
     var onStopPlayback: (() -> Void)?
     var onEndSession: ((Session) -> Void)?
     var activeSessionId: String?
+    var onSessionTapped: ((Session) -> Void)?
 
     @State private var lastRefreshDate = Date()
     @State private var showingQuickStart = false
@@ -209,6 +210,8 @@ struct DayView: View {
             onEndSession: isStaleInProgress
                 ? { onEndSession?(session) } : nil
         )
+        .contentShape(Rectangle())
+        .onTapGesture { onSessionTapped?(session) }
     }
 
     private var lastUpdatedLabel: some View {

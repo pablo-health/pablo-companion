@@ -13,6 +13,7 @@ struct SessionHistoryView: View {
     var onTranscribeSession: ((Session) -> Void)?
     var onPlaySession: ((Session) -> Void)?
     var onStopPlayback: (() -> Void)?
+    var onSessionTapped: ((Session) -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -209,6 +210,8 @@ struct SessionHistoryView: View {
             onStopPlayback: isPlaying
                 ? { onStopPlayback?() } : nil
         )
+        .contentShape(Rectangle())
+        .onTapGesture { onSessionTapped?(session) }
     }
 
     private var loadMoreButton: some View {

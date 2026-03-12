@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var patientVM = PatientViewModel()
     @State private var transcriptionVM = TranscriptionViewModel()
     @State private var viewingTranscript: TranscriptViewerItem?
+    @State private var detailSession: Session?
     @State private var activeSessionId: String?
     @State private var selectedTab = 0
 
@@ -66,6 +67,9 @@ struct ContentView: View {
         .sheet(item: $viewingTranscript) { item in
             TranscriptViewerView(transcript: item.text, recordingDate: item.recordingDate)
         }
+        .sheet(item: $detailSession) { session in
+            sessionDetailSheet(session)
+        }
         .onChange(of: uploadVM.backendURL) { _, newURL in
             patientVM.backendURL = newURL
             sessionVM.backendURL = newURL
@@ -98,6 +102,7 @@ struct ContentView: View {
             authVM.signOut()
         }
 
+        recordingVM.restorePersistedRecordings()
         await sessionVM.loadTodaySessions()
         await patientVM.loadPatients()
         await recordingVM.loadAudioSources()
@@ -177,6 +182,46 @@ struct ContentView: View {
         recordingVM.playRecording(recording)
     }
 
+    private func sessionDetailSheet(_ session: Session) -> some View {
+        let recording = recordingVM.recordingForSession(session.id)
+        let state = transcriptionStateForSession(session.id)
+        let isPlaying = recordingVM.playingSessionId == session.id
+        let patient = session.patientId.flatMap { id in patientVM.patients.first { $0.id == id } }
+        let isStaleInProgress = session.status == .inProgress && session.id != activeSessionId
+        let orphans = recording == nil ? recordingVM.orphanedRecordings() : []
+
+        return SessionDetailView(
+            session: session,
+            patient: patient,
+            recording: recording,
+            transcriptionState: state,
+            isPlaying: isPlaying,
+            onTranscribe: recording != nil
+                ? { transcribeSession(session) } : nil,
+            onPlay: recording != nil
+                ? { playSession(session) } : nil,
+            onStopPlayback: isPlaying
+                ? { recordingVM.stopPlayback() } : nil,
+            onEndSession: isStaleInProgress ? {
+                Task {
+                    _ = await sessionVM.endSession(session.id)
+                    await sessionVM.loadTodaySessions()
+                    detailSession = nil
+                }
+            } : nil,
+            orphanedRecordings: orphans,
+            onLinkRecording: { linked in
+                recordingVM.linkRecording(linked, toSession: session.id)
+                // Re-open the detail to show the now-linked recording
+                detailSession = nil
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(100))
+                    detailSession = session
+                }
+            }
+        )
+    }
+
     // MARK: - Tabs
 
     private var todayTab: some View {
@@ -217,7 +262,8 @@ struct ContentView: View {
                     await sessionVM.loadTodaySessions()
                 }
             },
-            activeSessionId: activeSessionId
+            activeSessionId: activeSessionId,
+            onSessionTapped: { detailSession = $0 }
         )
         .tabItem { Label("Today", systemImage: "calendar") }
         .tag(0)
@@ -235,7 +281,8 @@ struct ContentView: View {
             onViewTranscript: { showTranscript(for: $0) },
             onTranscribeSession: { transcribeSession($0) },
             onPlaySession: { playSession($0) },
-            onStopPlayback: { recordingVM.stopPlayback() }
+            onStopPlayback: { recordingVM.stopPlayback() },
+            onSessionTapped: { detailSession = $0 }
         )
         .tabItem { Label("Sessions", systemImage: "list.clipboard") }
         .tag(1)

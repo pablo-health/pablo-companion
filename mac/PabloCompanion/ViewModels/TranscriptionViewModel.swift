@@ -215,8 +215,7 @@ final class TranscriptionViewModel {
     private func buildTranscriptionConfig(
         using presetOverride: WhisperModelPreset? = nil
     ) throws -> TranscriptionConfig {
-        let preset = presetOverride ?? qualityPreset
-        let modelURL = try ModelManager.shared.modelURL(for: preset)
+        let modelURL = try resolveModelURL(preferred: presetOverride ?? qualityPreset)
         return TranscriptionConfig(
             modelPath: modelURL.path,
             micChannels: 1,
@@ -225,6 +224,20 @@ final class TranscriptionViewModel {
             systemSampleRate: 48000,
             swapSpeakers: UserDefaults.standard.bool(forKey: "swapSpeakers")
         )
+    }
+
+    /// Resolves a model URL, falling back to any available model if the preferred one isn't found.
+    private func resolveModelURL(preferred: WhisperModelPreset) throws -> URL {
+        let manager = ModelManager.shared
+        if let url = try? manager.modelURL(for: preferred) { return url }
+        logger.info("Preferred model \(preferred.modelFileName) not found, checking alternatives")
+        for preset in WhisperModelPreset.allCases where preset != preferred {
+            if let url = try? manager.modelURL(for: preset) {
+                logger.info("Falling back to \(preset.modelFileName)")
+                return url
+            }
+        }
+        throw ModelError.notFound(preferred)
     }
 
     private func renderOptions(for recording: LocalRecording) -> GoogleMeetOptions {
