@@ -141,7 +141,9 @@ struct SessionRowView: View {
     private var transcriptionButton: some View {
         switch transcriptionState {
         case nil:
-            if hasRecording, let onTranscribe {
+            if [.processing, .pendingReview, .finalized].contains(session.status) {
+                EmptyView()
+            } else if hasRecording, let onTranscribe {
                 Button("Transcribe") { onTranscribe() }
                     .font(.pabloBody(11))
                     .buttonStyle(.bordered)

@@ -131,6 +131,7 @@ struct SessionDetailView: View {
                 RecordingInfoContent(
                     recording: recording,
                     isPlaying: isPlaying,
+                    sessionStatus: session.status,
                     transcriptionState: transcriptionState,
                     onTranscribe: onTranscribe,
                     onPlay: onPlay,
@@ -238,6 +239,7 @@ struct SessionStatusBadge: View {
 private struct RecordingInfoContent: View {
     let recording: LocalRecording
     var isPlaying = false
+    var sessionStatus: SessionStatus = .scheduled
     var transcriptionState: TranscriptionState?
     var onTranscribe: (() -> Void)?
     var onPlay: (() -> Void)?
@@ -293,9 +295,15 @@ private struct RecordingInfoContent: View {
         }
     }
 
+    private var backendHasTranscript: Bool {
+        [.processing, .pendingReview, .finalized].contains(sessionStatus)
+    }
+
     @ViewBuilder
     private var transcribeButton: some View {
-        if transcriptionState == nil, recording.micPCMFileURL != nil, let onTranscribe {
+        let canTranscribe = transcriptionState == nil && !backendHasTranscript
+            && recording.micPCMFileURL != nil
+        if canTranscribe, let onTranscribe {
             Button(action: onTranscribe) {
                 Label("Transcribe", systemImage: "text.bubble").font(.pabloBody(13))
             }
@@ -322,6 +330,10 @@ private struct TranscriptionSectionContent: View {
     var onTranscribe: (() -> Void)?
     var onReupload: (() -> Void)?
 
+    private var backendHasTranscript: Bool {
+        [.processing, .pendingReview, .finalized].contains(sessionStatus)
+    }
+
     var body: some View {
         switch state {
         case let .done(transcript), let .pendingUpload(transcript):
@@ -333,8 +345,28 @@ private struct TranscriptionSectionContent: View {
         case let .failed(message):
             failedCard(message)
         case nil:
-            EmptyView()
+            if backendHasTranscript {
+                backendTranscriptCard
+            } else {
+                EmptyView()
+            }
         }
+    }
+
+    private var backendTranscriptCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            DetailSectionHeader("Transcript")
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Color.pabloSage)
+                    .accessibilityHidden(true)
+                Text("Transcript available on Pablo")
+                    .font(.pabloBody(13))
+                    .foregroundStyle(Color.pabloBrownSoft)
+            }
+        }
+        .cardBackground()
+        .padding(.horizontal, -4)
     }
 
     private func transcriptCard(_ transcript: String, isPending: Bool) -> some View {
