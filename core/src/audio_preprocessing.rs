@@ -5,7 +5,8 @@
 use crate::PabloError;
 use byteorder::{LittleEndian, ReadBytesExt};
 use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use std::io::Cursor;
 
@@ -93,7 +94,7 @@ pub async fn preprocess_pcm(
     resample_to_16k(mono_f32, sample_rate)
 }
 
-/// Resample mono f32 audio from `input_rate` Hz to 16 kHz using rubato's SincFixedIn.
+/// Resample mono f32 audio from `input_rate` Hz to 16 kHz using rubato's async sinc resampler.
 fn resample_to_16k(input: Vec<f32>, input_rate: u32) -> Result<Vec<f32>, PabloError> {
     let ratio = TARGET_SAMPLE_RATE as f64 / input_rate as f64;
 
@@ -106,46 +107,30 @@ fn resample_to_16k(input: Vec<f32>, input_rate: u32) -> Result<Vec<f32>, PabloEr
     };
 
     let chunk_size = 1024;
-    let mut resampler = SincFixedIn::<f32>::new(
-        ratio, 2.0, params, chunk_size, 1, // mono
+    let mut resampler = Async::<f32>::new_sinc(
+        ratio, 2.0, &params, chunk_size, 1, // mono
+        FixedAsync::Input,
     )
     .map_err(|e| audio_err(format!("resampler init failed: {e}")))?;
 
-    let estimated_output = (input.len() as f64 * ratio).ceil() as usize + 1024;
-    let mut output = Vec::with_capacity(estimated_output);
+    use audioadapter_buffers::direct::SequentialSliceOfVecs;
 
-    // Process full chunks
-    let mut pos = 0;
-    while pos + chunk_size <= input.len() {
-        let chunk = vec![input[pos..pos + chunk_size].to_vec()];
-        let resampled = resampler
-            .process(&chunk, None)
-            .map_err(|e| audio_err(format!("resample failed: {e}")))?;
-        if !resampled.is_empty() {
-            output.extend_from_slice(&resampled[0]);
-        }
-        pos += chunk_size;
-    }
+    let input_len = input.len();
+    let input_data = vec![input]; // 1 channel
+    let input_buf = SequentialSliceOfVecs::new(&input_data, 1, input_len)
+        .map_err(|e| audio_err(format!("input buffer setup failed: {e}")))?;
 
-    // Process remaining samples (pad with zeros to fill the last chunk)
-    if pos < input.len() {
-        let remaining = &input[pos..];
-        let mut padded = remaining.to_vec();
-        padded.resize(chunk_size, 0.0);
-        let chunk = vec![padded];
-        let resampled = resampler
-            .process(&chunk, None)
-            .map_err(|e| audio_err(format!("resample tail failed: {e}")))?;
-        if !resampled.is_empty() {
-            // Only keep the proportional number of output samples for the real data
-            let expected_out = (remaining.len() as f64 * ratio).ceil() as usize;
-            let out_samples = &resampled[0];
-            let take = expected_out.min(out_samples.len());
-            output.extend_from_slice(&out_samples[..take]);
-        }
-    }
+    let output_len = resampler.process_all_needed_output_len(input_len);
+    let mut output_data = vec![vec![0.0f32; output_len]]; // 1 channel
+    let mut output_buf = SequentialSliceOfVecs::new_mut(&mut output_data, 1, output_len)
+        .map_err(|e| audio_err(format!("output buffer setup failed: {e}")))?;
 
-    Ok(output)
+    let (_nbr_in, nbr_out) = resampler
+        .process_all_into_buffer(&input_buf, &mut output_buf, input_len, None)
+        .map_err(|e| audio_err(format!("resample failed: {e}")))?;
+
+    output_data[0].truncate(nbr_out);
+    Ok(output_data.into_iter().next().unwrap())
 }
 
 #[cfg(test)]

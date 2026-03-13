@@ -20,10 +20,11 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread", "fs", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rubato = "1.0"
+audioadapter-buffers = "2.0"
 byteorder = "1"
 thiserror = "2"
 whisper-rs = "0.15"
-reqwest = { version = "0.13", features = ["json", "multipart"] }
+reqwest = { version = "0.13", features = ["json", "multipart", "query"] }
 secrecy = { version = "0.10", features = ["serde"] }
 async-compat = "0.2"
 
