@@ -126,9 +126,7 @@ fn format_json_error(err: &serde_json::Error, body: &str) -> String {
         // Show hex bytes around the error position for debugging
         let error_byte = body.as_bytes().get(col.saturating_sub(1));
         let hex = error_byte.map_or("N/A".to_string(), |b| format!("0x{b:02X}"));
-        format!(
-            "{err}\nByte at column {col}: {hex}\nContext: ...{snippet}..."
-        )
+        format!("{err}\nByte at column {col}: {hex}\nContext: ...{snippet}...")
     } else {
         format!("{err}\nBody length: {}", body.len())
     }
