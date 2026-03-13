@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "xcodebuildmcp": {
+      "command": "xcodebuildmcp",
+      "args": ["mcp"]
+    },
+    "macos-ui-automation": {
+      "command": "uvx",
+      "args": ["macos-ui-automation-mcp"]
+    }
+  }
+}

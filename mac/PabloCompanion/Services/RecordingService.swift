@@ -25,6 +25,9 @@ final class RecordingService {
     var onSystemAudioPermittedChange: ((Bool) -> Void)?
     var onMicDisconnectedDuringRecording: (() -> Void)?
     var onDeviceChanged: (() -> Void)?
+    var onRecordingStalled: (() -> Void)?
+    var onRecordingResumed: (() -> Void)?
+    var onRecordingRestarted: (() -> Void)?
 
     // MARK: - Internal
 
@@ -45,6 +48,15 @@ final class RecordingService {
     private var selectedMicID: String?
     private var availableMics: [AudioSource] = []
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "RecordingService")
+    private var lastOutputDeviceUID: String?
+    private var lastRecordingConfig: RecordingConfig?
+    private var isHandlingDeviceChange = false
+    private lazy var watchdog: RecordingWatchdog = {
+        let wd = RecordingWatchdog(recordingsDirectory: recordingsDirectory)
+        wd.onStalled = { [weak self] in self?.onRecordingStalled?() }
+        wd.onResumed = { [weak self] in self?.onRecordingResumed?() }
+        return wd
+    }()
 
     // MARK: - Audio Sources
 
@@ -71,6 +83,12 @@ final class RecordingService {
     // MARK: - Recording Controls
 
     func startRecording(encryptionEnabled: Bool, debugEnableMic: Bool, debugEnableSystem: Bool) async {
+        lastRecordingConfig = RecordingConfig(
+            encryptionEnabled: encryptionEnabled,
+            debugEnableMic: debugEnableMic,
+            debugEnableSystem: debugEnableSystem
+        )
+        lastOutputDeviceUID = defaultOutputDeviceUID()
         logger.info("Starting recording – system audio: \(self.systemAudioAvailableAtStart)")
 
         let encryptor: RecordingEncryptor? = encryptionEnabled ? RecordingEncryptor() : nil
@@ -99,6 +117,7 @@ final class RecordingService {
             currentRecordingState = .recording
             onCaptureStateUpdate?(.recording, nil)
             onSystemAudioActiveChange?(systemAudioAvailableAtStart)
+            watchdog.start()
             logger.info("Recording started – systemAudioActive: \(self.systemAudioAvailableAtStart)")
         } catch {
             logger.error("Failed to start recording: \(error.localizedDescription)")
@@ -111,6 +130,7 @@ final class RecordingService {
 
     func pauseRecording() {
         guard let session else { return }
+        watchdog.stop()
         do {
             try session.pauseCapture()
             currentRecordingState = .paused
@@ -128,6 +148,7 @@ final class RecordingService {
             try session.resumeCapture()
             currentRecordingState = .recording
             onCaptureStateUpdate?(.recording, nil)
+            watchdog.start()
             logger.info("Recording resumed")
         } catch {
             logger.error("Failed to resume: \(error.localizedDescription)")
@@ -137,6 +158,7 @@ final class RecordingService {
 
     func stopRecording() async {
         guard let session else { return }
+        watchdog.stop()
         delegateAdapter.stopLevelsPolling()
         do {
             let result = try await session.stopCapture()
@@ -170,9 +192,34 @@ final class RecordingService {
         self.session = nil
     }
 
+    // MARK: - Recovery
+
+    /// Stops the current capture and starts a new one with the same config.
+    /// Used for auto-restart on output device change and user-initiated retry on stall.
+    func retryCapture() async {
+        guard let config = lastRecordingConfig else {
+            logger.error("Cannot retry capture: no saved recording config")
+            return
+        }
+        logger.info("Retrying capture")
+        await stopRecording()
+        try? await Task.sleep(for: .milliseconds(250))
+        await startRecording(
+            encryptionEnabled: config.encryptionEnabled,
+            debugEnableMic: config.debugEnableMic,
+            debugEnableSystem: config.debugEnableSystem
+        )
+    }
+
     // MARK: - Private Helpers
 
     private func refreshAudioSources(currentMicID: String?) async {
+        // Skip heavy device enumeration during active recording to avoid
+        // competing for Core Audio resources with the active capture session.
+        if currentRecordingState == .recording || currentRecordingState == .paused {
+            logger.info("Skipping audio source refresh during active recording")
+            return
+        }
         let tempSession = CompositeCaptureSession(
             configuration: CaptureConfiguration(outputDirectory: recordingsDirectory)
         )
@@ -213,7 +260,7 @@ final class RecordingService {
             DispatchQueue.main.async {
                 Task { @MainActor in
                     guard let service = weakSelf.value else { return }
-                    service.handleDeviceChange()
+                    await service.handleDeviceChange()
                     await service.refreshAudioSources(currentMicID: service.selectedMicID)
                 }
             }
@@ -232,23 +279,6 @@ final class RecordingService {
         } else {
             logger.error("Failed to install audio device change listener: \(status)")
         }
-    }
-
-    private func handleDeviceChange() {
-        logger.info("Audio device change detected, refreshing sources")
-
-        if currentRecordingState == .recording || currentRecordingState == .paused {
-            let micDisconnected = selectedMicID.map { !isMicStillAvailable($0) } ?? false
-            if micDisconnected, let micID = selectedMicID {
-                logger.warning("Selected mic \(micID) disconnected during recording, stopping")
-                Task { await stopRecording() }
-                onMicDisconnectedDuringRecording?()
-            } else {
-                logger.info("Device change during recording, but selected mic still available")
-            }
-        }
-
-        onDeviceChanged?()
     }
 
     private func configureDelegateCallbacks() {
@@ -272,39 +302,6 @@ final class RecordingService {
                 }
                 self.onError?(error.localizedDescription)
             }
-        }
-    }
-
-    private func handleCaptureState(_ state: CaptureState) {
-        switch state {
-        case .idle:
-            logger.debug("Capture state: idle")
-            currentRecordingState = .idle
-            onCaptureStateUpdate?(.idle, nil)
-        case let .capturing(elapsed):
-            currentRecordingState = .recording
-            onCaptureStateUpdate?(.recording, elapsed)
-        case let .paused(elapsed):
-            logger.debug("Capture state: paused")
-            currentRecordingState = .paused
-            onCaptureStateUpdate?(.paused, elapsed)
-        case .stopping:
-            logger.debug("Capture state: stopping")
-            delegateAdapter.stopLevelsPolling()
-            currentRecordingState = .idle
-            onCaptureStateUpdate?(.idle, nil)
-            if let session {
-                onDiagnosticsUpdate?(session.diagnostics)
-            }
-        case let .failed(error):
-            logger.error("Capture state: failed — \(error.localizedDescription)")
-            delegateAdapter.stopLevelsPolling()
-            currentRecordingState = .idle
-            onCaptureStateUpdate?(.idle, nil)
-            onSystemAudioActiveChange?(false)
-            onError?(error.localizedDescription)
-        default:
-            break
         }
     }
 
@@ -338,108 +335,82 @@ final class RecordingService {
 
 }
 
-private func defaultOutputDeviceUID() -> String? {
-    var deviceID: AudioDeviceID = 0
-    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-    var address = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
+// MARK: - Device & Capture State Handling
 
-    let status = AudioObjectGetPropertyData(
-        AudioObjectID(kAudioObjectSystemObject),
-        &address, 0, nil, &size, &deviceID
-    )
-    guard status == noErr else { return nil }
+extension RecordingService {
+    func handleDeviceChange() async {
+        // Prevent re-entrant handling from rapid CoreAudio callbacks
+        guard !isHandlingDeviceChange else {
+            logger.info("Device change handler already running, skipping")
+            return
+        }
+        isHandlingDeviceChange = true
+        defer { isHandlingDeviceChange = false }
 
-    address.mSelector = kAudioDevicePropertyDeviceUID
-    var uid: Unmanaged<CFString>?
-    size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-    let uidStatus = AudioObjectGetPropertyData(
-        deviceID, &address, 0, nil, &size, &uid
-    )
-    guard uidStatus == noErr, let uid = uid?.takeUnretainedValue() else { return nil }
-    return uid as String
-}
+        logger.info("Audio device change detected")
 
-/// Bridges the non-isolated AudioCaptureDelegate callbacks to MainActor closures.
-///
-/// Audio levels use a latest-value slot (NSLock-protected) so the audio callback
-/// just writes and returns immediately — no dispatch, no Task creation.
-/// A DispatchSourceTimer polls the slot at ~15fps and delivers batched updates on main.
-/// State changes and errors are infrequent and dispatch to main via the existing
-/// Task { @MainActor in } pattern set up by RecordingService.
-private final class CaptureDelegateAdapter: AudioCaptureDelegate, @unchecked Sendable {
-    var onStateChange: (@Sendable (CaptureState) -> Void)?
-    var onLevelsUpdate: (@Sendable (AudioLevels) -> Void)?
-    var onError: (@Sendable (CaptureError) -> Void)?
-
-    private let levelsLock = NSLock()
-    private var latestLevels: AudioLevels?
-    private var levelsTimer: DispatchSourceTimer?
-
-    // MARK: - Levels Polling
-
-    func startLevelsPolling() {
-        stopLevelsPolling()
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(66))
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            self.levelsLock.lock()
-            let levels = self.latestLevels
-            self.latestLevels = nil
-            self.levelsLock.unlock()
-            if let levels {
-                self.onLevelsUpdate?(levels)
+        if currentRecordingState == .recording || currentRecordingState == .paused {
+            let micDisconnected = selectedMicID.map { !isMicStillAvailable($0) } ?? false
+            if micDisconnected, let micID = selectedMicID {
+                logger.warning("Selected mic \(micID) disconnected during recording, stopping")
+                await stopRecording()
+                onMicDisconnectedDuringRecording?()
+            } else {
+                // Mic still available — check if output device changed (invalidates system audio tap)
+                let currentOutputUID = defaultOutputDeviceUID()
+                if lastOutputDeviceUID != nil, currentOutputUID != lastOutputDeviceUID {
+                    logger.warning(
+                        "Output device changed during recording, restarting capture to recover audio tap"
+                    )
+                    await retryCapture()
+                    onRecordingRestarted?()
+                } else {
+                    logger.info("Device change during recording, but mic and output unchanged")
+                }
             }
         }
-        timer.resume()
-        levelsTimer = timer
+
+        onDeviceChanged?()
     }
 
-    func stopLevelsPolling() {
-        levelsTimer?.cancel()
-        levelsTimer = nil
-        levelsLock.lock()
-        latestLevels = nil
-        levelsLock.unlock()
+    func handleCaptureState(_ state: CaptureState) {
+        switch state {
+        case .idle:
+            logger.debug("Capture state: idle")
+            currentRecordingState = .idle
+            onCaptureStateUpdate?(.idle, nil)
+        case let .capturing(elapsed):
+            currentRecordingState = .recording
+            onCaptureStateUpdate?(.recording, elapsed)
+        case let .paused(elapsed):
+            logger.debug("Capture state: paused")
+            currentRecordingState = .paused
+            onCaptureStateUpdate?(.paused, elapsed)
+        case .stopping:
+            logger.debug("Capture state: stopping")
+            delegateAdapter.stopLevelsPolling()
+            currentRecordingState = .idle
+            onCaptureStateUpdate?(.idle, nil)
+            if let session {
+                onDiagnosticsUpdate?(session.diagnostics)
+            }
+        case let .failed(error):
+            logger.error("Capture state: failed — \(error.localizedDescription)")
+            delegateAdapter.stopLevelsPolling()
+            currentRecordingState = .idle
+            onCaptureStateUpdate?(.idle, nil)
+            onSystemAudioActiveChange?(false)
+            onError?(error.localizedDescription)
+        default:
+            break
+        }
     }
-
-    // MARK: - AudioCaptureDelegate
-
-    func captureSession(
-        _: any AudioCaptureSession,
-        didChangeState state: CaptureState
-    ) {
-        onStateChange?(state)
-    }
-
-    func captureSession(
-        _: any AudioCaptureSession,
-        didUpdateLevels levels: AudioLevels
-    ) {
-        // Atomic write — returns immediately, never blocks the audio thread.
-        levelsLock.lock()
-        latestLevels = levels
-        levelsLock.unlock()
-    }
-
-    func captureSession(
-        _: any AudioCaptureSession,
-        didEncounterError error: CaptureError
-    ) {
-        onError?(error)
-    }
-
-    func captureSession(_: any AudioCaptureSession, didFinishCapture _: RecordingResult) {}
 }
 
-/// Sendable weak reference for safely passing across concurrency boundaries (e.g. CoreAudio callbacks).
-private final class WeakSendableBox<T: AnyObject>: @unchecked Sendable {
-    weak var value: T?
-    init(_ value: T) {
-        self.value = value
-    }
+// MARK: - Recording Config
+
+struct RecordingConfig {
+    let encryptionEnabled: Bool
+    let debugEnableMic: Bool
+    let debugEnableSystem: Bool
 }

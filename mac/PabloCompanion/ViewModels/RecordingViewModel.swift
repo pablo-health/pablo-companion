@@ -30,7 +30,10 @@ final class RecordingViewModel {
     var activeSessionId: String?
     /// Maps session IDs to recording IDs for correlating sessions with local recordings.
     var sessionRecordingMap: [String: UUID] = [:]
+    private let recordingStore = SessionRecordingStore()
     var systemAudioActive = false
+    var recordingStalled = false
+    var persistentError: String?
     var bluetoothRoutingConflict = false
     var bluetoothRecommendation: String?
     var systemAudioPermitted: Bool = CGPreflightScreenCaptureAccess()
@@ -59,6 +62,8 @@ final class RecordingViewModel {
     }
 
     func startRecording() async {
+        persistentError = nil
+        recordingStalled = false
         await service.startRecording(
             encryptionEnabled: encryptionEnabled,
             debugEnableMic: debugEnableMic,
@@ -77,6 +82,13 @@ final class RecordingViewModel {
     func stopRecording() async {
         await service.stopRecording()
         resetLevels()
+        recordingStalled = false
+    }
+
+    func retryCapture() async {
+        recordingStalled = false
+        persistentError = nil
+        await service.retryCapture()
     }
 
     // MARK: - Test Tone
@@ -151,10 +163,61 @@ final class RecordingViewModel {
         }
     }
 
-    /// Returns the local recording associated with a session, if captured this session.
+    /// Returns the local recording associated with a session — checks in-memory first, then persisted store.
     func recordingForSession(_ sessionId: String) -> LocalRecording? {
         guard let recordingId = sessionRecordingMap[sessionId] else { return nil }
-        return recordings.first { $0.id == recordingId }
+        if let inMemory = recordings.first(where: { $0.id == recordingId }) {
+            return inMemory
+        }
+        // Fall back to reconstructing from persisted entry
+        let persisted = recordingStore.loadAll()
+        if let entry = persisted[sessionId] {
+            return SessionRecordingStore.localRecording(from: entry)
+        }
+        return nil
+    }
+
+    /// Restore session→recording mappings from disk. Call on app launch.
+    func restorePersistedRecordings() {
+        let persisted = recordingStore.loadAll()
+        for (sessionId, entry) in persisted {
+            if sessionRecordingMap[sessionId] == nil {
+                sessionRecordingMap[sessionId] = entry.recordingID
+            }
+            // Reconstruct LocalRecording if not already in memory
+            let alreadyLoaded = recordings.contains { $0.id == entry.recordingID }
+            if !alreadyLoaded, let recording = SessionRecordingStore.localRecording(from: entry) {
+                recordings.append(recording)
+            }
+        }
+        if !persisted.isEmpty {
+            logger.info("Restored \(persisted.count) session→recording mappings from disk")
+        }
+    }
+
+    /// Persist a session→recording mapping to disk.
+    private func persistMapping(sessionId: String, recording: LocalRecording) {
+        let entry = SessionRecordingStore.entry(from: recording)
+        recordingStore.save(sessionId: sessionId, entry: entry)
+    }
+
+    /// Returns recordings on disk that are not linked to any session.
+    func orphanedRecordings() -> [LocalRecording] {
+        let linkedIDs = Set(sessionRecordingMap.values)
+        return RecordingDirectoryScanner.scan(
+            directory: service.recordingsDirectory,
+            excluding: linkedIDs
+        )
+    }
+
+    /// Link an orphaned recording to a session and persist the mapping.
+    func linkRecording(_ recording: LocalRecording, toSession sessionId: String) {
+        sessionRecordingMap[sessionId] = recording.id
+        if !recordings.contains(where: { $0.id == recording.id }) {
+            recordings.append(recording)
+        }
+        persistMapping(sessionId: sessionId, recording: recording)
+        logger.info("Linked orphaned recording \(recording.id) to session \(sessionId)")
     }
 
     /// The session ID whose recording is currently playing, if any.
@@ -197,11 +260,22 @@ final class RecordingViewModel {
         }
         service.onError = { [weak self] message in
             self?.showErrorAlert(message)
+            self?.persistentError = message
+        }
+        service.onRecordingStalled = { [weak self] in
+            self?.recordingStalled = true
+        }
+        service.onRecordingResumed = { [weak self] in
+            self?.recordingStalled = false
+        }
+        service.onRecordingRestarted = { [weak self] in
+            self?.recordingStalled = false
         }
         service.onRecordingCompleted = { [weak self] recording in
             self?.recordings.insert(recording, at: 0)
             if let sessionId = self?.activeSessionId {
                 self?.sessionRecordingMap[sessionId] = recording.id
+                self?.persistMapping(sessionId: sessionId, recording: recording)
             }
             self?.onRecordingCompleted?(recording)
         }

@@ -83,17 +83,20 @@ struct DebugRecordingView: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
+        .accessibilityLabel("Start debug recording")
     }
 
     private func activeControls(primaryLabel: String, primaryAction: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             Button(primaryLabel, action: primaryAction)
                 .buttonStyle(.bordered)
+                .accessibilityLabel("\(primaryLabel) recording")
             Button("Stop") {
                 Task { await vm.stopRecording() }
             }
             .buttonStyle(.borderedProminent)
             .tint(.red)
+            .accessibilityLabel("Stop debug recording")
         }
     }
 
@@ -110,6 +113,7 @@ struct DebugRecordingView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityLabel("Open recording file in Finder")
             }
         }
     }

@@ -43,6 +43,7 @@ struct QuickStartSheet: View {
         HStack {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField("Search patients...", text: $searchText)
                 .textFieldStyle(.plain)
             if !searchText.isEmpty {
@@ -61,6 +62,7 @@ struct QuickStartSheet: View {
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.borderless)
+        .accessibilityLabel("Clear search")
     }
 
     // MARK: - Content
@@ -123,6 +125,7 @@ private struct QuickStartPatientRow: View {
             .cardBackground()
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Start session with \(displayName)")
     }
 
     private var initialsAvatar: some View {

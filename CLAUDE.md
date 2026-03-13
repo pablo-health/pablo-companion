@@ -146,7 +146,7 @@ See `docs/branding.md` for the full design system.
 
 | Element | Value |
 |---------|-------|
-| Primary CTA | Honey `#E8A849` |
+| Primary CTA | Honey `#D4922E` (adjusted from `#E8A849` for WCAG AA) |
 | Background | Warm Cream `#FDF6EC` |
 | Text primary | Deep Brown `#2C1810` |
 | Active / recording | Sage Green `#7A9E7E` |
@@ -280,6 +280,16 @@ final class SessionListViewModel: ObservableObject {
 - Screen recording entitlement likely required — verify against `audiotake2`
 - `@AppStorage` for lightweight user preferences
 - Menu bar presence TBD — useful for session status at a glance
+
+### Accessibility (non-negotiable)
+
+- Every `Button` must have `.accessibilityLabel()` — use context like patient name
+- Every decorative `Image` must have `.accessibilityHidden(true)`
+- Custom controls: `.accessibilityElement(children: .ignore)` + `.accessibilityLabel()` + `.accessibilityValue()`
+- Animations must check `@Environment(\.accessibilityReduceMotion)` before animating
+- `.help()` is for tooltips, NOT accessibility — always pair with `.accessibilityLabel()`
+- Never use color alone to convey meaning — always pair with text, icon, or shape
+- See `docs/accessibility.md` for full standards and high-contrast palette
 
 ---
 

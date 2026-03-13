@@ -24,9 +24,12 @@ struct SettingsView: View {
     let onGenerateTestTone: () -> Void
     let onSignOut: () -> Void
 
+    @AppStorage("highContrastEnabled") private var highContrastEnabled = false
+
     var body: some View {
         Form {
             accountSection
+            appearanceSection
             systemAudioSection
             backendSection
             microphoneSection
@@ -52,6 +55,16 @@ struct SettingsView: View {
         }
     }
 
+    private var appearanceSection: some View {
+        Section("Appearance") {
+            Toggle("High-contrast colors", isOn: $highContrastEnabled)
+            Text("Deepens Pablo's warm palette for better readability. "
+                + "Also activates automatically when macOS \"Increase Contrast\" is enabled.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var systemAudioSection: some View {
         Section("System Audio") {
             HStack {
@@ -72,6 +85,7 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityLabel("Open macOS Privacy Settings for Screen Recording")
             }
 
             Text("System audio capture requires \"Screen & System Audio Recording\" permission. "
@@ -118,6 +132,7 @@ struct SettingsView: View {
             Button("Check", action: onCheckHealth)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityLabel("Check backend connection")
         }
     }
 
@@ -133,6 +148,7 @@ struct SettingsView: View {
                             if mic.transportType == .bluetooth || mic.transportType == .bluetoothLE {
                                 Image(systemName: "wave.3.right")
                                     .foregroundStyle(Color.pabloSky)
+                                    .accessibilityLabel("Bluetooth")
                             }
                             Text(mic.name)
                         }
@@ -250,6 +266,7 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityLabel("Download \(preset.displayName) model")
             }
         }
     }

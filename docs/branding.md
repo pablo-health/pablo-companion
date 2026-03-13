@@ -27,7 +27,7 @@ _Adapted from pablo-health marketing site and web app design system._
 
 | Role | Name | Hex | Usage |
 |------|------|-----|-------|
-| Primary | Honey / Amber | `#E8A849` | CTAs, "Start Session" button, highlights, Pablo's signature |
+| Primary | Honey / Amber | `#D4922E` | CTAs, "Start Session" button, highlights, Pablo's signature (adjusted from `#E8A849` for WCAG AA) |
 | Secondary | Sage Green | `#7A9E7E` | Active/healthy states, session in progress |
 | Accent | Sky Blue | `#89B4C8` | Calm, informational, icons |
 | Background | Warm Cream | `#FDF6EC` | Main window background |
@@ -40,15 +40,18 @@ _Adapted from pablo-health marketing site and web app design system._
 ### SwiftUI Color Extension
 
 ```swift
+// Colors are computed properties — they return high-contrast variants
+// when Settings > Appearance > "High-contrast colors" is enabled.
+// See Color+Pablo.swift and docs/accessibility.md for details.
 extension Color {
-    static let pabloHoney      = Color(hex: "#E8A849")
-    static let pabloSage       = Color(hex: "#7A9E7E")
-    static let pabloSky        = Color(hex: "#89B4C8")
-    static let pabloCream      = Color(hex: "#FDF6EC")
-    static let pabloBrownDeep  = Color(hex: "#2C1810")
-    static let pabloBrownSoft  = Color(hex: "#6B5344")
-    static let pabloBlush      = Color(hex: "#E8B4A2")
-    static let pabloError      = Color(hex: "#C45B4A")
+    static var pabloHoney: Color      // #D4922E (high-contrast: #B87A1A)
+    static var pabloSage: Color       // #7A9E7E (high-contrast: #4A7A52)
+    static var pabloSky: Color        // #89B4C8 (high-contrast: #4A7A9E)
+    static var pabloCream: Color      // #FDF6EC (unchanged)
+    static var pabloBrownDeep: Color  // #2C1810 (unchanged)
+    static var pabloBrownSoft: Color  // #6B5344 (high-contrast: #3D2E24)
+    static var pabloBlush: Color      // #E8B4A2 (high-contrast: #C47A6A)
+    static var pabloError: Color      // #C45B4A (high-contrast: #A33A2A)
 }
 ```
 
@@ -74,7 +77,7 @@ extension Color {
 1. **Warm, not sterile** — cream/brown tones, not blue-gray clinical
 2. **Spacious and breathable** — generous padding (16–24pt), clear visual hierarchy
 3. **Professional but human** — rounded corners (8pt base), subtle shadows
-4. **Accessible** — WCAG AA contrast, clear focus states, keyboard navigable
+4. **Accessible** — WCAG AA contrast, clear focus states, keyboard navigable. See `docs/accessibility.md` for full standards and high-contrast palette
 5. **Session-first** — the day's sessions are always the hero of the UI
 
 ---
