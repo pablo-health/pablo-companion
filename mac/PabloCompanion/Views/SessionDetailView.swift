@@ -10,6 +10,7 @@ struct SessionDetailView: View {
     var transcriptionState: TranscriptionState?
     var isPlaying = false
     var onTranscribe: (() -> Void)?
+    var onReuploadTranscript: (() -> Void)?
     var onPlay: (() -> Void)?
     var onStopPlayback: (() -> Void)?
     var onEndSession: (() -> Void)?
@@ -168,7 +169,9 @@ struct SessionDetailView: View {
     private var transcriptionSection: some View {
         TranscriptionSectionContent(
             state: transcriptionState,
-            onTranscribe: onTranscribe
+            sessionStatus: session.status,
+            onTranscribe: onTranscribe,
+            onReupload: onReuploadTranscript
         )
     }
 
@@ -315,7 +318,9 @@ private struct RecordingInfoContent: View {
 
 private struct TranscriptionSectionContent: View {
     let state: TranscriptionState?
+    var sessionStatus: SessionStatus = .scheduled
     var onTranscribe: (() -> Void)?
+    var onReupload: (() -> Void)?
 
     var body: some View {
         switch state {
@@ -349,6 +354,21 @@ private struct TranscriptionSectionContent: View {
                 .foregroundStyle(Color.pabloBrownDeep)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if sessionStatus == .failed, let onReupload {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color.pabloError)
+                        .accessibilityHidden(true)
+                    Text("Backend processing failed")
+                        .font(.pabloBody(13))
+                        .foregroundStyle(Color.pabloError)
+                    Spacer()
+                    Button("Re-upload Transcript", action: onReupload)
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .tint(Color.pabloError)
+                        .accessibilityLabel("Re-upload transcript to retry backend processing")
+                }
+            }
         }
         .cardBackground()
         .padding(.horizontal, -4)

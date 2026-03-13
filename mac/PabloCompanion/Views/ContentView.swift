@@ -182,6 +182,14 @@ struct ContentView: View {
         recordingVM.playRecording(recording)
     }
 
+    private func reuploadTranscript(for session: Session) {
+        let recId = recordingVM.recordingForSession(session.id)?.id ?? UUID()
+        Task {
+            await transcriptionVM.reuploadTranscript(recordingId: recId, sessionId: session.id)
+            await sessionVM.loadTodaySessions()
+        }
+    }
+
     private func sessionDetailSheet(_ session: Session) -> some View {
         let recording = recordingVM.recordingForSession(session.id)
         let state = transcriptionStateForSession(session.id)
@@ -189,6 +197,7 @@ struct ContentView: View {
         let patient = session.patientId.flatMap { id in patientVM.patients.first { $0.id == id } }
         let isStaleInProgress = session.status == .inProgress && session.id != activeSessionId
         let orphans = recording == nil ? recordingVM.orphanedRecordings() : []
+        let canReupload = session.status == .failed && state?.transcript != nil
 
         return SessionDetailView(
             session: session,
@@ -198,6 +207,8 @@ struct ContentView: View {
             isPlaying: isPlaying,
             onTranscribe: recording != nil
                 ? { transcribeSession(session) } : nil,
+            onReuploadTranscript: canReupload
+                ? { reuploadTranscript(for: session) } : nil,
             onPlay: recording != nil
                 ? { playSession(session) } : nil,
             onStopPlayback: isPlaying
@@ -212,7 +223,6 @@ struct ContentView: View {
             orphanedRecordings: orphans,
             onLinkRecording: { linked in
                 recordingVM.linkRecording(linked, toSession: session.id)
-                // Re-open the detail to show the now-linked recording
                 detailSession = nil
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(100))

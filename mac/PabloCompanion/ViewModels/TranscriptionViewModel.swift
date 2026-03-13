@@ -214,6 +214,23 @@ final class TranscriptionViewModel {
         }
     }
 
+    /// Re-uploads an existing transcript to the backend (e.g. after a backend processing bug fix).
+    func reuploadTranscript(recordingId: UUID, sessionId: String) async {
+        guard let text = states[recordingId]?.transcript else {
+            logger.warning("No transcript text found for recording \(recordingId)")
+            return
+        }
+        logger.info("Re-uploading transcript for session \(sessionId)")
+        do {
+            try await postTranscript(sessionID: sessionId, text: text)
+            logger.info("Re-upload succeeded for session \(sessionId)")
+        } catch {
+            logger.error("Re-upload failed for session \(sessionId): \(error.localizedDescription)")
+            errorMessage = "Re-upload failed: \(error.localizedDescription)"
+            showError = true
+        }
+    }
+
     /// Process recordings that were deferred because the Whisper model wasn't available.
     /// Called after a model download completes. Uses the just-downloaded preset so we
     /// don't fail again looking for a different model than what the user downloaded.
