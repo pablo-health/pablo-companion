@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Main view — authenticates, then shows four-tab navigation.
 struct ContentView: View {
-    @State private var authVM = AuthViewModel()
+    var authVM: AuthViewModel
     @State private var sessionVM = SessionViewModel()
     @State private var recordingVM = RecordingViewModel()
     @State private var uploadVM = UploadViewModel()
@@ -311,7 +311,7 @@ struct ContentView: View {
     private var settingsTab: some View {
         SettingsView(
             backendURL: $uploadVM.backendURL,
-            authServerURL: $authVM.authServerURL,
+            authServerURL: Bindable(authVM).authServerURL,
             selectedMicID: $recordingVM.selectedMicID,
             encryptionEnabled: $recordingVM.encryptionEnabled,
             debugEnableMic: $recordingVM.debugEnableMic,

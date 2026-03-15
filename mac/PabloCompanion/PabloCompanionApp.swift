@@ -4,13 +4,16 @@ import SwiftUI
 
 @main
 struct PabloCompanionApp: App {
+    @State private var authVM = AuthViewModel()
+
     init() {
         registerFonts()
     }
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        Window("Pablo", id: "main") {
+            ContentView(authVM: authVM)
+                .onOpenURL { url in authVM.handleOpenURL(url) }
                 .task {
                     await requestScreenCapturePermission()
                 }
