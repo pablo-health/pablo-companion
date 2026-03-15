@@ -458,6 +458,14 @@ private struct CopyButton: View {
                 try? await Task.sleep(for: .seconds(2))
                 copied = false
             }
+            // Auto-clear pasteboard after 60s to limit PHI exposure
+            let snapshot = text
+            Task {
+                try? await Task.sleep(for: .seconds(60))
+                if NSPasteboard.general.string(forType: .string) == snapshot {
+                    NSPasteboard.general.clearContents()
+                }
+            }
         }
         .font(.pabloBody(11))
         .buttonStyle(.bordered)

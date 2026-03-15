@@ -130,7 +130,10 @@ fn resample_to_16k(input: Vec<f32>, input_rate: u32) -> Result<Vec<f32>, PabloEr
         .map_err(|e| audio_err(format!("resample failed: {e}")))?;
 
     output_data[0].truncate(nbr_out);
-    Ok(output_data.into_iter().next().unwrap())
+    output_data
+        .into_iter()
+        .next()
+        .ok_or_else(|| audio_err("resampler produced no output channels".to_string()))
 }
 
 #[cfg(test)]

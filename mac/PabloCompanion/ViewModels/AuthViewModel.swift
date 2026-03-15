@@ -1,4 +1,4 @@
-import AuthenticationServices
+import AppKit
 import Foundation
 import os
 import SwiftUI
@@ -19,14 +19,23 @@ final class AuthViewModel {
     var authState: AuthState = .unauthenticated
     var errorMessage: String?
 
-    @ObservationIgnored
-    @AppStorage("authServerURL") var authServerURL = "http://localhost:3000"
+    var authServerURL: String {
+        get { KeychainManager.getToken(forKey: .authServerURL) ?? "http://localhost:3000" }
+        set { KeychainManager.saveToken(newValue, forKey: .authServerURL) }
+    }
 
-    @ObservationIgnored
-    @AppStorage("backendAPIURL") var backendAPIURL = "http://localhost:8000"
+    var backendAPIURL: String {
+        get { KeychainManager.getToken(forKey: .backendAPIURL) ?? "http://localhost:8000" }
+        set { KeychainManager.saveToken(newValue, forKey: .backendAPIURL) }
+    }
 
     @ObservationIgnored
     @AppStorage("tokenExpiry") private var tokenExpiryTimestamp: Double = 0
+
+    var tenantID: String {
+        get { KeychainManager.getToken(forKey: .tenantID) ?? "" }
+        set { KeychainManager.saveToken(newValue, forKey: .tenantID) }
+    }
 
     /// Convenience accessor for the email when authenticated.
     var authenticatedEmail: String {
@@ -55,10 +64,16 @@ final class AuthViewModel {
         authState = .authenticating
         errorMessage = nil
 
-        // Launch from a file-scope free function so the completion closure
-        // is NOT defined in a @MainActor context. (swiftlang/swift#75453)
-        launchWebAuthSession(url: url, viewModel: self)
-        logger.info("ASWebAuthenticationSession started")
+        // Open the auth page in the default browser. The callback will arrive
+        // via the registered pablohealth:// URL scheme → onOpenURL → handleOpenURL.
+        NSWorkspace.shared.open(url)
+        logger.info("Opened auth URL in browser: \(url)")
+    }
+
+    /// Called from SwiftUI's `onOpenURL` when macOS routes a `pablohealth://` URL to the app.
+    func handleOpenURL(_ url: URL) {
+        guard url.scheme == AppConstants.callbackURLScheme else { return }
+        handleAuthCallback(callbackURL: url)
     }
 
     // MARK: - Sign Out
@@ -99,24 +114,19 @@ final class AuthViewModel {
             return
         }
 
-        // Restore auth server URL from Keychain
-        if let savedURL = KeychainManager.getToken(forKey: .authServerURL) {
-            authServerURL = savedURL
-        }
-
         let expiryDate = Date(timeIntervalSince1970: tokenExpiryTimestamp)
         if Date().addingTimeInterval(5 * 60) >= expiryDate {
             // Token expired or close to it — check if we can refresh
             if KeychainManager.getToken(forKey: .refreshToken) != nil {
                 authState = .authenticated(email: email)
-                logger.info("Restored auth state for \(email) (token needs refresh)")
+                logger.info("Restored auth state (token needs refresh)")
             } else {
                 authState = .tokenExpired
                 logger.info("Token expired and no refresh token available")
             }
         } else {
             authState = .authenticated(email: email)
-            logger.info("Restored auth state for \(email), token valid")
+            logger.info("Restored auth state, token valid")
         }
 
         // Also update expiry from JWT if we have a fresh token
@@ -131,25 +141,17 @@ final class AuthViewModel {
             return nil
         }
         let base = authServerURL.trimmingCharacters(in: .init(charactersIn: "/"))
-        let redirectURI = "therapyrecorder://callback"
-        return URL(string: "\(base)/native-auth?redirect_uri=\(redirectURI)")
+        var components = URLComponents(string: "\(base)/native-auth")
+        var queryItems = [URLQueryItem(name: "redirect_uri", value: AppConstants.redirectURI)]
+        if !tenantID.isEmpty {
+            queryItems.append(URLQueryItem(name: "tenant_id", value: tenantID))
+        }
+        components?.queryItems = queryItems
+        return components?.url
     }
 
-    func handleAuthCallback(callbackURL: URL?, error: (any Error)?) {
-        if let error {
-            if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                logger.info("User cancelled sign in")
-                authState = .unauthenticated
-                return
-            }
-            logger.error("Auth error: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
-            authState = .unauthenticated
-            return
-        }
-
-        guard let callbackURL,
-              let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+    private func handleAuthCallback(callbackURL: URL) {
+        guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
               let queryItems = components.queryItems
         else {
             errorMessage = "Invalid callback URL."
@@ -161,31 +163,81 @@ final class AuthViewModel {
             item.value.map { (item.name, $0) }
         })
 
-        guard let idToken = params["id_token"],
-              let refreshToken = params["refresh_token"]
-        else {
-            errorMessage = "Missing tokens in callback."
+        guard let code = params["code"] else {
+            errorMessage = "Missing authorization code in callback."
             authState = .unauthenticated
             return
         }
 
-        // Store tokens and auth server URL for session restore
+        // Exchange the one-time code for tokens
+        Task {
+            await exchangeCodeForTokens(code: code)
+        }
+    }
+
+    // MARK: - Code Exchange (RFC 8252)
+
+    private func exchangeCodeForTokens(code: String) async {
+        let base = authServerURL.trimmingCharacters(in: .init(charactersIn: "/"))
+        guard let exchangeURL = URL(string: "\(base)/api/auth/native/exchange") else {
+            errorMessage = "Invalid auth server URL."
+            authState = .unauthenticated
+            return
+        }
+
+        var request = URLRequest(url: exchangeURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "code": code,
+            "redirect_uri": AppConstants.redirectURI,
+        ])
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try handleExchangeResponse(data: data, response: response)
+        } catch let error as ExchangeError {
+            errorMessage = error.errorDescription
+            authState = .unauthenticated
+        } catch {
+            errorMessage = "Network error during sign in. Please try again."
+            authState = .unauthenticated
+            logger.error("Code exchange failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleExchangeResponse(data: Data, response: URLResponse) throws {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ExchangeError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw httpResponse.statusCode == 429
+                ? ExchangeError.rateLimited
+                : ExchangeError.httpError(httpResponse.statusCode)
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let idToken = json["id_token"] as? String,
+              let refreshToken = json["refresh_token"] as? String
+        else {
+            throw ExchangeError.invalidTokenResponse
+        }
+
         KeychainManager.saveToken(idToken, forKey: .idToken)
         KeychainManager.saveToken(refreshToken, forKey: .refreshToken)
         KeychainManager.saveToken(authServerURL, forKey: .authServerURL)
 
-        // Extract email from JWT
-        let email = extractEmail(from: idToken) ?? params["email"] ?? "Unknown"
+        let email = extractEmail(from: idToken) ?? "Unknown"
         KeychainManager.saveToken(email, forKey: .userEmail)
 
-        // Extract and store expiry
         if let expiry = extractExpiry(from: idToken) {
             tokenExpiryTimestamp = expiry.timeIntervalSince1970
         }
 
         authState = .authenticated(email: email)
         errorMessage = nil
-        logger.info("Signed in as \(email)")
+        logger.info("Signed in successfully")
     }
 
     private func refreshToken() async throws -> String {
@@ -253,6 +305,28 @@ enum TokenError: LocalizedError {
     }
 }
 
+// MARK: - Exchange Errors
+
+private enum ExchangeError: LocalizedError {
+    case invalidResponse
+    case rateLimited
+    case httpError(Int)
+    case invalidTokenResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            "Invalid response from server."
+        case .rateLimited:
+            "Too many attempts. Please wait and try again."
+        case let .httpError(status):
+            "Authentication failed (status \(status))."
+        case .invalidTokenResponse:
+            "Invalid token response from server."
+        }
+    }
+}
+
 // MARK: - JWT Decoder
 
 struct JWTDecoder {
@@ -279,43 +353,5 @@ struct JWTDecoder {
 
     func extractEmail(from jwt: String) -> String? {
         decodePayload(jwt)?["email"] as? String
-    }
-}
-
-// MARK: - Web Auth Session Launcher
-
-/// Sendable wrapper for weak references that cross isolation boundaries.
-private struct WeakRef<T: AnyObject>: @unchecked Sendable {
-    weak var value: T?
-}
-
-/// Launches ASWebAuthenticationSession from a nonisolated (file-scope) context
-/// so the completion closure doesn't inherit @MainActor isolation and crash
-/// when the framework calls back on an XPC thread. (swiftlang/swift#75453)
-private func launchWebAuthSession(url: URL, viewModel: AuthViewModel) {
-    let ref = WeakRef(value: viewModel)
-    // This function is always called from MainActor but must stay nonisolated
-    // (see above). Use assumeIsolated just for the NSObject.init() call.
-    let contextProvider = MainActor.assumeIsolated { WebAuthContextProvider() }
-    let session = ASWebAuthenticationSession(
-        url: url,
-        callbackURLScheme: "therapyrecorder"
-    ) { callbackURL, error in
-        Task { @MainActor in
-            ref.value?.handleAuthCallback(callbackURL: callbackURL, error: error)
-        }
-    }
-    session.presentationContextProvider = contextProvider
-    session.prefersEphemeralWebBrowserSession = false
-    _ = contextProvider
-    session.start()
-}
-
-// MARK: - ASWebAuthenticationPresentationContextProviding
-
-private final class WebAuthContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        // swiftlint:disable:next force_unwrapping
-        NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first!
     }
 }

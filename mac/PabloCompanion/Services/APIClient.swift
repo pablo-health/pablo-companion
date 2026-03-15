@@ -54,7 +54,7 @@ final class APIClient {
         onProgress: @Sendable @escaping (Double) -> Void
     ) async throws -> UploadResponse {
         let token = try await requireToken()
-        logger.info("Uploading \(fileURL.lastPathComponent)")
+        logger.info("Uploading recording file")
 
         // Simulate incremental progress since the Rust client
         // doesn't provide upload progress callbacks.
@@ -67,7 +67,7 @@ final class APIClient {
         )
 
         onProgress(1.0)
-        logger.info("Upload successful: \(response.id)")
+        logger.info("Upload successful")
         return response
     }
 
@@ -89,7 +89,7 @@ final class APIClient {
             pageSize: UInt32(pageSize)
         )
 
-        logger.info("Fetched \(response.data.count) of \(response.total) patients")
+        logger.info("Fetched patients page")
         return response
     }
 
@@ -119,7 +119,7 @@ final class APIClient {
             request: request
         )
 
-        logger.info("Created patient: \(patient.id)")
+        logger.info("Created patient")
         return patient
     }
 
@@ -135,7 +135,7 @@ final class APIClient {
             timezone: timezone
         )
 
-        logger.info("Fetched \(sessions.count) sessions for today")
+        logger.info("Fetched today's sessions")
         return sessions
     }
 
@@ -149,7 +149,7 @@ final class APIClient {
             request: request
         )
 
-        logger.info("Created session: \(session.id)")
+        logger.info("Created session")
         return session
     }
 
@@ -180,7 +180,7 @@ final class APIClient {
             status: status
         )
 
-        logger.info("Fetched \(response.data.count) of \(response.total) sessions")
+        logger.info("Fetched sessions page")
         return response
     }
 
@@ -198,7 +198,7 @@ final class APIClient {
             status: status
         )
 
-        logger.info("Updated session \(sessionId) status")
+        logger.info("Updated session status")
         return session
     }
 
@@ -216,7 +216,7 @@ final class APIClient {
             request: request
         )
 
-        logger.info("Updated session \(sessionId)")
+        logger.info("Updated session")
         return session
     }
 
@@ -234,7 +234,7 @@ final class APIClient {
             qualityRating: qualityRating
         )
 
-        logger.info("Finalized session \(sessionId)")
+        logger.info("Finalized session")
         return session
     }
 
@@ -256,7 +256,7 @@ final class APIClient {
             content: content
         )
 
-        logger.info("Uploaded transcript for session \(sessionId)")
+        logger.info("Uploaded transcript")
         return response
     }
 

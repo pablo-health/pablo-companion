@@ -83,6 +83,13 @@ struct TranscriptViewerView: View {
                     try? await Task.sleep(for: .seconds(2))
                     copied = false
                 }
+                // Auto-clear pasteboard after 60s to limit PHI exposure
+                Task {
+                    try? await Task.sleep(for: .seconds(60))
+                    if NSPasteboard.general.string(forType: .string) == transcript {
+                        NSPasteboard.general.clearContents()
+                    }
+                }
             }
             .buttonStyle(.borderedProminent)
             .tint(copied ? Color.pabloSage : Color.pabloHoney)

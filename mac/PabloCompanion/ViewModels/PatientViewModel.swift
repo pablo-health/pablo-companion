@@ -50,7 +50,7 @@ final class PatientViewModel {
             let response = try await apiClient.fetchPatients(search: searchText)
             patients = response.data
             debugStatus = "Loaded \(response.data.count) of \(response.total) patients"
-            logger.info("Loaded \(response.data.count) of \(response.total) patients")
+            logger.info("Loaded patients")
         } catch {
             debugStatus = "Error: \(error.localizedDescription)"
             logger.error("Failed to load patients: \(error.localizedDescription)")

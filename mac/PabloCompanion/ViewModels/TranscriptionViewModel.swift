@@ -103,7 +103,7 @@ final class TranscriptionViewModel {
     func transcribeIfNeeded(_ recording: LocalRecording, sessionId: String? = nil) {
         guard autoTranscribe else { return }
         guard recording.micPCMFileURL != nil else {
-            logger.info("Skipping transcription: no PCM sidecar for \(recording.id)")
+            logger.info("Skipping transcription: no PCM sidecar")
             return
         }
         Task { await transcribe(recording, sessionId: sessionId) }
@@ -126,13 +126,13 @@ final class TranscriptionViewModel {
             states[recording.id] = .failed(
                 message: "Mic audio file is empty (0 bytes) — recording may have stalled"
             )
-            logger.warning("Skipping transcription for \(recording.id): mic PCM file is 0 bytes")
+            logger.warning("Skipping transcription: mic PCM file is 0 bytes")
             return
         }
 
         let backendSessionId = sessionId ?? recording.id.uuidString
         states[recording.id] = .running
-        logger.info("Starting transcription for \(recording.id) (session: \(backendSessionId))")
+        logger.info("Starting transcription")
 
         do {
             let config = try buildTranscriptionConfig(using: presetOverride)
@@ -143,16 +143,16 @@ final class TranscriptionViewModel {
                 config: config
             )
             let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: recording))
-            logger.info("Transcription complete for \(recording.id), \(result.segments.count) segments")
+            logger.info("Transcription complete, \(result.segments.count) segments")
             await uploadOrQueue(recording: recording, sessionId: backendSessionId, text: text)
         } catch is ModelError {
             states[recording.id] = .awaitingModel
             awaitingModelRecordings.append((recording: recording, sessionId: sessionId))
-            logger.info("Transcription deferred for \(recording.id): model not downloaded")
+            logger.info("Transcription deferred: model not downloaded")
         } catch {
             let message = error.localizedDescription
             states[recording.id] = .failed(message: message)
-            logger.error("Transcription failed for \(recording.id): \(message)")
+            logger.error("Transcription failed: \(message)")
         }
     }
 
@@ -181,11 +181,11 @@ final class TranscriptionViewModel {
                 if case let .pendingUpload(text) = states[item.recordingID] {
                     states[item.recordingID] = .done(transcript: text)
                 }
-                logger.info("Retry upload succeeded for \(item.recordingID)")
+                logger.info("Retry upload succeeded")
             } catch {
                 item.retryCount += 1
                 store.save(item)
-                logger.warning("Retry upload failed for \(item.recordingID): \(error.localizedDescription)")
+                logger.warning("Retry upload failed: \(error.localizedDescription)")
             }
         }
     }
@@ -205,11 +205,11 @@ final class TranscriptionViewModel {
                 if case let .pendingUpload(text) = states[item.recordingID] {
                     states[item.recordingID] = .done(transcript: text)
                 }
-                logger.info("Force retry upload succeeded for \(item.recordingID)")
+                logger.info("Force retry upload succeeded")
             } catch {
                 item.retryCount += 1
                 store.save(item)
-                logger.warning("Force retry upload failed for \(item.recordingID): \(error.localizedDescription)")
+                logger.warning("Force retry upload failed: \(error.localizedDescription)")
             }
         }
     }
@@ -217,15 +217,15 @@ final class TranscriptionViewModel {
     /// Re-uploads an existing transcript to the backend (e.g. after a backend processing bug fix).
     func reuploadTranscript(recordingId: UUID, sessionId: String) async {
         guard let text = states[recordingId]?.transcript else {
-            logger.warning("No transcript text found for recording \(recordingId)")
+            logger.warning("No transcript text found for re-upload")
             return
         }
-        logger.info("Re-uploading transcript for session \(sessionId)")
+        logger.info("Re-uploading transcript")
         do {
             try await postTranscript(sessionID: sessionId, text: text)
-            logger.info("Re-upload succeeded for session \(sessionId)")
+            logger.info("Re-upload succeeded")
         } catch {
-            logger.error("Re-upload failed for session \(sessionId): \(error.localizedDescription)")
+            logger.error("Re-upload failed: \(error.localizedDescription)")
             errorMessage = "Re-upload failed: \(error.localizedDescription)"
             showError = true
         }
@@ -286,7 +286,7 @@ final class TranscriptionViewModel {
         do {
             try await postTranscript(sessionID: sessionId, text: text)
             states[recording.id] = .done(transcript: text)
-            logger.info("Transcript uploaded for \(recording.id) (session: \(sessionId))")
+            logger.info("Transcript uploaded")
         } catch {
             logger.warning("Upload failed, queuing for retry: \(error.localizedDescription)")
             let pending = PendingTranscriptStore.PendingTranscript(
@@ -308,6 +308,6 @@ final class TranscriptionViewModel {
             format: "txt",
             content: text
         )
-        logger.info("Transcript uploaded for session \(sessionID), message: \(response.message)")
+        logger.info("Transcript POST succeeded")
     }
 }

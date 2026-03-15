@@ -81,7 +81,7 @@ final class SessionViewModel {
         do {
             let timezone = TimeZone.current.identifier
             todaySessions = try await apiClient.fetchTodaySessions(timezone: timezone)
-            logger.info("Loaded \(self.todaySessions.count) sessions for today")
+            logger.info("Loaded today's sessions")
         } catch {
             errorMessage = error.localizedDescription
             logger.error("Failed to load today's sessions: \(error.localizedDescription)")
@@ -110,7 +110,7 @@ final class SessionViewModel {
                 notes: nil
             )
             let session = try await apiClient.createSession(request: request)
-            logger.info("Created ad-hoc session: \(session.id)")
+            logger.info("Created ad-hoc session")
 
             // Refresh today's list — safe because recording hasn't started yet.
             await loadTodaySessions()
@@ -136,12 +136,12 @@ final class SessionViewModel {
                 status: .inProgress
             )
             updateLocal(session)
-            logger.info("Started session \(sessionId)")
+            logger.info("Started session")
             return session
         } catch {
             errorMessage = error.localizedDescription
             showError = true
-            logger.error("Failed to start session \(sessionId): \(error.localizedDescription)")
+            logger.error("Failed to start session: \(error.localizedDescription)")
             return nil
         }
     }
@@ -154,12 +154,12 @@ final class SessionViewModel {
                 status: .recordingComplete
             )
             updateLocal(session)
-            logger.info("Ended session \(sessionId)")
+            logger.info("Ended session")
             return session
         } catch {
             errorMessage = error.localizedDescription
             showError = true
-            logger.error("Failed to end session \(sessionId): \(error.localizedDescription)")
+            logger.error("Failed to end session: \(error.localizedDescription)")
             return nil
         }
     }
@@ -181,7 +181,7 @@ final class SessionViewModel {
             sessions = response.data.filter { matchesFilter($0) }
             totalSessions = response.total
             hasMoreSessions = response.hasMore
-            logger.info("Loaded \(response.data.count) of \(response.total) sessions")
+            logger.info("Loaded sessions page")
         } catch {
             errorMessage = error.localizedDescription
             logger.error("Failed to load sessions: \(error.localizedDescription)")
@@ -205,7 +205,7 @@ final class SessionViewModel {
             sessions.append(contentsOf: response.data.filter { matchesFilter($0) })
             totalSessions = response.total
             hasMoreSessions = response.hasMore
-            logger.info("Loaded page \(self.currentPage): \(response.data.count) more sessions")
+            logger.info("Loaded next sessions page")
         } catch {
             currentPage -= 1
             errorMessage = error.localizedDescription
