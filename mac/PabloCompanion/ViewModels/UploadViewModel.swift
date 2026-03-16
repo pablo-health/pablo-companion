@@ -5,7 +5,7 @@ import os
 @MainActor
 @Observable
 final class UploadViewModel {
-    var backendURL = "http://localhost:8000" {
+    var backendURL = "https://api.pablo.health" {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken

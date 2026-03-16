@@ -20,12 +20,12 @@ final class AuthViewModel {
     var errorMessage: String?
 
     var authServerURL: String {
-        get { KeychainManager.getToken(forKey: .authServerURL) ?? "http://localhost:3000" }
+        get { KeychainManager.getToken(forKey: .authServerURL) ?? "https://app.pablo.health" }
         set { KeychainManager.saveToken(newValue, forKey: .authServerURL) }
     }
 
     var backendAPIURL: String {
-        get { KeychainManager.getToken(forKey: .backendAPIURL) ?? "http://localhost:8000" }
+        get { KeychainManager.getToken(forKey: .backendAPIURL) ?? "https://api.pablo.health" }
         set { KeychainManager.saveToken(newValue, forKey: .backendAPIURL) }
     }
 

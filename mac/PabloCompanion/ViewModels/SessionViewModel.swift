@@ -46,7 +46,7 @@ final class SessionViewModel {
     // MARK: - Dependencies
 
     /// Set by ContentView after discovering the backend URL.
-    var backendURL = "http://localhost:8000" {
+    var backendURL = "https://api.pablo.health" {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken

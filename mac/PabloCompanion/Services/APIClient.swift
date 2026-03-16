@@ -13,12 +13,15 @@ final class APIClient {
     /// Optional closure to provide a Bearer token for authenticated requests.
     var getToken: (@Sendable () async throws -> String)?
 
-    init(baseURL: String = "http://localhost:8000") {
-        if let error = URLValidator.validateScheme(baseURL) {
-            preconditionFailure("APIClient: \(error)")
-        }
-        guard let url = URL(string: baseURL) else {
-            preconditionFailure("APIClient initialized with invalid base URL: \(baseURL)")
+    init(baseURL: String = "https://api.pablo.health") {
+        guard URLValidator.validateScheme(baseURL) == nil,
+              let url = URL(string: baseURL)
+        else {
+            // Placeholder URL — will be overwritten by configureAndLoad() after auth.
+            // Non-fatal so the app can still launch and reach the login screen.
+            self.baseURL = URL(string: "https://api.pablo.health")!
+            self.baseURLString = "https://api.pablo.health"
+            return
         }
         self.baseURL = url
         self.baseURLString = baseURL
