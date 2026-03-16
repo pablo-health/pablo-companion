@@ -23,7 +23,7 @@ rubato = "1.0"
 audioadapter-buffers = "2.0"
 byteorder = "1"
 thiserror = "2"
-whisper-rs = "0.15"
+whisper-rs = "0.16"
 reqwest = { version = "0.13", features = ["json", "multipart", "query"] }
 secrecy = { version = "0.10", features = ["serde"] }
 async-compat = "0.2"
