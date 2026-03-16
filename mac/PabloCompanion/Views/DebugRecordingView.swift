@@ -1,4 +1,5 @@
 #if DEBUG
+import AppKit
 import SwiftUI
 
 /// Smoke-test view for exercising RecordingService end-to-end.
@@ -6,14 +7,17 @@ import SwiftUI
 struct DebugRecordingView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var vm = RecordingViewModel()
+    @State private var transcriptionVM = TranscriptionViewModel()
+    @State private var autoTranscribe = false
+    @State private var viewingTranscript: String?
 
     var body: some View {
         VStack(spacing: 20) {
             header
             stateSection
             controls
-            if let path = vm.recordings.first?.fileURL {
-                fileSection(url: path)
+            if let recording = vm.recordings.first {
+                fileSection(recording: recording)
             }
         }
         .padding(24)
@@ -23,7 +27,25 @@ struct DebugRecordingView: View {
                 Button("Close") { dismiss() }
             }
         }
-        .task { await vm.loadAudioSources() }
+        .task {
+            await vm.loadAudioSources()
+            vm.onRecordingCompleted = { [transcriptionVM] recording in
+                guard autoTranscribe else { return }
+                transcriptionVM.transcribeIfNeeded(recording)
+            }
+        }
+        .sheet(item: Binding(
+            get: {
+                viewingTranscript.map {
+                    TranscriptViewerItem(id: UUID(), text: $0, recordingDate: Date())
+                }
+            },
+            set: { newValue in
+                if newValue == nil { viewingTranscript = nil }
+            }
+        )) { item in
+            TranscriptViewerView(transcript: item.text, recordingDate: item.recordingDate)
+        }
     }
 
     private var header: some View {
@@ -70,9 +92,14 @@ struct DebugRecordingView: View {
             }
 
             if vm.recordingState == .idle {
-                Toggle("Encryption", isOn: $vm.encryptionEnabled)
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
+                VStack(spacing: 8) {
+                    Toggle("Encryption", isOn: $vm.encryptionEnabled)
+                        .toggleStyle(.checkbox)
+                        .font(.caption)
+                    Toggle("Transcribe after recording", isOn: $autoTranscribe)
+                        .toggleStyle(.checkbox)
+                        .font(.caption)
+                }
             }
         }
     }
@@ -100,20 +127,89 @@ struct DebugRecordingView: View {
         }
     }
 
-    private func fileSection(url: URL) -> some View {
+    private func fileSection(recording: LocalRecording) -> some View {
         GroupBox("Last Recording") {
             VStack(alignment: .leading, spacing: 8) {
-                Text(url.lastPathComponent)
+                Text(recording.fileURL.lastPathComponent)
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 Button("Open in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    NSWorkspace.shared.activateFileViewerSelecting([recording.fileURL])
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .accessibilityLabel("Open recording file in Finder")
+
+                transcriptionStatus(for: recording)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func transcriptionStatus(for recording: LocalRecording) -> some View {
+        let state = transcriptionVM.states[recording.id]
+        switch state {
+        case .running:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Transcribing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .awaitingModel:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Awaiting model download…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case let .done(transcript), let .pendingUpload(transcript):
+            HStack(spacing: 8) {
+                Button("View Transcript") {
+                    viewingTranscript = transcript
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("View transcription result")
+
+                Button("Copy Transcript") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(transcript, forType: .string)
+                    // Auto-clear pasteboard after 60s
+                    let snapshot = transcript
+                    Task {
+                        try? await Task.sleep(for: .seconds(60))
+                        if NSPasteboard.general.string(forType: .string) == snapshot {
+                            NSPasteboard.general.clearContents()
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Copy transcript to clipboard")
+            }
+        case let .failed(message):
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Transcription failed: \(message)")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Button("Retry") {
+                    Task { await transcriptionVM.transcribe(recording) }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Retry transcription")
+            }
+        case nil:
+            if recording.micPCMFileURL != nil {
+                Button("Transcribe") {
+                    Task { await transcriptionVM.transcribe(recording) }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Transcribe this recording")
             }
         }
     }
