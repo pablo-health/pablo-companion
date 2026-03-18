@@ -1,0 +1,39 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Display styles (Fraunces if available, serif fallback) -->
+    <Style x:Key="PabloDisplayLarge" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="ms-appx:///Assets/Fonts/Fraunces-VariableFont_SOFT,WONK,opsz,wght.ttf#Fraunces" />
+        <Setter Property="FontSize" Value="28" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{StaticResource PabloBrownDeep}" />
+    </Style>
+
+    <Style x:Key="PabloDisplayMedium" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="ms-appx:///Assets/Fonts/Fraunces-VariableFont_SOFT,WONK,opsz,wght.ttf#Fraunces" />
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource PabloBrownDeep}" />
+    </Style>
+
+    <!-- Body styles (DM Sans if available, sans-serif fallback) -->
+    <Style x:Key="PabloBodyLarge" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="ms-appx:///Assets/Fonts/DMSans-VariableFont_opsz,wght.ttf#DM Sans" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="Foreground" Value="{StaticResource PabloBrownDeep}" />
+    </Style>
+
+    <Style x:Key="PabloBodyMedium" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="ms-appx:///Assets/Fonts/DMSans-VariableFont_opsz,wght.ttf#DM Sans" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Foreground" Value="{StaticResource PabloBrownDeep}" />
+    </Style>
+
+    <Style x:Key="PabloBodySmall" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="ms-appx:///Assets/Fonts/DMSans-VariableFont_opsz,wght.ttf#DM Sans" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource PabloBrownSoft}" />
+    </Style>
+
+</ResourceDictionary>

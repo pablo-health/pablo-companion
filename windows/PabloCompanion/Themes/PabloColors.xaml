@@ -1,0 +1,23 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Pablo brand colors -->
+    <SolidColorBrush x:Key="PabloHoney" Color="#D4922E" />
+    <SolidColorBrush x:Key="PabloSage" Color="#7A9E7E" />
+    <SolidColorBrush x:Key="PabloSky" Color="#89B4C8" />
+    <SolidColorBrush x:Key="PabloCream" Color="#FDF6EC" />
+    <SolidColorBrush x:Key="PabloBrownDeep" Color="#2C1810" />
+    <SolidColorBrush x:Key="PabloBrownSoft" Color="#6B5344" />
+    <SolidColorBrush x:Key="PabloBlush" Color="#E8B4A2" />
+    <SolidColorBrush x:Key="PabloError" Color="#C45B4A" />
+
+    <!-- High-contrast variants -->
+    <SolidColorBrush x:Key="PabloHoneyHC" Color="#B87A1A" />
+    <SolidColorBrush x:Key="PabloSageHC" Color="#4A7A52" />
+    <SolidColorBrush x:Key="PabloSkyHC" Color="#4A7A9E" />
+    <SolidColorBrush x:Key="PabloBrownSoftHC" Color="#3D2E24" />
+    <SolidColorBrush x:Key="PabloBlushHC" Color="#C47A6A" />
+    <SolidColorBrush x:Key="PabloErrorHC" Color="#A33A2A" />
+
+</ResourceDictionary>

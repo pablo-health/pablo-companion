@@ -14,7 +14,12 @@ use crate::PabloError;
 
 /// Client-type header value sent with every request so the backend
 /// can distinguish companion traffic from web traffic.
+#[cfg(target_os = "macos")]
 const CLIENT_TYPE_HEADER: &str = "pablo-companion-macos/1.0";
+#[cfg(target_os = "windows")]
+const CLIENT_TYPE_HEADER: &str = "pablo-companion-windows/1.0";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const CLIENT_TYPE_HEADER: &str = "pablo-companion-unknown/1.0";
 
 /// Shared HTTP helper for authenticated Pablo API requests.
 ///

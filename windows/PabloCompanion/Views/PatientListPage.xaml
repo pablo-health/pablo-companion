@@ -1,0 +1,55 @@
+<Page
+    x:Class="PabloCompanion.Views.PatientListPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{StaticResource PabloCream}">
+
+    <Grid Padding="32" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="Patients"
+                   Style="{StaticResource PabloDisplayLarge}" />
+
+        <AutoSuggestBox Grid.Row="1"
+                        x:Name="SearchBox"
+                        PlaceholderText="Search patients..."
+                        QueryIcon="Find"
+                        TextChanged="SearchBox_TextChanged"
+                        AutomationProperties.Name="Search patients" />
+
+        <Grid Grid.Row="2">
+            <ProgressRing x:Name="LoadingRing"
+                          IsActive="False"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center" />
+
+            <ListView x:Name="PatientList"
+                      SelectionMode="None"
+                      AutomationProperties.Name="Patient list">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Border Padding="16,12"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                CornerRadius="8"
+                                Margin="0,4"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1">
+                            <StackPanel Spacing="4">
+                                <TextBlock x:Name="PatientName"
+                                           Style="{StaticResource PabloBodyLarge}" />
+                                <TextBlock x:Name="PatientEmail"
+                                           Style="{StaticResource PabloBodySmall}"
+                                           Foreground="{StaticResource PabloBrownSoft}" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+    </Grid>
+</Page>

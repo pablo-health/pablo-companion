@@ -1,0 +1,72 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - 'core/**'
+  pull_request:
+    paths:
+      - 'windows/**'
+      - 'core/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('core/Cargo.lock') }}
+
+      - name: Build Rust core (no transcription)
+        run: cargo build --manifest-path core/Cargo.toml --no-default-features
+
+      - name: Test Rust core (no transcription)
+        run: cargo test --manifest-path core/Cargo.toml --no-default-features
+
+      - name: Copy DLL to project
+        run: |
+          New-Item -ItemType Directory -Path windows/PabloCompanion/Native -Force
+          Copy-Item core/target/debug/pablo_core.dll windows/PabloCompanion/Native/
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore NuGet packages (with vulnerability audit)
+        run: dotnet restore windows/PabloCompanion.sln /p:NuGetAudit=true /p:NuGetAuditLevel=moderate
+
+      - name: Check C# formatting
+        run: dotnet format windows/PabloCompanion.sln --verify-no-changes --verbosity diagnostic
+
+      - name: Build Windows app (MSBuild)
+        shell: pwsh
+        run: |
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe"
+          & $msbuild windows/PabloCompanion/PabloCompanion.csproj /t:Build /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal
+
+      - name: Build tests (MSBuild)
+        shell: pwsh
+        run: |
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe"
+          & $msbuild windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj /t:Build /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal
+
+      - name: Run tests
+        run: dotnet test windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj --no-build -c Debug -p:Platform=x64

@@ -24,6 +24,13 @@ SourcePackages/
 core/target/
 **/*.rs.bk
 
+# Windows / .NET
+windows/**/bin/
+windows/**/obj/
+.vs/
+*.user
+*.suo
+
 # Environment
 .env
 .env.local

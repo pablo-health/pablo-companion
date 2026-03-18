@@ -1,0 +1,74 @@
+<Page
+    x:Class="PabloCompanion.Views.DayPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PabloCompanion.Views"
+    Background="{StaticResource PabloCream}">
+
+    <Grid Padding="32" RowSpacing="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock x:Name="GreetingText"
+                       Style="{StaticResource PabloDisplayLarge}"
+                       AutomationProperties.Name="Today's greeting" />
+            <TextBlock x:Name="DateText"
+                       Style="{StaticResource PabloBodyMedium}"
+                       Foreground="{StaticResource PabloBrownSoft}" />
+        </StackPanel>
+
+        <!-- Quick Start -->
+        <Button Grid.Row="1"
+                Content="Quick Start Session"
+                Style="{StaticResource PabloPrimaryButton}"
+                Click="QuickStart_Click"
+                AutomationProperties.Name="Quick start a new session" />
+
+        <!-- Error banner -->
+        <InfoBar Grid.Row="2"
+                 x:Name="ErrorBanner"
+                 IsOpen="False"
+                 Severity="Error"
+                 Title="Error"
+                 HorizontalAlignment="Stretch" />
+
+        <!-- Session list -->
+        <Grid Grid.Row="3">
+            <ProgressRing x:Name="LoadingRing"
+                          IsActive="False"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center" />
+
+            <ListView x:Name="SessionList"
+                      SelectionMode="None"
+                      AutomationProperties.Name="Today's sessions">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <local:SessionRowControl Margin="0,4" />
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Empty state -->
+            <StackPanel x:Name="EmptyState"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+                <FontIcon Glyph="&#xE787;"
+                          FontSize="48"
+                          Foreground="{StaticResource PabloBrownSoft}" />
+                <TextBlock Text="No sessions scheduled for today"
+                           Style="{StaticResource PabloBodyMedium}"
+                           Foreground="{StaticResource PabloBrownSoft}"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

@@ -1,0 +1,42 @@
+<UserControl
+    x:Class="PabloCompanion.Views.SessionRowControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            CornerRadius="8"
+            Padding="16"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1">
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Patient name + time -->
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                <TextBlock x:Name="PatientName"
+                           Style="{StaticResource PabloBodyLarge}"
+                           AutomationProperties.Name="Patient name" />
+                <TextBlock x:Name="SessionTime"
+                           Style="{StaticResource PabloBodySmall}"
+                           Foreground="{StaticResource PabloBrownSoft}" />
+            </StackPanel>
+
+            <!-- Status badge -->
+            <local:StatusBadge x:Name="Badge"
+                               xmlns:local="using:PabloCompanion.Views"
+                               Grid.Column="1"
+                               VerticalAlignment="Center" />
+
+            <!-- Action button -->
+            <Button x:Name="ActionButton"
+                    Grid.Column="2"
+                    Click="ActionButton_Click"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Session action" />
+        </Grid>
+    </Border>
+</UserControl>
