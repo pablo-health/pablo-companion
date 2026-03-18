@@ -140,6 +140,7 @@ public sealed partial class MainWindow : Window
             var pageType = tag switch
             {
                 "DayPage" => typeof(DayPage),
+                "SessionHistoryPage" => typeof(SessionHistoryPage),
                 "PatientListPage" => typeof(PatientListPage),
                 "SettingsPage" => typeof(SettingsPage),
                 _ => null,

@@ -81,7 +81,7 @@ public partial class App : Application
         services.AddSingleton<Services.VideoLaunchService>();
 
         services.AddSingleton<ViewModels.AuthViewModel>();
-        services.AddTransient<ViewModels.SessionViewModel>();
+        services.AddSingleton<ViewModels.SessionViewModel>();
         services.AddTransient<ViewModels.PatientViewModel>();
     }
 

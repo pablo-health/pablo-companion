@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using PabloCompanion.Helpers;
 using PabloCompanion.ViewModels;
 using uniffi.pablo_core;
@@ -9,6 +11,8 @@ namespace PabloCompanion.Views;
 
 public sealed partial class SessionRowControl : UserControl
 {
+    public event EventHandler<Session>? SessionTapped;
+
     public SessionRowControl()
     {
         InitializeComponent();
@@ -20,9 +24,25 @@ public sealed partial class SessionRowControl : UserControl
         if (args.NewValue is Session session)
         {
             PatientName.Text = SessionFormatting.FormatPatientName(session);
+            InitialsText.Text = SessionFormatting.GetPatientInitials(session);
             SessionTime.Text = SessionFormatting.FormatTime(session);
+            DurationText.Text = $"· {SessionFormatting.FormatDuration(session)}";
             Badge.Status = session.Status;
 
+            // Platform icon
+            var platformGlyph = SessionFormatting.GetPlatformIcon(session);
+            if (!string.IsNullOrEmpty(platformGlyph))
+            {
+                PlatformIcon.Glyph = platformGlyph;
+                PlatformIcon.Visibility = Visibility.Visible;
+                ToolTipService.SetToolTip(PlatformIcon, SessionFormatting.GetPlatformName(session));
+            }
+            else
+            {
+                PlatformIcon.Visibility = Visibility.Collapsed;
+            }
+
+            // Action button
             switch (session.Status)
             {
                 case SessionStatus.Scheduled:
@@ -56,5 +76,23 @@ public sealed partial class SessionRowControl : UserControl
         {
             await vm.EndSessionAsync(session.Id);
         }
+    }
+
+    private void Row_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (DataContext is Session session)
+        {
+            SessionTapped?.Invoke(this, session);
+        }
+    }
+
+    private void Row_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Hand);
+    }
+
+    private void Row_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
     }
 }

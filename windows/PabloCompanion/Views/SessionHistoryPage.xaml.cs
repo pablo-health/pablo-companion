@@ -2,23 +2,24 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using PabloCompanion.Helpers;
 using PabloCompanion.ViewModels;
 using uniffi.pablo_core;
 
 namespace PabloCompanion.Views;
 
-public sealed partial class DayPage : Page
+public sealed partial class SessionHistoryPage : Page
 {
     private readonly SessionViewModel _viewModel;
+    private Button? _activeFilterButton;
+    private readonly Button[] _filterButtons;
 
-    public DayPage()
+    public SessionHistoryPage()
     {
         InitializeComponent();
         _viewModel = App.Services.GetRequiredService<SessionViewModel>();
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
-
-        UpdateGreeting();
+        _filterButtons = [FilterAll, FilterScheduled, FilterInProgress, FilterRecorded, FilterFinalized, FilterCancelled];
+        _activeFilterButton = FilterAll;
 
         // Wire up SessionTapped on row controls
         SessionList.ContainerContentChanging += SessionList_ContainerContentChanging;
@@ -27,15 +28,8 @@ public sealed partial class DayPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        await _viewModel.LoadTodaySessionsAsync();
-        _viewModel.StartPolling();
+        await _viewModel.LoadSessionsAsync();
         UpdateUI();
-    }
-
-    protected override void OnNavigatedFrom(NavigationEventArgs e)
-    {
-        base.OnNavigatedFrom(e);
-        _viewModel.StopPolling();
     }
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -45,15 +39,21 @@ public sealed partial class DayPage : Page
 
     private void UpdateUI()
     {
-        LoadingRing.IsActive = _viewModel.IsLoading;
-        SessionList.ItemsSource = _viewModel.TodaySessions;
-        EmptyState.Visibility = !_viewModel.IsLoading && _viewModel.TodaySessions.Length == 0
+        LoadingRing.IsActive = _viewModel.IsLoadingHistory;
+        SessionList.ItemsSource = _viewModel.Sessions;
+        CountSubtitle.Text = _viewModel.TotalSessions > 0
+            ? $"{_viewModel.TotalSessions} total sessions"
+            : "";
+        EmptyState.Visibility = !_viewModel.IsLoadingHistory && _viewModel.Sessions.Length == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        LoadMoreButton.Visibility = _viewModel.HasMoreSessions
             ? Visibility.Visible
             : Visibility.Collapsed;
 
-        if (_viewModel.ErrorMessage != null)
+        if (_viewModel.HistoryErrorMessage != null)
         {
-            ErrorBanner.Message = _viewModel.ErrorMessage;
+            ErrorBanner.Message = _viewModel.HistoryErrorMessage;
             ErrorBanner.IsOpen = true;
         }
         else
@@ -62,31 +62,26 @@ public sealed partial class DayPage : Page
         }
     }
 
-    private void UpdateGreeting()
+    private void Filter_Click(object sender, RoutedEventArgs e)
     {
-        var hour = DateTime.Now.Hour;
-        var greeting = hour switch
+        if (sender is not Button button) return;
+
+        // Update active state visuals
+        foreach (var btn in _filterButtons)
         {
-            < 12 => "Good morning",
-            < 17 => "Good afternoon",
-            _ => "Good evening",
-        };
-        GreetingText.Text = greeting;
-        DateText.Text = DateTime.Today.ToString("dddd, MMMM d");
+            btn.Style = (Style)Application.Current.Resources["PabloFilterButton"];
+        }
+        button.Style = (Style)Application.Current.Resources["PabloFilterButtonActive"];
+        _activeFilterButton = button;
+
+        // Apply filter
+        var tag = button.Tag?.ToString();
+        _viewModel.StatusFilter = string.IsNullOrEmpty(tag) ? null : tag;
     }
 
-    private async void QuickStart_Click(object sender, RoutedEventArgs e)
+    private async void LoadMore_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new QuickStartDialog
-        {
-            XamlRoot = XamlRoot,
-        };
-
-        var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary && dialog.SelectedPatientId != null)
-        {
-            await _viewModel.CreateAdHocSessionAsync(dialog.SelectedPatientId);
-        }
+        await _viewModel.LoadMoreSessionsAsync();
     }
 
     private void SessionList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)

@@ -25,6 +25,11 @@
                         <FontIcon Glyph="&#xE787;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Sessions" Tag="SessionHistoryPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8B7;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Patients" Tag="PatientListPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE77B;" />

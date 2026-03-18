@@ -13,6 +13,15 @@ public static class SessionFormatting
         return "Unknown Patient";
     }
 
+    public static string GetPatientInitials(Session session)
+    {
+        if (session.Patient != null)
+        {
+            return PatientFormatting.GetInitials(session.Patient);
+        }
+        return "?";
+    }
+
     public static string FormatTime(Session session)
     {
         if (session.ScheduledAt != null && DateTimeOffset.TryParse(session.ScheduledAt, out var dt))
@@ -23,6 +32,33 @@ public static class SessionFormatting
             return $"{local:h:mm tt} - {end:h:mm tt}";
         }
         return "Time not set";
+    }
+
+    public static string FormatTimeShort(Session session)
+    {
+        if (session.ScheduledAt != null && DateTimeOffset.TryParse(session.ScheduledAt, out var dt))
+        {
+            return dt.ToLocalTime().ToString("h:mm tt");
+        }
+        return "";
+    }
+
+    public static string FormatDuration(Session session)
+    {
+        var mins = session.DurationMinutes ?? 50;
+        return $"{mins} min";
+    }
+
+    public static string FormatDate(Session session)
+    {
+        if (session.ScheduledAt != null && DateTimeOffset.TryParse(session.ScheduledAt, out var dt))
+        {
+            var local = dt.ToLocalTime();
+            if (local.Date == DateTime.Today) return "Today";
+            if (local.Date == DateTime.Today.AddDays(-1)) return "Yesterday";
+            return local.ToString("MMM d, yyyy");
+        }
+        return "";
     }
 
     public static string FormatStatus(SessionStatus status)
@@ -39,6 +75,57 @@ public static class SessionFormatting
             SessionStatus.Cancelled => "Cancelled",
             SessionStatus.Failed => "Failed",
             _ => "Unknown",
+        };
+    }
+
+    public static string GetPlatformIcon(Session session)
+    {
+        return session.VideoPlatform?.ToString().ToLowerInvariant() switch
+        {
+            "zoom" => "\uE774",       // Video icon
+            "teams" => "\uE717",      // People icon
+            "meet" or "google_meet" => "\uE8D6", // Globe icon
+            _ => "",
+        };
+    }
+
+    public static string GetPlatformName(Session session)
+    {
+        return session.VideoPlatform?.ToString().ToLowerInvariant() switch
+        {
+            "zoom" => "Zoom",
+            "teams" => "Teams",
+            "meet" or "google_meet" => "Meet",
+            _ => "",
+        };
+    }
+
+    public static string FormatSessionType(Session session)
+    {
+        return session.SessionType?.ToString() switch
+        {
+            "Individual" => "Individual",
+            "Couple" => "Couple",
+            "Family" => "Family",
+            "Group" => "Group",
+            _ => "Session",
+        };
+    }
+
+    public static string? StatusToFilterString(SessionStatus status)
+    {
+        return status switch
+        {
+            SessionStatus.Scheduled => "scheduled",
+            SessionStatus.InProgress => "in_progress",
+            SessionStatus.RecordingComplete => "recording_complete",
+            SessionStatus.Queued => "queued",
+            SessionStatus.Processing => "processing",
+            SessionStatus.PendingReview => "pending_review",
+            SessionStatus.Finalized => "finalized",
+            SessionStatus.Cancelled => "cancelled",
+            SessionStatus.Failed => "failed",
+            _ => null,
         };
     }
 }
