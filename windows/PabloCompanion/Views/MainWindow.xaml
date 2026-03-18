@@ -14,7 +14,8 @@
         <NavigationView x:Name="NavView"
                         x:FieldModifier="internal"
                         Visibility="Collapsed"
-                        PaneDisplayMode="Left"
+                        PaneDisplayMode="LeftCompact"
+                        CompactModeThresholdWidth="0"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
                         SelectionChanged="NavView_SelectionChanged">

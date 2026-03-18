@@ -60,11 +60,21 @@ public partial class AuthViewModel : ObservableObject
         var token = _credentials.IdToken;
         var refreshToken = _credentials.RefreshToken;
         var email = _credentials.UserEmail;
-        var baseUrl = _credentials.BackendApiUrl;
 
-        if (token == null || refreshToken == null || email == null || baseUrl == null) return;
+        if (token == null || refreshToken == null || email == null) return;
 
-        _apiClient.BaseUrl = baseUrl;
+        // Restore server URL for the UI field
+        var authUrl = _credentials.AuthServerUrl;
+        if (!string.IsNullOrEmpty(authUrl))
+            ServerUrl = authUrl;
+
+        // Discover backend URL from server config (like Mac's configureAndLoad)
+        await DiscoverServerConfigAsync();
+
+        // Fall back to saved backend URL if config discovery failed
+        var backendUrl = _credentials.BackendApiUrl;
+        if (!string.IsNullOrEmpty(backendUrl))
+            _apiClient.BaseUrl = backendUrl;
 
         var expiry = JwtDecoder.GetExpiry(token);
         if (expiry != null && expiry.Value > DateTimeOffset.UtcNow.AddMinutes(5))
@@ -80,22 +90,34 @@ public partial class AuthViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SignIn()
+    private async Task SignInAsync()
     {
-        var authUrl = _credentials.AuthServerUrl;
-        if (string.IsNullOrWhiteSpace(authUrl))
+        // Validate and save server URL first
+        if (string.IsNullOrWhiteSpace(ServerUrl))
         {
-            ErrorMessage = "Auth server URL not configured. Enter your server URL first.";
+            ErrorMessage = "Enter your server URL first.";
             return;
         }
+
+        var error = UrlValidator.ValidateScheme(ServerUrl);
+        if (error != null)
+        {
+            ErrorMessage = error;
+            return;
+        }
+
+        ServerUrl = UrlValidator.NormalizeToOrigin(ServerUrl);
+        _credentials.AuthServerUrl = ServerUrl;
+
+        // Discover backend URL before opening browser
+        await DiscoverServerConfigAsync();
 
         AuthState = AuthState.Authenticating;
         ErrorMessage = null;
 
         var redirectEncoded = Uri.EscapeDataString(RedirectUri);
-        var loginUrl = $"{authUrl.TrimEnd('/')}/native-auth?redirect_uri={redirectEncoded}";
+        var loginUrl = $"{ServerUrl.TrimEnd('/')}/native-auth?redirect_uri={redirectEncoded}";
 
-        // Include tenant ID if we have one
         var tenantId = _credentials.TenantId;
         if (!string.IsNullOrEmpty(tenantId))
         {
@@ -146,47 +168,6 @@ public partial class AuthViewModel : ObservableObject
         AuthState = AuthState.Unauthenticated;
     }
 
-    [RelayCommand]
-    private async Task SaveServerUrlAsync()
-    {
-        var error = UrlValidator.ValidateScheme(ServerUrl);
-        if (error != null)
-        {
-            ErrorMessage = error;
-            return;
-        }
-
-        // Strip paths like /dashboard — auth endpoints are always at the root
-        ServerUrl = UrlValidator.NormalizeToOrigin(ServerUrl);
-        _credentials.AuthServerUrl = ServerUrl;
-        ErrorMessage = null;
-
-        // Try to discover backend URL and Firebase API key from server config
-        try
-        {
-            var configUrl = $"{ServerUrl.TrimEnd('/')}/api/config";
-            var response = await s_httpClient.GetStringAsync(configUrl);
-            var doc = JsonDocument.Parse(response);
-            if (doc.RootElement.TryGetProperty("api_url", out var apiUrl))
-            {
-                var url = apiUrl.GetString();
-                if (url != null)
-                {
-                    _credentials.BackendApiUrl = url;
-                    _apiClient.BaseUrl = url;
-                }
-            }
-            if (doc.RootElement.TryGetProperty("firebase_api_key", out var fbKey))
-            {
-                var key = fbKey.GetString();
-                if (key != null) _credentials.FirebaseApiKey = key;
-            }
-        }
-        catch
-        {
-            // Config discovery is best-effort
-        }
-    }
 
     /// <summary>
     /// Exchanges an authorization code for id_token and refresh_token
@@ -263,7 +244,7 @@ public partial class AuthViewModel : ObservableObject
             var response = await s_httpClient.GetStringAsync(configUrl);
             var doc = JsonDocument.Parse(response);
 
-            if (doc.RootElement.TryGetProperty("api_url", out var apiUrl))
+            if (doc.RootElement.TryGetProperty("apiUrl", out var apiUrl))
             {
                 var url = apiUrl.GetString();
                 if (url != null)
@@ -272,7 +253,7 @@ public partial class AuthViewModel : ObservableObject
                     _apiClient.BaseUrl = url;
                 }
             }
-            if (doc.RootElement.TryGetProperty("firebase_api_key", out var fbKey))
+            if (doc.RootElement.TryGetProperty("firebaseApiKey", out var fbKey))
             {
                 var key = fbKey.GetString();
                 if (key != null) _credentials.FirebaseApiKey = key;

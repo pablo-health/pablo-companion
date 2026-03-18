@@ -26,14 +26,8 @@
                      Text="{x:Bind ViewModel.ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.Name="Server URL" />
 
-            <Button Content="Save &amp; Connect"
-                    Command="{x:Bind ViewModel.SaveServerUrlCommand}"
-                    Style="{StaticResource PabloSecondaryButton}"
-                    HorizontalAlignment="Stretch"
-                    AutomationProperties.Name="Save server URL and connect" />
-
-            <!-- Sign In -->
-            <Button Content="Sign In with Browser"
+            <!-- Single Sign In button -->
+            <Button Content="Sign In"
                     Command="{x:Bind ViewModel.SignInCommand}"
                     Style="{StaticResource PabloPrimaryButton}"
                     HorizontalAlignment="Stretch"
