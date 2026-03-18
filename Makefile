@@ -1,4 +1,4 @@
-.PHONY: check build-mac test-mac build-core test-core generate-bindings lint-swift codeql
+.PHONY: check build-mac test-mac build-core test-core generate-bindings generate-bindings-cs build-core-windows build-windows test-windows check-windows lint-swift codeql
 
 check: lint-swift build-core test-core build-mac
 
@@ -68,3 +68,20 @@ generate-bindings: build-core
 	  core/uniffi/pablo_core.udl \
 	  --language swift \
 	  --out-dir mac/PabloCompanion/Generated/
+
+# ── Windows targets ──────────────────────────────────────────────────────────
+
+build-core-windows:
+	cargo build --manifest-path core/Cargo.toml --target x86_64-pc-windows-msvc
+
+generate-bindings-cs: build-core
+	uniffi-bindgen-cs generate core/uniffi/pablo_core.udl \
+	  --out-dir windows/PabloCompanion/Generated/
+
+build-windows:
+	dotnet build windows/PabloCompanion.sln
+
+test-windows:
+	dotnet test windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj
+
+check-windows: build-core test-core build-windows test-windows

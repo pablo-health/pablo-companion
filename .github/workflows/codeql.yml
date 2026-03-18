@@ -15,14 +15,15 @@ permissions:
 
 jobs:
   changes:
-    name: Detect Swift changes
+    name: Detect changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     outputs:
-      # Always run on push/schedule; on PRs only run if Swift files changed
+      # Always run on push/schedule; on PRs only run if relevant files changed
       swift: ${{ github.event_name != 'pull_request' || steps.filter.outputs.swift == 'true' }}
+      csharp: ${{ github.event_name != 'pull_request' || steps.filter.outputs.csharp == 'true' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
@@ -32,6 +33,8 @@ jobs:
           filters: |
             swift:
               - 'mac/**'
+            csharp:
+              - 'windows/**'
 
   analyze-swift:
     name: CodeQL (swift)
@@ -78,3 +81,45 @@ jobs:
         uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98 # v4.32.6
         with:
           category: /language:swift
+
+  analyze-csharp:
+    name: CodeQL (csharp)
+    needs: changes
+    if: needs.changes.outputs.csharp == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust core (stub for linking)
+        run: cargo build --manifest-path core/Cargo.toml --no-default-features
+
+      - name: Copy DLL
+        run: |
+          New-Item -ItemType Directory -Path windows/PabloCompanion/Native -Force
+          Copy-Item core/target/debug/pablo_core.dll windows/PabloCompanion/Native/
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@0d579ffd059c29b07949a3cce3983f0780820c98 # v4.32.6
+        with:
+          languages: csharp
+          queries: security-extended
+
+      - name: Build
+        shell: pwsh
+        run: |
+          dotnet restore windows/PabloCompanion.sln
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe"
+          & $msbuild windows/PabloCompanion/PabloCompanion.csproj /t:Build /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98 # v4.32.6
+        with:
+          category: /language:csharp

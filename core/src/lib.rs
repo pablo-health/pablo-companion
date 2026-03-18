@@ -3,21 +3,35 @@
 // FFI boundary rule: simple async functions, plain value types.
 // No complex generics, no closures, no shared mutable state across the boundary.
 
+#[cfg(feature = "transcription")]
 use async_compat::Compat;
 
 uniffi::include_scaffolding!("pablo_core");
 
 pub mod api_client;
+#[cfg(feature = "transcription")]
 pub mod audio_preprocessing;
 pub mod google_meet_renderer;
 pub mod models;
+#[cfg(feature = "transcription")]
 pub mod session_pipeline;
+#[cfg(feature = "transcription")]
 pub mod whisper_transcriber;
 
 pub use api_client::*;
 pub use models::*;
 
+#[cfg(feature = "transcription")]
 pub use whisper_transcriber::RawSegment;
+
+// Stub RawSegment when transcription is disabled, so UniFFI scaffolding compiles.
+#[cfg(not(feature = "transcription"))]
+#[derive(Debug, Clone)]
+pub struct RawSegment {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub text: String,
+}
 
 // ── Error type ───────────────────────────────────────────────────────────────
 
@@ -116,13 +130,13 @@ pub struct TranscriptResult {
 
 // ── Namespace functions ───────────────────────────────────────────────────────
 
-/// Returns the pablo-core crate version. Used by Swift to confirm FFI is wired.
+/// Returns the pablo-core crate version. Used by Swift/C# to confirm FFI is wired.
 pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
 /// Audio preprocessing: raw PCM (signed 16-bit LE) -> mono f32 at 16 kHz.
-/// `sample_rate` is the actual input rate (e.g. 48000 built-in, 16000 Bluetooth HFP).
+#[cfg(feature = "transcription")]
 pub async fn preprocess_pcm(
     path: String,
     channels: u8,
@@ -136,15 +150,24 @@ pub async fn preprocess_pcm(
     .await
 }
 
+#[cfg(not(feature = "transcription"))]
+pub async fn preprocess_pcm(
+    _path: String,
+    _channels: u8,
+    _sample_rate: u32,
+) -> Result<Vec<f32>, PabloError> {
+    Err(PabloError::AudioPreprocessing {
+        message: "Transcription not available on this platform".to_string(),
+    })
+}
+
 /// Render a TranscriptResult to Google Meet plain-text format.
-/// The resulting string is what the Pablo SOAP note pipeline expects.
 pub fn render_google_meet(transcript: TranscriptResult, opts: GoogleMeetOptions) -> String {
     google_meet_renderer::render_google_meet(&transcript, &opts)
 }
 
 /// 1:1 session transcription pipeline.
-/// Preprocesses and transcribes mic and (optionally) system audio files,
-/// labels segments THERAPIST / CLIENT, merges by start time, returns TranscriptResult.
+#[cfg(feature = "transcription")]
 pub async fn transcribe_session_1on1(
     session_id: String,
     mic_path: String,
@@ -160,14 +183,35 @@ pub async fn transcribe_session_1on1(
     .await
 }
 
-/// Transcribe 16 kHz mono f32 audio using the GGML Whisper model at `model_path`.
-/// Returns one `RawSegment` per sentence segment, ordered by start time.
-/// Fixed params: language=en, token_timestamps=true, beam_size=5.
+#[cfg(not(feature = "transcription"))]
+pub async fn transcribe_session_1on1(
+    _session_id: String,
+    _mic_path: String,
+    _system_path: Option<String>,
+    _config: TranscriptionConfig,
+) -> Result<TranscriptResult, PabloError> {
+    Err(PabloError::WhisperInit {
+        message: "Transcription not available on this platform".to_string(),
+    })
+}
+
+/// Transcribe 16 kHz mono f32 audio using the GGML Whisper model.
+#[cfg(feature = "transcription")]
 pub async fn transcribe_audio(
     model_path: String,
     audio: Vec<f32>,
 ) -> Result<Vec<RawSegment>, PabloError> {
     Compat::new(whisper_transcriber::transcribe_audio(model_path, audio)).await
+}
+
+#[cfg(not(feature = "transcription"))]
+pub async fn transcribe_audio(
+    _model_path: String,
+    _audio: Vec<f32>,
+) -> Result<Vec<RawSegment>, PabloError> {
+    Err(PabloError::WhisperInit {
+        message: "Transcription not available on this platform".to_string(),
+    })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -1,0 +1,65 @@
+<Page
+    x:Class="PabloCompanion.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{StaticResource PabloCream}">
+
+    <ScrollViewer Padding="32">
+        <StackPanel Spacing="24" MaxWidth="600">
+            <TextBlock Text="Settings"
+                       Style="{StaticResource PabloDisplayLarge}" />
+
+            <!-- Account Info -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Account"
+                           Style="{StaticResource PabloBodyLarge}"
+                           FontWeight="SemiBold" />
+
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="16"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <StackPanel Spacing="8">
+                        <TextBlock x:Name="EmailText"
+                                   Style="{StaticResource PabloBodyMedium}" />
+                        <TextBlock x:Name="BackendUrlText"
+                                   Style="{StaticResource PabloBodySmall}"
+                                   Foreground="{StaticResource PabloBrownSoft}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Health Check -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Connection"
+                           Style="{StaticResource PabloBodyLarge}"
+                           FontWeight="SemiBold" />
+
+                <Button Content="Test Connection"
+                        Click="HealthCheck_Click"
+                        Style="{StaticResource PabloSecondaryButton}"
+                        AutomationProperties.Name="Test backend connection" />
+
+                <InfoBar x:Name="HealthStatus"
+                         IsOpen="False" />
+            </StackPanel>
+
+            <!-- Version -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="About"
+                           Style="{StaticResource PabloBodyLarge}"
+                           FontWeight="SemiBold" />
+                <TextBlock x:Name="VersionText"
+                           Style="{StaticResource PabloBodySmall}"
+                           Foreground="{StaticResource PabloBrownSoft}" />
+            </StackPanel>
+
+            <!-- Sign Out -->
+            <Button Content="Sign Out"
+                    Click="SignOut_Click"
+                    Style="{StaticResource PabloDestructiveButton}"
+                    AutomationProperties.Name="Sign out of Pablo" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

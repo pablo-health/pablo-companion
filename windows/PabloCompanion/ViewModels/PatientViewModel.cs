@@ -1,0 +1,108 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using PabloCompanion.Services;
+using uniffi.pablo_core;
+
+namespace PabloCompanion.ViewModels;
+
+/// <summary>
+/// Manages patient list, search, and creation.
+/// Mirrors PatientViewModel.swift on macOS.
+/// </summary>
+public partial class PatientViewModel : ObservableObject
+{
+    private readonly APIClient _apiClient;
+    private CancellationTokenSource? _searchDebounce;
+
+    [ObservableProperty]
+    public partial Patient[] Patients { get; set; } = [];
+
+    [ObservableProperty]
+    public partial bool IsLoading { get; set; }
+
+    [ObservableProperty]
+    public partial string? ErrorMessage { get; set; }
+
+    [ObservableProperty]
+    public partial string SearchText { get; set; } = "";
+
+    [ObservableProperty]
+    public partial bool HasMore { get; set; }
+
+    private uint _currentPage = 1;
+    private const uint PageSize = 50;
+
+    public PatientViewModel(APIClient apiClient)
+    {
+        _apiClient = apiClient;
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        _searchDebounce?.Cancel();
+        _searchDebounce = new CancellationTokenSource();
+
+        var token = _searchDebounce.Token;
+
+        _ = Task.Delay(300, token).ContinueWith(async _ =>
+        {
+            if (!token.IsCancellationRequested)
+            {
+                _currentPage = 1;
+                await LoadPatientsAsync();
+            }
+        }, token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+    }
+
+    [RelayCommand]
+    public async Task LoadPatientsAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = null;
+
+        try
+        {
+            var search = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText;
+            var response = await _apiClient.FetchPatientsAsync(search, _currentPage, PageSize);
+            Patients = response.Data;
+            HasMore = response.HasMore;
+        }
+        catch (PabloException ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Failed to load patients: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task LoadMoreAsync()
+    {
+        if (!HasMore || IsLoading) return;
+
+        _currentPage++;
+        IsLoading = true;
+
+        try
+        {
+            var search = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText;
+            var response = await _apiClient.FetchPatientsAsync(search, _currentPage, PageSize);
+            Patients = [.. Patients, .. response.Data];
+            HasMore = response.HasMore;
+        }
+        catch (PabloException ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}
