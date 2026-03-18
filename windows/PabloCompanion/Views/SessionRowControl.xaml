@@ -5,38 +5,79 @@
 
     <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
             CornerRadius="8"
-            Padding="16"
+            Padding="12"
             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1">
+            BorderThickness="1"
+            PointerPressed="Row_PointerPressed"
+            PointerEntered="Row_PointerEntered"
+            PointerExited="Row_PointerExited"
+            x:Name="CardBorder">
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="40" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <!-- Patient name + time -->
-            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+            <!-- Initials avatar -->
+            <Border Grid.Column="0"
+                    Width="40" Height="40"
+                    CornerRadius="20"
+                    Background="{StaticResource PabloHoney}"
+                    VerticalAlignment="Center">
+                <TextBlock x:Name="InitialsText"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="White" />
+            </Border>
+
+            <!-- Patient name + time/duration -->
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                 <TextBlock x:Name="PatientName"
                            Style="{StaticResource PabloBodyLarge}"
                            AutomationProperties.Name="Patient name" />
-                <TextBlock x:Name="SessionTime"
-                           Style="{StaticResource PabloBodySmall}"
-                           Foreground="{StaticResource PabloBrownSoft}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="SessionTime"
+                               Style="{StaticResource PabloBodySmall}"
+                               Foreground="{StaticResource PabloBrownSoft}" />
+                    <TextBlock x:Name="DurationText"
+                               Style="{StaticResource PabloBodySmall}"
+                               Foreground="{StaticResource PabloBrownSoft}" />
+                </StackPanel>
             </StackPanel>
+
+            <!-- Platform icon -->
+            <FontIcon x:Name="PlatformIcon"
+                      Grid.Column="2"
+                      VerticalAlignment="Center"
+                      FontSize="16"
+                      Foreground="{StaticResource PabloBrownSoft}"
+                      Visibility="Collapsed" />
 
             <!-- Status badge -->
             <local:StatusBadge x:Name="Badge"
                                xmlns:local="using:PabloCompanion.Views"
-                               Grid.Column="1"
+                               Grid.Column="3"
                                VerticalAlignment="Center" />
 
             <!-- Action button -->
             <Button x:Name="ActionButton"
-                    Grid.Column="2"
+                    Grid.Column="4"
                     Click="ActionButton_Click"
                     VerticalAlignment="Center"
                     AutomationProperties.Name="Session action" />
+
+            <!-- Chevron for tappable hint -->
+            <FontIcon Grid.Column="5"
+                      Glyph="&#xE76C;"
+                      FontSize="12"
+                      Foreground="{StaticResource PabloBrownSoft}"
+                      VerticalAlignment="Center" />
         </Grid>
     </Border>
 </UserControl>

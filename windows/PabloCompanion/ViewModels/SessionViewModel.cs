@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
+using PabloCompanion.Helpers;
 using PabloCompanion.Services;
 using uniffi.pablo_core;
 
@@ -8,6 +9,7 @@ namespace PabloCompanion.ViewModels;
 
 /// <summary>
 /// Manages session lifecycle, today's sessions, and session history.
+/// Singleton — shared between DayPage and SessionHistoryPage.
 /// Mirrors SessionViewModel.swift on macOS.
 /// </summary>
 public partial class SessionViewModel : ObservableObject
@@ -15,6 +17,8 @@ public partial class SessionViewModel : ObservableObject
     private readonly APIClient _apiClient;
     private readonly VideoLaunchService _videoLaunch;
     private DispatcherTimer? _pollingTimer;
+
+    // --- Today's sessions ---
 
     [ObservableProperty]
     public partial Session[] TodaySessions { get; set; } = [];
@@ -28,11 +32,36 @@ public partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     public partial Session? ActiveSession { get; set; }
 
+    // --- Session history ---
+
+    [ObservableProperty]
+    public partial Session[] Sessions { get; set; } = [];
+
+    [ObservableProperty]
+    public partial uint TotalSessions { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasMoreSessions { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsLoadingHistory { get; set; }
+
+    [ObservableProperty]
+    public partial string? HistoryErrorMessage { get; set; }
+
+    [ObservableProperty]
+    public partial string? StatusFilter { get; set; }
+
+    private uint _historyPage = 1;
+    private const uint HistoryPageSize = 20;
+
     public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch)
     {
         _apiClient = apiClient;
         _videoLaunch = videoLaunch;
     }
+
+    // --- Today ---
 
     [RelayCommand]
     public async Task LoadTodaySessionsAsync()
@@ -42,14 +71,12 @@ public partial class SessionViewModel : ObservableObject
 
         try
         {
-            // Windows uses its own timezone IDs; backend expects IANA format
             var timezone = TimeZoneInfo.TryConvertWindowsIdToIanaId(TimeZoneInfo.Local.Id, out var iana)
                 ? iana
                 : TimeZoneInfo.Local.Id;
             var sessions = await _apiClient.FetchTodaySessionsAsync(timezone);
             TodaySessions = sessions;
 
-            // Track active session
             ActiveSession = sessions.FirstOrDefault(s =>
                 s.Status == SessionStatus.InProgress ||
                 s.Status == SessionStatus.RecordingComplete);
@@ -76,10 +103,7 @@ public partial class SessionViewModel : ObservableObject
         {
             var session = await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.InProgress);
             ActiveSession = session;
-
-            // Launch video call if configured
             _videoLaunch.LaunchVideoCall(session.VideoLink, session.VideoPlatform?.ToString());
-
             await LoadTodaySessionsAsync();
         }
         catch (PabloException ex)
@@ -127,6 +151,68 @@ public partial class SessionViewModel : ObservableObject
             ErrorMessage = ex.Message;
         }
     }
+
+    // --- Session History ---
+
+    [RelayCommand]
+    public async Task LoadSessionsAsync()
+    {
+        _historyPage = 1;
+        IsLoadingHistory = true;
+        HistoryErrorMessage = null;
+
+        try
+        {
+            var response = await _apiClient.FetchSessionsAsync(_historyPage, HistoryPageSize, StatusFilter);
+            Sessions = response.Data;
+            TotalSessions = response.Total;
+            HasMoreSessions = response.HasMore;
+        }
+        catch (PabloException ex)
+        {
+            HistoryErrorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            HistoryErrorMessage = $"Failed to load sessions: {ex.Message}";
+        }
+        finally
+        {
+            IsLoadingHistory = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task LoadMoreSessionsAsync()
+    {
+        if (!HasMoreSessions || IsLoadingHistory) return;
+
+        _historyPage++;
+        IsLoadingHistory = true;
+
+        try
+        {
+            var response = await _apiClient.FetchSessionsAsync(_historyPage, HistoryPageSize, StatusFilter);
+            Sessions = [.. Sessions, .. response.Data];
+            TotalSessions = response.Total;
+            HasMoreSessions = response.HasMore;
+        }
+        catch (PabloException ex)
+        {
+            HistoryErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoadingHistory = false;
+        }
+    }
+
+    partial void OnStatusFilterChanged(string? value)
+    {
+        _ = LoadSessionsAsync();
+    }
+
+    // --- Polling ---
 
     public void StartPolling()
     {

@@ -41,17 +41,18 @@ public partial class PatientViewModel : ObservableObject
     {
         _searchDebounce?.Cancel();
         _searchDebounce = new CancellationTokenSource();
+        _ = DebounceSearchAsync(_searchDebounce.Token);
+    }
 
-        var token = _searchDebounce.Token;
-
-        _ = Task.Delay(300, token).ContinueWith(async _ =>
+    private async Task DebounceSearchAsync(CancellationToken token)
+    {
+        try
         {
-            if (!token.IsCancellationRequested)
-            {
-                _currentPage = 1;
-                await LoadPatientsAsync();
-            }
-        }, token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+            await Task.Delay(300, token);
+            _currentPage = 1;
+            await LoadPatientsAsync();
+        }
+        catch (TaskCanceledException) { }
     }
 
     [RelayCommand]
