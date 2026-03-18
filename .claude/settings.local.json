@@ -49,7 +49,27 @@
       "Bash(rm:*)",
       "Bash(export:*)",
       "Bash(swift build:*)",
-      "Bash(swift test:*)"
+      "Bash(swift test:*)",
+      "Bash(ls:*)",
+      "Bash(cd /c/Users/kurtn/developer/pablo-companion && uniffi-bindgen-cs generate core/uniffi/pablo_core.udl --out-dir windows/PabloCompanion/Generated/ 2>&1)",
+      "Bash(uniffi-bindgen-cs:*)",
+      "Bash(echo dotnet not found:*)",
+      "Bash(dotnet workload:*)",
+      "Bash(tail:*)",
+      "Bash(winget upgrade:*)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"/c/Program Files/dotnet:$PATH\" && dotnet --version 2>&1)",
+      "Bash(\"C:\\\\Users\\\\kurtn\\\\.nuget\\\\packages\\\\microsoft.windowsappsdk\\\\1.6.250602001\\\\tools\\\\net472\\\\XamlCompiler.exe\":*)",
+      "Bash(\"C:\\\\Program Files \\(x86\\)\\\\Microsoft Visual Studio\\\\Installer\\\\vswhere.exe\":*)",
+      "Bash(echo Exit code: $?:*)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/Installer/vswhere.exe\":*)",
+      "Bash(dotnet:*)",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft Visual Studio/Installer/vswhere.exe\":*)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "xcodebuildmcp",
+    "macos-ui-automation"
+  ]
 }

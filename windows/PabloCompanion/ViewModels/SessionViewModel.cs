@@ -42,7 +42,10 @@ public partial class SessionViewModel : ObservableObject
 
         try
         {
-            var timezone = TimeZoneInfo.Local.Id;
+            // Windows uses its own timezone IDs; backend expects IANA format
+            var timezone = TimeZoneInfo.TryConvertWindowsIdToIanaId(TimeZoneInfo.Local.Id, out var iana)
+                ? iana
+                : TimeZoneInfo.Local.Id;
             var sessions = await _apiClient.FetchTodaySessionsAsync(timezone);
             TodaySessions = sessions;
 
@@ -57,7 +60,8 @@ public partial class SessionViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to load sessions: {ex.Message}";
+            var inner = ex.InnerException?.Message ?? ex.Message;
+            ErrorMessage = $"Failed to load sessions: {inner}";
         }
         finally
         {

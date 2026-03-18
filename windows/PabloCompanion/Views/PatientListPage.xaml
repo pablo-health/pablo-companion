@@ -40,9 +40,13 @@
                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1">
                             <StackPanel Spacing="4">
-                                <TextBlock x:Name="PatientName"
-                                           Style="{StaticResource PabloBodyLarge}" />
-                                <TextBlock x:Name="PatientEmail"
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Text="{Binding FirstName}"
+                                               Style="{StaticResource PabloBodyLarge}" />
+                                    <TextBlock Text="{Binding LastName}"
+                                               Style="{StaticResource PabloBodyLarge}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding Email}"
                                            Style="{StaticResource PabloBodySmall}"
                                            Foreground="{StaticResource PabloBrownSoft}" />
                             </StackPanel>
