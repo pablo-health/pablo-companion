@@ -84,8 +84,15 @@ struct KeychainManager: Sendable {
     }
 
     static func deleteAll() {
-        for key in [TokenKey.idToken, .refreshToken, .userEmail, .authServerURL, .firebaseAPIKey,
-                    .backendAPIURL, .tenantID] {
+        for key in [
+            TokenKey.idToken,
+            .refreshToken,
+            .userEmail,
+            .authServerURL,
+            .firebaseAPIKey,
+            .backendAPIURL,
+            .tenantID,
+        ] {
             deleteToken(forKey: key)
         }
         deleteDeviceEncryptionKey()
