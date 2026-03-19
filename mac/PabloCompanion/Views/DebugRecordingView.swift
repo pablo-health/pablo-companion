@@ -148,6 +148,7 @@ struct DebugRecordingView: View {
     }
 
     @ViewBuilder
+    // swiftlint:disable:next function_body_length
     private func transcriptionStatus(for recording: LocalRecording) -> some View {
         let state = transcriptionVM.states[recording.id]
         switch state {
