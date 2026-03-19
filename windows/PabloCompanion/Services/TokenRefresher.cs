@@ -38,8 +38,7 @@ public sealed class TokenRefresher
 
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync();
-            throw new TokenRefreshException($"Token refresh failed (HTTP {(int)response.StatusCode}): {errorBody}");
+            throw new TokenRefreshException($"Token refresh failed (HTTP {(int)response.StatusCode}).");
         }
 
         var result = await response.Content.ReadFromJsonAsync<TokenResponse>();
