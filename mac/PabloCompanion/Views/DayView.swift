@@ -149,24 +149,27 @@ struct DayView: View {
             )
 
             Spacer()
-
-            Button {
-                onStopRecording?()
-            } label: {
-                Label("Stop", systemImage: "stop.fill")
-                    .font(.pabloBody(13))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.pabloError)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stop recording session")
+            stopButton
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .background(Color.pabloSage.opacity(0.1))
+    }
+
+    private var stopButton: some View {
+        Button {
+            onStopRecording?()
+        } label: {
+            Label("Stop", systemImage: "stop.fill")
+                .font(.pabloBody(13))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.pabloError)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Stop recording session")
     }
 
     // MARK: - Content
