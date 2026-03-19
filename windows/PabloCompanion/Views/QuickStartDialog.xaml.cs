@@ -1,62 +1,45 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml.Controls;
-using PabloCompanion.Services;
+using PabloCompanion.ViewModels;
 using uniffi.pablo_core;
 
 namespace PabloCompanion.Views;
 
 public sealed partial class QuickStartDialog : ContentDialog
 {
-    private readonly APIClient _apiClient;
-    private Patient[] _patients = [];
-    private CancellationTokenSource? _searchDebounce;
+    private readonly PatientViewModel _patientVm;
+    private Patient[] _allPatients = [];
 
     public string? SelectedPatientId { get; private set; }
 
     public QuickStartDialog()
     {
         InitializeComponent();
-        _apiClient = App.Services.GetRequiredService<APIClient>();
+        _patientVm = App.Services.GetRequiredService<PatientViewModel>();
+        _allPatients = _patientVm.Patients;
+
+        // Show all patients immediately
+        PatientSearch.ItemsSource = _allPatients
+            .Select(p => $"{p.FirstName} {p.LastName}")
+            .ToList();
     }
 
     private void PatientSearch_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
 
-        _searchDebounce?.Cancel();
-        _searchDebounce = new CancellationTokenSource();
-        _ = DebounceSearchAsync(sender, _searchDebounce.Token);
-    }
+        var query = sender.Text?.Trim() ?? "";
+        var filtered = string.IsNullOrEmpty(query)
+            ? _allPatients
+            : _allPatients.Where(p =>
+                p.FirstName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                p.LastName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                $"{p.FirstName} {p.LastName}".Contains(query, StringComparison.OrdinalIgnoreCase))
+              .ToArray();
 
-    private async Task DebounceSearchAsync(AutoSuggestBox sender, CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(300, token);
-            if (token.IsCancellationRequested) return;
-
-            SearchProgress.IsActive = true;
-
-            var search = string.IsNullOrWhiteSpace(sender.Text) ? null : sender.Text;
-            var response = await _apiClient.FetchPatientsAsync(search, 1, 10);
-
-            if (token.IsCancellationRequested) return;
-
-            _patients = response.Data;
-            sender.ItemsSource = _patients.Select(p => $"{p.FirstName} {p.LastName}").ToList();
-        }
-        catch (TaskCanceledException) { }
-        catch
-        {
-            if (!token.IsCancellationRequested)
-            {
-                sender.ItemsSource = new List<string> { "Error loading patients" };
-            }
-        }
-        finally
-        {
-            SearchProgress.IsActive = false;
-        }
+        sender.ItemsSource = filtered
+            .Select(p => $"{p.FirstName} {p.LastName}")
+            .ToList();
     }
 
     private void PatientSearch_SuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
@@ -64,7 +47,7 @@ public sealed partial class QuickStartDialog : ContentDialog
         var selected = args.SelectedItem?.ToString();
         if (selected == null) return;
 
-        var patient = _patients.FirstOrDefault(p => $"{p.FirstName} {p.LastName}" == selected);
+        var patient = _allPatients.FirstOrDefault(p => $"{p.FirstName} {p.LastName}" == selected);
         if (patient != null)
         {
             SelectedPatientId = patient.Id;

@@ -82,7 +82,7 @@ public partial class App : Application
 
         services.AddSingleton<ViewModels.AuthViewModel>();
         services.AddSingleton<ViewModels.SessionViewModel>();
-        services.AddTransient<ViewModels.PatientViewModel>();
+        services.AddSingleton<ViewModels.PatientViewModel>();
     }
 
     public static void HandleProtocolActivationStatic(Uri uri)

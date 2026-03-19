@@ -23,8 +23,9 @@ public sealed partial class SessionRowControl : UserControl
     {
         if (args.NewValue is Session session)
         {
-            PatientName.Text = SessionFormatting.FormatPatientName(session);
-            InitialsText.Text = SessionFormatting.GetPatientInitials(session);
+            var patients = App.Services.GetRequiredService<PatientViewModel>().Patients;
+            PatientName.Text = SessionFormatting.FormatPatientName(session, patients);
+            InitialsText.Text = SessionFormatting.GetPatientInitials(session, patients);
             SessionTime.Text = SessionFormatting.FormatTime(session);
             DurationText.Text = $"· {SessionFormatting.FormatDuration(session)}";
             Badge.Status = session.Status;

@@ -119,6 +119,10 @@ public sealed partial class MainWindow : Window
             LoginPage.Visibility = Visibility.Collapsed;
             NavView.Visibility = Visibility.Visible;
 
+            // Pre-load patient cache (matching macOS pattern)
+            var patientVm = App.Services.GetRequiredService<PatientViewModel>();
+            _ = patientVm.LoadPatientsAsync();
+
             if (ContentFrame.Content == null)
             {
                 ContentFrame.Navigate(typeof(DayPage));

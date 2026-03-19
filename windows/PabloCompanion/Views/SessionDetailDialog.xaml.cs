@@ -8,19 +8,21 @@ namespace PabloCompanion.Views;
 public sealed partial class SessionDetailDialog : ContentDialog
 {
     private readonly Session _session;
+    private readonly Patient[]? _cachedPatients;
 
-    public SessionDetailDialog(Session session)
+    public SessionDetailDialog(Session session, Patient[]? cachedPatients = null)
     {
         InitializeComponent();
         _session = session;
+        _cachedPatients = cachedPatients;
         PopulateDetails();
     }
 
     private void PopulateDetails()
     {
         // Patient header
-        PatientNameText.Text = SessionFormatting.FormatPatientName(_session);
-        InitialsText.Text = SessionFormatting.GetPatientInitials(_session);
+        PatientNameText.Text = SessionFormatting.FormatPatientName(_session, _cachedPatients);
+        InitialsText.Text = SessionFormatting.GetPatientInitials(_session, _cachedPatients);
         DateText.Text = SessionFormatting.FormatDate(_session);
         Badge.Status = _session.Status;
 

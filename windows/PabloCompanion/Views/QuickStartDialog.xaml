@@ -19,8 +19,10 @@
                         SuggestionChosen="PatientSearch_SuggestionChosen"
                         AutomationProperties.Name="Search patients" />
 
-        <ProgressRing x:Name="SearchProgress"
-                      IsActive="False"
-                      HorizontalAlignment="Center" />
+        <TextBlock x:Name="EmptyHint"
+                   Text="Start typing to filter patients..."
+                   Foreground="{StaticResource PabloBrownSoft}"
+                   FontSize="12"
+                   Visibility="Collapsed" />
     </StackPanel>
 </ContentDialog>

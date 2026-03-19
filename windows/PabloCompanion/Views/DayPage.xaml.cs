@@ -11,11 +11,13 @@ namespace PabloCompanion.Views;
 public sealed partial class DayPage : Page
 {
     private readonly SessionViewModel _viewModel;
+    private readonly PatientViewModel _patientVm;
 
     public DayPage()
     {
         InitializeComponent();
         _viewModel = App.Services.GetRequiredService<SessionViewModel>();
+        _patientVm = App.Services.GetRequiredService<PatientViewModel>();
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
 
         UpdateGreeting();
@@ -100,7 +102,7 @@ public sealed partial class DayPage : Page
 
     private async void Row_SessionTapped(object? sender, Session session)
     {
-        var dialog = new SessionDetailDialog(session)
+        var dialog = new SessionDetailDialog(session, _patientVm.Patients)
         {
             XamlRoot = XamlRoot,
         };
