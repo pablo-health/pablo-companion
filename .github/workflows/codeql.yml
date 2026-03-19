@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup .NET 9
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '9.0.x'
 
@@ -107,7 +107,7 @@ jobs:
           Copy-Item core/target/debug/pablo_core.dll windows/PabloCompanion/Native/
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@0d579ffd059c29b07949a3cce3983f0780820c98 # v4.32.6
+        uses: github/codeql-action/init@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4.33.0
         with:
           languages: csharp
           queries: security-extended
@@ -124,6 +124,6 @@ jobs:
           & $msbuild windows/PabloCompanion/PabloCompanion.csproj /t:Build /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98 # v4.32.6
+        uses: github/codeql-action/analyze@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4.33.0
         with:
           category: /language:csharp
