@@ -18,14 +18,20 @@ public sealed partial class PatientListPage : Page
     {
         InitializeComponent();
         _viewModel = App.Services.GetRequiredService<PatientViewModel>();
-        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         await _viewModel.LoadPatientsAsync();
         UpdateUI();
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
     }
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

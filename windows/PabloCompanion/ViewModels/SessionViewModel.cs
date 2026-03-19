@@ -233,7 +233,11 @@ public partial class SessionViewModel : ObservableObject
     {
         StopPolling();
         _pollingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _pollingTimer.Tick += async (_, _) => await LoadTodaySessionsAsync();
+        _pollingTimer.Tick += async (_, _) =>
+        {
+            if (IsLoading) return;
+            await LoadTodaySessionsAsync();
+        };
         _pollingTimer.Start();
     }
 

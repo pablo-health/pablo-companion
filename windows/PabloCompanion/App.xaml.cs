@@ -16,6 +16,7 @@ public partial class App : Application
     /// </summary>
     private bool _isSecondInstance;
     private Uri? _comProtocolUri;
+    private Mutex? _comPathMutex;
     private Window? _window;
 
     public App()
@@ -27,7 +28,7 @@ public partial class App : Application
         if (!Program.RanThroughMain)
         {
             bool createdNew;
-            _ = new Mutex(true, MutexName, out createdNew);
+            _comPathMutex = new Mutex(true, MutexName, out createdNew);
             if (!createdNew)
             {
                 _isSecondInstance = true;

@@ -40,6 +40,7 @@ public partial class PatientViewModel : ObservableObject
     partial void OnSearchTextChanged(string value)
     {
         _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
         _searchDebounce = new CancellationTokenSource();
         _ = DebounceSearchAsync(_searchDebounce.Token);
     }

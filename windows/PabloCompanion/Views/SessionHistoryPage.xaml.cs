@@ -19,7 +19,6 @@ public sealed partial class SessionHistoryPage : Page
         InitializeComponent();
         _viewModel = App.Services.GetRequiredService<SessionViewModel>();
         _patientVm = App.Services.GetRequiredService<PatientViewModel>();
-        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _filterButtons = [FilterAll, FilterScheduled, FilterInProgress, FilterRecorded, FilterFinalized, FilterCancelled];
         _activeFilterButton = FilterAll;
 
@@ -30,8 +29,15 @@ public sealed partial class SessionHistoryPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         await _viewModel.LoadSessionsAsync();
         UpdateUI();
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
     }
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

@@ -18,7 +18,6 @@ public sealed partial class DayPage : Page
         InitializeComponent();
         _viewModel = App.Services.GetRequiredService<SessionViewModel>();
         _patientVm = App.Services.GetRequiredService<PatientViewModel>();
-        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
 
         UpdateGreeting();
 
@@ -29,6 +28,7 @@ public sealed partial class DayPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         await _viewModel.LoadTodaySessionsAsync();
         _viewModel.StartPolling();
         UpdateUI();
@@ -37,6 +37,7 @@ public sealed partial class DayPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
+        _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.StopPolling();
     }
 

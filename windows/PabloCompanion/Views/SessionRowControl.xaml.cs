@@ -81,10 +81,25 @@ public sealed partial class SessionRowControl : UserControl
 
     private void Row_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
     {
+        // Don't fire SessionTapped when the action button (Start/End) is clicked
+        if (e.OriginalSource is FrameworkElement source && IsChildOf(source, ActionButton))
+            return;
+
         if (DataContext is Session session)
         {
             SessionTapped?.Invoke(this, session);
         }
+    }
+
+    private static bool IsChildOf(DependencyObject child, DependencyObject parent)
+    {
+        var current = child;
+        while (current != null)
+        {
+            if (current == parent) return true;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return false;
     }
 
     private void Row_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)

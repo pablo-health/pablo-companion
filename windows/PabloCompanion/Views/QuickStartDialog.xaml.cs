@@ -5,6 +5,15 @@ using uniffi.pablo_core;
 
 namespace PabloCompanion.Views;
 
+/// <summary>
+/// Wraps a Patient for display in AutoSuggestBox, using the patient's ID
+/// to ensure correct selection even when multiple patients share the same name.
+/// </summary>
+internal record PatientSuggestion(Patient Patient)
+{
+    public override string ToString() => $"{Patient.FirstName} {Patient.LastName}";
+}
+
 public sealed partial class QuickStartDialog : ContentDialog
 {
     private readonly PatientViewModel _patientVm;
@@ -20,7 +29,7 @@ public sealed partial class QuickStartDialog : ContentDialog
 
         // Show all patients immediately
         PatientSearch.ItemsSource = _allPatients
-            .Select(p => $"{p.FirstName} {p.LastName}")
+            .Select(p => new PatientSuggestion(p))
             .ToList();
     }
 
@@ -38,19 +47,16 @@ public sealed partial class QuickStartDialog : ContentDialog
               .ToArray();
 
         sender.ItemsSource = filtered
-            .Select(p => $"{p.FirstName} {p.LastName}")
+            .Select(p => new PatientSuggestion(p))
             .ToList();
     }
 
     private void PatientSearch_SuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
     {
-        var selected = args.SelectedItem?.ToString();
-        if (selected == null) return;
-
-        var patient = _allPatients.FirstOrDefault(p => $"{p.FirstName} {p.LastName}" == selected);
-        if (patient != null)
+        if (args.SelectedItem is PatientSuggestion suggestion)
         {
-            SelectedPatientId = patient.Id;
+            sender.Text = suggestion.ToString();
+            SelectedPatientId = suggestion.Patient.Id;
             IsPrimaryButtonEnabled = true;
         }
     }
