@@ -172,6 +172,9 @@ public partial class AuthViewModel : ObservableObject
         // Clear all singleton ViewModels that hold PHI
         var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
         sessionVm.ClearAllData();
+
+        var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
+        recordingVm.ClearAllData();
     }
 
 

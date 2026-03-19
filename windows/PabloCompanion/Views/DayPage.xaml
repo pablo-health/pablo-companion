@@ -10,6 +10,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -38,8 +39,13 @@
                  Title="Error"
                  HorizontalAlignment="Stretch" />
 
+        <!-- Recording banner -->
+        <local:RecordingBanner Grid.Row="3"
+                               x:Name="RecordingBannerControl"
+                               Visibility="Collapsed" />
+
         <!-- Session list -->
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="4">
             <ProgressRing x:Name="LoadingRing"
                           IsActive="False"
                           HorizontalAlignment="Center"

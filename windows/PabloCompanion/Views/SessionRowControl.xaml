@@ -38,9 +38,17 @@
 
             <!-- Patient name + time/duration -->
             <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                <TextBlock x:Name="PatientName"
-                           Style="{StaticResource PabloBodyLarge}"
-                           AutomationProperties.Name="Patient name" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse x:Name="RecordingIndicator"
+                             Width="8" Height="8"
+                             Fill="{StaticResource PabloSage}"
+                             VerticalAlignment="Center"
+                             Visibility="Collapsed"
+                             AutomationProperties.Name="Recording active" />
+                    <TextBlock x:Name="PatientName"
+                               Style="{StaticResource PabloBodyLarge}"
+                               AutomationProperties.Name="Patient name" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock x:Name="SessionTime"
                                Style="{StaticResource PabloBodySmall}"

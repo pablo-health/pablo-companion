@@ -30,6 +30,12 @@ public sealed partial class SessionRowControl : UserControl
             DurationText.Text = $"· {SessionFormatting.FormatDuration(session)}";
             Badge.Status = session.Status;
 
+            // Show recording indicator if this session is actively recording
+            var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
+            RecordingIndicator.Visibility = recordingVm.ActiveSessionId == session.Id
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
             // Platform icon
             var platformGlyph = SessionFormatting.GetPlatformIcon(session);
             if (!string.IsNullOrEmpty(platformGlyph))

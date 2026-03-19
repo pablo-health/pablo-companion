@@ -13,7 +13,8 @@ public sealed class CredentialManager
     private static readonly string[] TokenKeys =
     [
         "idToken", "refreshToken", "userEmail",
-        "authServerURL", "firebaseAPIKey", "backendAPIURL", "tenantID"
+        "authServerURL", "firebaseAPIKey", "backendAPIURL", "tenantID",
+        "deviceEncryptionKey"
     ];
 
     public string? GetValue(string key)
@@ -98,6 +99,25 @@ public sealed class CredentialManager
     {
         get => GetValue("tenantID");
         set { if (value != null) SetValue("tenantID", value); else RemoveValue("tenantID"); }
+    }
+
+    /// <summary>
+    /// Returns the 32-byte device encryption key, creating one if it doesn't exist.
+    /// Stored as Base64 in PasswordVault. Used for HIPAA-compliant audio encryption.
+    /// </summary>
+    public byte[]? GetOrCreateDeviceEncryptionKey()
+    {
+        var existing = GetValue("deviceEncryptionKey");
+        if (existing != null)
+        {
+            try { return Convert.FromBase64String(existing); }
+            catch { /* corrupt — regenerate */ }
+        }
+
+        var key = new byte[32];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(key);
+        SetValue("deviceEncryptionKey", Convert.ToBase64String(key));
+        return key;
     }
 
     /// <summary>

@@ -12,12 +12,14 @@ public sealed partial class DayPage : Page
 {
     private readonly SessionViewModel _viewModel;
     private readonly PatientViewModel _patientVm;
+    private readonly RecordingViewModel _recordingVm;
 
     public DayPage()
     {
         InitializeComponent();
         _viewModel = App.Services.GetRequiredService<SessionViewModel>();
         _patientVm = App.Services.GetRequiredService<PatientViewModel>();
+        _recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
 
         UpdateGreeting();
 
@@ -29,6 +31,7 @@ public sealed partial class DayPage : Page
     {
         base.OnNavigatedTo(e);
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        _recordingVm.PropertyChanged += ViewModel_PropertyChanged;
         await _viewModel.LoadTodaySessionsAsync();
         _viewModel.StartPolling();
         UpdateUI();
@@ -38,6 +41,7 @@ public sealed partial class DayPage : Page
     {
         base.OnNavigatedFrom(e);
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        _recordingVm.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.StopPolling();
     }
 
@@ -63,6 +67,11 @@ public sealed partial class DayPage : Page
         {
             ErrorBanner.IsOpen = false;
         }
+
+        // Recording banner visibility
+        RecordingBannerControl.Visibility = _recordingVm.State != Models.RecordingUIState.Idle
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private void UpdateGreeting()
