@@ -113,6 +113,10 @@ jobs:
           queries: security-extended
 
       - name: Build
+        # CodeQL only needs C# ASTs from the compilation step.
+        # WinUI XAML compilation or linking may fail under CodeQL
+        # instrumentation — that's fine, same as the Swift job.
+        continue-on-error: true
         shell: pwsh
         run: |
           dotnet restore windows/PabloCompanion.sln

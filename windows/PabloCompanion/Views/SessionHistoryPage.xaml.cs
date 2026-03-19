@@ -10,6 +10,7 @@ namespace PabloCompanion.Views;
 public sealed partial class SessionHistoryPage : Page
 {
     private readonly SessionViewModel _viewModel;
+    private readonly PatientViewModel _patientVm;
     private Button? _activeFilterButton;
     private readonly Button[] _filterButtons;
 
@@ -17,6 +18,7 @@ public sealed partial class SessionHistoryPage : Page
     {
         InitializeComponent();
         _viewModel = App.Services.GetRequiredService<SessionViewModel>();
+        _patientVm = App.Services.GetRequiredService<PatientViewModel>();
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _filterButtons = [FilterAll, FilterScheduled, FilterInProgress, FilterRecorded, FilterFinalized, FilterCancelled];
         _activeFilterButton = FilterAll;
@@ -95,7 +97,7 @@ public sealed partial class SessionHistoryPage : Page
 
     private async void Row_SessionTapped(object? sender, Session session)
     {
-        var dialog = new SessionDetailDialog(session)
+        var dialog = new SessionDetailDialog(session, _patientVm.Patients)
         {
             XamlRoot = XamlRoot,
         };

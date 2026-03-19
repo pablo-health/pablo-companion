@@ -4,22 +4,38 @@ namespace PabloCompanion.Helpers;
 
 public static class SessionFormatting
 {
-    public static string FormatPatientName(Session session)
+    public static string FormatPatientName(Session session, Patient[]? cachedPatients = null)
     {
         if (session.Patient != null)
         {
             return $"{session.Patient.FirstName} {session.Patient.LastName}";
         }
+        var patient = LookupPatient(session, cachedPatients);
+        if (patient != null)
+        {
+            return $"{patient.FirstName} {patient.LastName}";
+        }
         return "Unknown Patient";
     }
 
-    public static string GetPatientInitials(Session session)
+    public static string GetPatientInitials(Session session, Patient[]? cachedPatients = null)
     {
         if (session.Patient != null)
         {
             return PatientFormatting.GetInitials(session.Patient);
         }
+        var patient = LookupPatient(session, cachedPatients);
+        if (patient != null)
+        {
+            return PatientFormatting.GetInitials(patient);
+        }
         return "?";
+    }
+
+    private static Patient? LookupPatient(Session session, Patient[]? cachedPatients)
+    {
+        if (session.PatientId == null || cachedPatients == null) return null;
+        return cachedPatients.FirstOrDefault(p => p.Id == session.PatientId);
     }
 
     public static string FormatTime(Session session)
