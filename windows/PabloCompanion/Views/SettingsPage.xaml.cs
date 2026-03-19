@@ -12,14 +12,12 @@ public sealed partial class SettingsPage : Page
 {
     private readonly AuthViewModel _authVm;
     private readonly APIClient _apiClient;
-    private readonly CredentialManager _credentials;
 
     public SettingsPage()
     {
         InitializeComponent();
         _authVm = App.Services.GetRequiredService<AuthViewModel>();
         _apiClient = App.Services.GetRequiredService<APIClient>();
-        _credentials = App.Services.GetRequiredService<CredentialManager>();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)

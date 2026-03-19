@@ -202,7 +202,7 @@ public partial class AuthViewModel : ObservableObject
         }
 
         var responseBody = await response.Content.ReadAsStringAsync();
-        var doc = JsonDocument.Parse(responseBody);
+        using var doc = JsonDocument.Parse(responseBody);
 
         string? idToken = null;
         string? refreshToken = null;
@@ -248,7 +248,7 @@ public partial class AuthViewModel : ObservableObject
         {
             var configUrl = $"{authUrl.TrimEnd('/')}/api/config";
             var response = await s_httpClient.GetStringAsync(configUrl);
-            var doc = JsonDocument.Parse(response);
+            using var doc = JsonDocument.Parse(response);
 
             if (doc.RootElement.TryGetProperty("apiUrl", out var apiUrl))
             {
