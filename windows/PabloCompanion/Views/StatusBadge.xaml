@@ -1,0 +1,14 @@
+<UserControl
+    x:Class="PabloCompanion.Views.StatusBadge"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Border x:Name="BadgeBorder"
+            CornerRadius="12"
+            Padding="8,4"
+            AutomationProperties.Name="Session status">
+        <TextBlock x:Name="BadgeText"
+                   FontSize="12"
+                   FontWeight="SemiBold" />
+    </Border>
+</UserControl>

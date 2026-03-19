@@ -1,0 +1,97 @@
+<Page
+    x:Class="PabloCompanion.Views.SessionHistoryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PabloCompanion.Views"
+    Background="{StaticResource PabloCream}">
+
+    <Grid Padding="32" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock Text="Sessions"
+                       Style="{StaticResource PabloDisplayLarge}" />
+            <TextBlock x:Name="CountSubtitle"
+                       Style="{StaticResource PabloBodySmall}"
+                       Foreground="{StaticResource PabloBrownSoft}" />
+        </StackPanel>
+
+        <!-- Filter bar -->
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="FilterAll" Content="All" Tag=""
+                        Click="Filter_Click" Style="{StaticResource PabloFilterButtonActive}" />
+                <Button x:Name="FilterScheduled" Content="Scheduled" Tag="scheduled"
+                        Click="Filter_Click" Style="{StaticResource PabloFilterButton}" />
+                <Button x:Name="FilterInProgress" Content="In Progress" Tag="in_progress"
+                        Click="Filter_Click" Style="{StaticResource PabloFilterButton}" />
+                <Button x:Name="FilterRecorded" Content="Recorded" Tag="recording_complete"
+                        Click="Filter_Click" Style="{StaticResource PabloFilterButton}" />
+                <Button x:Name="FilterFinalized" Content="Complete" Tag="finalized"
+                        Click="Filter_Click" Style="{StaticResource PabloFilterButton}" />
+                <Button x:Name="FilterCancelled" Content="Cancelled" Tag="cancelled"
+                        Click="Filter_Click" Style="{StaticResource PabloFilterButton}" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Error banner -->
+        <InfoBar Grid.Row="2"
+                 x:Name="ErrorBanner"
+                 IsOpen="False"
+                 Severity="Error"
+                 Title="Error"
+                 HorizontalAlignment="Stretch" />
+
+        <!-- Session list -->
+        <Grid Grid.Row="3">
+            <ProgressRing x:Name="LoadingRing"
+                          IsActive="False"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center" />
+
+            <ListView x:Name="SessionList"
+                      SelectionMode="None"
+                      AutomationProperties.Name="Session history">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <local:SessionRowControl Margin="0,4" />
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Empty state -->
+            <StackPanel x:Name="EmptyState"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+                <FontIcon Glyph="&#xE8B7;"
+                          FontSize="48"
+                          Foreground="{StaticResource PabloBrownSoft}" />
+                <TextBlock Text="No sessions found"
+                           Style="{StaticResource PabloBodyMedium}"
+                           Foreground="{StaticResource PabloBrownSoft}"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Load more -->
+        <Button Grid.Row="4"
+                x:Name="LoadMoreButton"
+                Content="Load More"
+                Visibility="Collapsed"
+                HorizontalAlignment="Center"
+                Click="LoadMore_Click"
+                Style="{StaticResource PabloSecondaryButton}"
+                AutomationProperties.Name="Load more sessions" />
+    </Grid>
+</Page>

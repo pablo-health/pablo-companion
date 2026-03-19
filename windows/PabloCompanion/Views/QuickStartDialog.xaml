@@ -1,0 +1,28 @@
+<ContentDialog
+    x:Class="PabloCompanion.Views.QuickStartDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Quick Start Session"
+    PrimaryButtonText="Start"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    IsPrimaryButtonEnabled="False">
+
+    <StackPanel Spacing="16" MinWidth="350">
+        <TextBlock Text="Select a patient to start a session"
+                   Foreground="{StaticResource PabloBrownSoft}" />
+
+        <AutoSuggestBox x:Name="PatientSearch"
+                        PlaceholderText="Search patients..."
+                        QueryIcon="Find"
+                        TextChanged="PatientSearch_TextChanged"
+                        SuggestionChosen="PatientSearch_SuggestionChosen"
+                        AutomationProperties.Name="Search patients" />
+
+        <TextBlock x:Name="EmptyHint"
+                   Text="Start typing to filter patients..."
+                   Foreground="{StaticResource PabloBrownSoft}"
+                   FontSize="12"
+                   Visibility="Collapsed" />
+    </StackPanel>
+</ContentDialog>
