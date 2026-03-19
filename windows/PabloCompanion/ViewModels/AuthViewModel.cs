@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 using PabloCompanion.Services;
 
 namespace PabloCompanion.ViewModels;
@@ -142,18 +144,18 @@ public partial class AuthViewModel : ObservableObject
             var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
             var code = query["code"];
 
-            if (string.IsNullOrEmpty(code))
+            if (string.IsNullOrEmpty(code) || !Regex.IsMatch(code, @"^[a-zA-Z0-9_\-\.]{10,2000}$"))
             {
-                ErrorMessage = "Invalid auth callback — missing authorization code.";
+                ErrorMessage = "Invalid authorization code.";
                 AuthState = AuthState.Unauthenticated;
                 return;
             }
 
             await ExchangeCodeForTokensAsync(code);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ErrorMessage = $"Auth callback failed: {ex.Message}";
+            ErrorMessage = "Authentication failed. Please try again.";
             AuthState = AuthState.Unauthenticated;
         }
     }
@@ -166,6 +168,10 @@ public partial class AuthViewModel : ObservableObject
         _credentials.ClearAll();
         UserEmail = null;
         AuthState = AuthState.Unauthenticated;
+
+        // Clear all singleton ViewModels that hold PHI
+        var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+        sessionVm.ClearAllData();
     }
 
 

@@ -61,6 +61,22 @@ public partial class SessionViewModel : ObservableObject
         _videoLaunch = videoLaunch;
     }
 
+    /// <summary>
+    /// Clears all session data. Called on sign-out to prevent PHI leakage.
+    /// </summary>
+    public void ClearAllData()
+    {
+        StopPolling();
+        TodaySessions = [];
+        Sessions = [];
+        ActiveSession = null;
+        TotalSessions = 0;
+        HasMoreSessions = false;
+        StatusFilter = null;
+        ErrorMessage = null;
+        HistoryErrorMessage = null;
+    }
+
     // --- Today ---
 
     [RelayCommand]
@@ -81,14 +97,13 @@ public partial class SessionViewModel : ObservableObject
                 s.Status == SessionStatus.InProgress ||
                 s.Status == SessionStatus.RecordingComplete);
         }
-        catch (PabloException ex)
+        catch (PabloException)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = "Failed to load today's sessions.";
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            var inner = ex.InnerException?.Message ?? ex.Message;
-            ErrorMessage = $"Failed to load sessions: {inner}";
+            ErrorMessage = "Failed to load sessions. Check your connection.";
         }
         finally
         {
@@ -106,9 +121,9 @@ public partial class SessionViewModel : ObservableObject
             _videoLaunch.LaunchVideoCall(session.VideoLink, session.VideoPlatform?.ToString());
             await LoadTodaySessionsAsync();
         }
-        catch (PabloException ex)
+        catch (PabloException)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = "Failed to start session.";
         }
     }
 
@@ -121,9 +136,9 @@ public partial class SessionViewModel : ObservableObject
             ActiveSession = null;
             await LoadTodaySessionsAsync();
         }
-        catch (PabloException ex)
+        catch (PabloException)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = "Failed to end session.";
         }
     }
 
@@ -146,9 +161,9 @@ public partial class SessionViewModel : ObservableObject
             var session = await _apiClient.CreateSessionAsync(request);
             await StartSessionAsync(session.Id);
         }
-        catch (PabloException ex)
+        catch (PabloException)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = "Failed to create session.";
         }
     }
 
@@ -168,13 +183,13 @@ public partial class SessionViewModel : ObservableObject
             TotalSessions = response.Total;
             HasMoreSessions = response.HasMore;
         }
-        catch (PabloException ex)
+        catch (PabloException)
         {
-            HistoryErrorMessage = ex.Message;
+            HistoryErrorMessage = "Failed to load session history.";
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            HistoryErrorMessage = $"Failed to load sessions: {ex.Message}";
+            HistoryErrorMessage = "Failed to load sessions. Check your connection.";
         }
         finally
         {
@@ -197,9 +212,9 @@ public partial class SessionViewModel : ObservableObject
             TotalSessions = response.Total;
             HasMoreSessions = response.HasMore;
         }
-        catch (PabloException ex)
+        catch (PabloException)
         {
-            HistoryErrorMessage = ex.Message;
+            HistoryErrorMessage = "Failed to load more sessions.";
         }
         finally
         {

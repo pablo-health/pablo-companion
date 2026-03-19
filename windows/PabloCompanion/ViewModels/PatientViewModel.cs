@@ -68,13 +68,13 @@ public partial class PatientViewModel : ObservableObject
             Patients = response.Data;
             HasMore = response.HasMore;
         }
-        catch (PabloException ex)
+        catch (PabloException)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = "Failed to load patients.";
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ErrorMessage = $"Failed to load patients: {ex.Message}";
+            ErrorMessage = "Failed to load patients. Check your connection.";
         }
         finally
         {
@@ -97,9 +97,9 @@ public partial class PatientViewModel : ObservableObject
             Patients = [.. Patients, .. response.Data];
             HasMore = response.HasMore;
         }
-        catch (PabloException ex)
+        catch (PabloException)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = "Failed to load more patients.";
         }
         finally
         {
