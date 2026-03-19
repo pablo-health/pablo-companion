@@ -11,6 +11,7 @@ struct DayView: View {
     @Binding var patientSearchText: String
     var recordingState: RecordingUIState = .idle
     var recordingDuration: TimeInterval = 0
+    var systemAudioActive = false
     var pendingUploadCount = 0
     var awaitingModelCount = 0
     var transcriptionStateForSession: ((String) -> TranscriptionState?)?
@@ -140,6 +141,12 @@ struct DayView: View {
             Text(formattedDuration(recordingDuration))
                 .font(.system(size: 14, design: .monospaced))
                 .foregroundStyle(Color.pabloBrownSoft)
+
+            StatusIndicator(
+                isActive: systemAudioActive,
+                activeLabel: "System Audio",
+                inactiveLabel: "No System Audio"
+            )
 
             Spacer()
 
