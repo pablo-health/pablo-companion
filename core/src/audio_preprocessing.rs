@@ -108,7 +108,11 @@ fn resample_to_16k(input: Vec<f32>, input_rate: u32) -> Result<Vec<f32>, PabloEr
 
     let chunk_size = 1024;
     let mut resampler = Async::<f32>::new_sinc(
-        ratio, 2.0, &params, chunk_size, 1, // mono
+        ratio,
+        2.0,
+        &params,
+        chunk_size,
+        1, // mono
         FixedAsync::Input,
     )
     .map_err(|e| audio_err(format!("resampler init failed: {e}")))?;
