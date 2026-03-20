@@ -16,6 +16,7 @@ public partial class SessionViewModel : ObservableObject
 {
     private readonly APIClient _apiClient;
     private readonly VideoLaunchService _videoLaunch;
+    private readonly RecordingViewModel _recordingVm;
     private DispatcherTimer? _pollingTimer;
 
     // --- Today's sessions ---
@@ -55,10 +56,11 @@ public partial class SessionViewModel : ObservableObject
     private uint _historyPage = 1;
     private const uint HistoryPageSize = 20;
 
-    public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch)
+    public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch, RecordingViewModel recordingVm)
     {
         _apiClient = apiClient;
         _videoLaunch = videoLaunch;
+        _recordingVm = recordingVm;
     }
 
     /// <summary>
@@ -119,6 +121,10 @@ public partial class SessionViewModel : ObservableObject
             var session = await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.InProgress);
             ActiveSession = session;
             _videoLaunch.LaunchVideoCall(session.VideoLink, session.VideoPlatform?.ToString());
+
+            // Start recording
+            _ = _recordingVm.StartRecordingAsync(sessionId);
+
             await LoadTodaySessionsAsync();
         }
         catch (PabloException)
@@ -132,6 +138,10 @@ public partial class SessionViewModel : ObservableObject
     {
         try
         {
+            // Stop recording first
+            if (_recordingVm.State != Models.RecordingUIState.Idle)
+                await _recordingVm.StopRecordingAsync();
+
             await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.RecordingComplete);
             ActiveSession = null;
             await LoadTodaySessionsAsync();

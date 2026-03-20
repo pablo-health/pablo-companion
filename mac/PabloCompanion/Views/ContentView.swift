@@ -242,6 +242,7 @@ struct ContentView: View {
             patientSearchText: $patientVM.searchText,
             recordingState: recordingVM.recordingState,
             recordingDuration: recordingVM.duration,
+            systemAudioActive: recordingVM.systemAudioActive,
             pendingUploadCount: transcriptionVM.pendingUploadCount,
             awaitingModelCount: transcriptionVM.awaitingModelCount,
             transcriptionStateForSession: { transcriptionStateForSession($0) },

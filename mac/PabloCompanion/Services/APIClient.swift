@@ -19,6 +19,7 @@ final class APIClient {
         else {
             // Placeholder URL — will be overwritten by configureAndLoad() after auth.
             // Non-fatal so the app can still launch and reach the login screen.
+            // swiftlint:disable:next force_unwrapping
             self.baseURL = URL(string: "https://api.pablo.health")!
             self.baseURLString = "https://api.pablo.health"
             return

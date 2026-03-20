@@ -25,6 +25,9 @@ jobs:
 
       - uses: actions/checkout@v6
 
+      - name: Checkout AudioCaptureKit (sibling repo for project reference)
+        run: git clone --depth 1 --branch feature/csharp-audio-capture https://github.com/pablo-health/AudioCaptureKit.git ../AudioCaptureKit
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 

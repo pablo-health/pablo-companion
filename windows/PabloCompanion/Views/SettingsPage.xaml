@@ -45,6 +45,39 @@
                          IsOpen="False" />
             </StackPanel>
 
+            <!-- Audio -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Audio"
+                           Style="{StaticResource PabloBodyLarge}"
+                           FontWeight="SemiBold" />
+
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="16"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Microphone"
+                                       Style="{StaticResource PabloBodyMedium}" />
+                            <ComboBox x:Name="MicDropdown"
+                                      HorizontalAlignment="Stretch"
+                                      SelectionChanged="MicDropdown_SelectionChanged"
+                                      AutomationProperties.Name="Select microphone" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE72E;"
+                                      FontSize="16"
+                                      Foreground="{StaticResource PabloSage}" />
+                            <TextBlock Text="Audio encryption enabled (HIPAA)"
+                                       Style="{StaticResource PabloBodySmall}"
+                                       Foreground="{StaticResource PabloBrownSoft}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
             <!-- Version -->
             <StackPanel Spacing="8">
                 <TextBlock Text="About"

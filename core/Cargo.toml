@@ -41,7 +41,7 @@ reqwest = { version = "0.13", features = ["json", "multipart", "query"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "query", "native-tls"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "query", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "query", "rustls"] }
 
 [build-dependencies]
 uniffi = { version = "0.31", features = ["build"] }

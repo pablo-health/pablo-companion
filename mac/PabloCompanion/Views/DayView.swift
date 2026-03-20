@@ -11,6 +11,7 @@ struct DayView: View {
     @Binding var patientSearchText: String
     var recordingState: RecordingUIState = .idle
     var recordingDuration: TimeInterval = 0
+    var systemAudioActive = false
     var pendingUploadCount = 0
     var awaitingModelCount = 0
     var transcriptionStateForSession: ((String) -> TranscriptionState?)?
@@ -141,25 +142,34 @@ struct DayView: View {
                 .font(.system(size: 14, design: .monospaced))
                 .foregroundStyle(Color.pabloBrownSoft)
 
-            Spacer()
+            StatusIndicator(
+                isActive: systemAudioActive,
+                activeLabel: "System Audio",
+                inactiveLabel: "No System Audio"
+            )
 
-            Button {
-                onStopRecording?()
-            } label: {
-                Label("Stop", systemImage: "stop.fill")
-                    .font(.pabloBody(13))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.pabloError)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stop recording session")
+            Spacer()
+            stopButton
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .background(Color.pabloSage.opacity(0.1))
+    }
+
+    private var stopButton: some View {
+        Button {
+            onStopRecording?()
+        } label: {
+            Label("Stop", systemImage: "stop.fill")
+                .font(.pabloBody(13))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.pabloError)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Stop recording session")
     }
 
     // MARK: - Content
