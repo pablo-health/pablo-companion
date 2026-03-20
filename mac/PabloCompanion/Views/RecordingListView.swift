@@ -208,6 +208,7 @@ private func makePreviewRecordings() -> [LocalRecording] {
             channelLayout: .separatedStereo,
             micPCMFileURL: nil,
             systemPCMFileURL: nil,
+            sampleRate: 48000,
             isUploaded: false
         ),
         LocalRecording(
@@ -220,6 +221,7 @@ private func makePreviewRecordings() -> [LocalRecording] {
             channelLayout: .separatedStereo,
             micPCMFileURL: nil,
             systemPCMFileURL: nil,
+            sampleRate: 48000,
             isUploaded: true
         ),
     ]

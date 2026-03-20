@@ -167,6 +167,12 @@ final class RecordingService {
             let micPCMFileURL = result.rawPCMFileURLs.indices.contains(0) ? result.rawPCMFileURLs[0] : nil
             let systemPCMFileURL = result.rawPCMFileURLs.indices.contains(1) ? result.rawPCMFileURLs[1] : nil
 
+            // Detect actual output sample rate from diagnostics.
+            // Bluetooth HFP can drop mic to 8/16/24 kHz; output rate = min(mic rate, 48000).
+            let diagnostics = session.diagnostics
+            let detectedRate = Self.parseOutputRate(from: diagnostics.micFormat)
+            logger.info("Detected output sample rate: \(detectedRate)Hz")
+
             let recording = LocalRecording(
                 id: result.metadata.id,
                 fileURL: result.fileURL,
@@ -177,6 +183,7 @@ final class RecordingService {
                 channelLayout: result.metadata.channelLayout,
                 micPCMFileURL: micPCMFileURL,
                 systemPCMFileURL: systemPCMFileURL,
+                sampleRate: detectedRate,
                 isUploaded: false
             )
             onRecordingCompleted?(recording)
@@ -404,6 +411,19 @@ extension RecordingService {
         default:
             break
         }
+    }
+}
+
+// MARK: - Rate Detection
+
+extension RecordingService {
+    /// Parses the actual output sample rate from the diagnostics mic format string.
+    /// Format is "24000Hz 1ch non-int". Returns 48000 if parsing fails.
+    static func parseOutputRate(from micFormat: String) -> Double {
+        guard let hzRange = micFormat.range(of: "Hz") else { return 48000 }
+        let rateString = micFormat[micFormat.startIndex ..< hzRange.lowerBound]
+        guard let micRate = Double(rateString) else { return 48000 }
+        return min(micRate, 48000)
     }
 }
 

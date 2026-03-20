@@ -135,11 +135,15 @@ final class TranscriptionViewModel {
         logger.info("Starting transcription")
 
         do {
-            let config = try buildTranscriptionConfig(using: presetOverride)
+            // Decrypt encrypted PCM sidecars to temp files before feeding to Whisper.
+            let (resolvedMicPath, resolvedSystemPath, tempFiles) = try decryptPCMIfNeeded(recording)
+            defer { tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+
+            let config = try buildTranscriptionConfig(sampleRate: recording.sampleRate, using: presetOverride)
             let result = try await transcribeSession1on1(
                 sessionId: backendSessionId,
-                micPath: micPath,
-                systemPath: recording.systemPCMFileURL?.path,
+                micPath: resolvedMicPath,
+                systemPath: resolvedSystemPath,
                 config: config
             )
             let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: recording))
@@ -245,15 +249,17 @@ final class TranscriptionViewModel {
     // MARK: - Private
 
     private func buildTranscriptionConfig(
+        sampleRate: Double,
         using presetOverride: WhisperModelPreset? = nil
     ) throws -> TranscriptionConfig {
         let modelURL = try resolveModelURL(preferred: presetOverride ?? qualityPreset)
+        let rate = UInt32(sampleRate)
         return TranscriptionConfig(
             modelPath: modelURL.path,
             micChannels: 1,
-            micSampleRate: 48000,
+            micSampleRate: rate,
             systemChannels: 2,
-            systemSampleRate: 48000,
+            systemSampleRate: rate,
             swapSpeakers: UserDefaults.standard.bool(forKey: "swapSpeakers")
         )
     }
@@ -270,6 +276,36 @@ final class TranscriptionViewModel {
             }
         }
         throw ModelError.notFound(preferred)
+    }
+
+    /// Decrypts encrypted PCM sidecar files to temp files for transcription.
+    /// Returns the resolved mic path, system path, and a list of temp files to clean up.
+    private func decryptPCMIfNeeded(
+        _ recording: LocalRecording
+    ) throws -> (micPath: String, systemPath: String?, tempFiles: [URL]) {
+        var tempFiles: [URL] = []
+
+        let micPath: String
+        if recording.isEncrypted, let micURL = recording.micPCMFileURL {
+            let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: micURL)
+            tempFiles.append(tempURL)
+            micPath = tempURL.path
+            logger.info("Decrypted mic PCM to temp file")
+        } else {
+            micPath = recording.micPCMFileURL?.path ?? ""
+        }
+
+        let systemPath: String?
+        if recording.isEncrypted, let systemURL = recording.systemPCMFileURL {
+            let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: systemURL)
+            tempFiles.append(tempURL)
+            systemPath = tempURL.path
+            logger.info("Decrypted system PCM to temp file")
+        } else {
+            systemPath = recording.systemPCMFileURL?.path
+        }
+
+        return (micPath, systemPath, tempFiles)
     }
 
     private func renderOptions(for recording: LocalRecording) -> GoogleMeetOptions {

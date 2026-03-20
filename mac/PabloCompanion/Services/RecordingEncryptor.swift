@@ -91,6 +91,41 @@ struct RecordingEncryptor: CaptureEncryptor {
         return wav
     }
 
+    /// Decrypts an encrypted PCM sidecar file (no WAV header) to a temp file.
+    /// Returns the path to the decrypted temp file.
+    ///
+    /// Format: sequential `[4-byte UInt32 LE length][AES-GCM sealed box]` chunks.
+    static func decryptPCMToTempFile(at url: URL) throws -> URL {
+        let fileData = try Data(contentsOf: url)
+        guard let encryptor = Self() else {
+            throw CaptureError.encryptionFailed("Device encryption key not available")
+        }
+
+        var pcmData = Data()
+        var offset = 0
+
+        while offset + 4 <= fileData.count {
+            let lengthBytes = fileData[offset ..< offset + 4]
+            let chunkLength = lengthBytes.withUnsafeBytes { $0.load(as: UInt32.self) }
+            let length = Int(UInt32(littleEndian: chunkLength))
+            offset += 4
+
+            guard offset + length <= fileData.count else {
+                throw CaptureError.encryptionFailed("Encrypted PCM chunk exceeds file bounds")
+            }
+
+            let chunkData = fileData[offset ..< offset + length]
+            let decrypted = try encryptor.decrypt(Data(chunkData))
+            pcmData.append(decrypted)
+            offset += length
+        }
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pablo_\(UUID().uuidString).pcm")
+        try pcmData.write(to: tempURL)
+        return tempURL
+    }
+
     func keyMetadata() -> [String: String] {
         [
             "keyId": "device-key-v1",

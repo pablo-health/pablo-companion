@@ -20,6 +20,8 @@ struct SessionRecordingStore {
         let channelLayout: String
         let micPCMFilePath: String?
         let systemPCMFilePath: String?
+        /// Actual sample rate of the PCM sidecar files (may be < 48 kHz with Bluetooth HFP).
+        let sampleRate: Double?
     }
 
     // MARK: - Private
@@ -81,7 +83,8 @@ struct SessionRecordingStore {
             checksum: recording.checksum,
             channelLayout: recording.channelLayout.rawValue,
             micPCMFilePath: recording.micPCMFileURL?.path,
-            systemPCMFilePath: recording.systemPCMFileURL?.path
+            systemPCMFilePath: recording.systemPCMFileURL?.path,
+            sampleRate: recording.sampleRate
         )
     }
 
@@ -103,6 +106,7 @@ struct SessionRecordingStore {
             channelLayout: ChannelLayout(rawValue: entry.channelLayout) ?? .blended,
             micPCMFileURL: entry.micPCMFilePath.map { URL(fileURLWithPath: $0) },
             systemPCMFileURL: entry.systemPCMFilePath.map { URL(fileURLWithPath: $0) },
+            sampleRate: entry.sampleRate ?? 48000,
             isUploaded: false
         )
     }

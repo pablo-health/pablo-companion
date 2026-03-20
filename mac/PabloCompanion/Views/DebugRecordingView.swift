@@ -1,4 +1,4 @@
-//#if DEBUG
+// #if DEBUG
 import AppKit
 import SwiftUI
 
@@ -243,4 +243,4 @@ struct DebugRecordingView: View {
 #Preview {
     DebugRecordingView()
 }
-//#endif
+// #endif

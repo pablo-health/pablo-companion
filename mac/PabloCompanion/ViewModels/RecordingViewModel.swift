@@ -124,6 +124,7 @@ final class RecordingViewModel {
                 channelLayout: .blended,
                 micPCMFileURL: nil,
                 systemPCMFileURL: nil,
+                sampleRate: sampleRate,
                 isUploaded: false
             )
             recordings.insert(recording, at: 0)

@@ -17,6 +17,8 @@ struct LocalRecording: Identifiable, Sendable {
     /// Raw PCM sidecar file for the system audio channel (stereo interleaved, Float32).
     /// Present when the session was captured with `exportRawPCM` enabled and system audio was active.
     let systemPCMFileURL: URL?
+    /// Actual sample rate of the PCM sidecar files (may differ from 48 kHz when Bluetooth HFP is active).
+    let sampleRate: Double
     var isUploaded: Bool
 
     var formattedDuration: String {

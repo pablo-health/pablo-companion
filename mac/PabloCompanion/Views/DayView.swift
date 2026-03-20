@@ -11,6 +11,8 @@ struct DayView: View {
     @Binding var patientSearchText: String
     var recordingState: RecordingUIState = .idle
     var recordingDuration: TimeInterval = 0
+    var micLevel: Float = 0
+    var systemLevel: Float = 0
     var systemAudioActive = false
     var pendingUploadCount = 0
     var awaitingModelCount = 0
@@ -141,6 +143,12 @@ struct DayView: View {
             Text(formattedDuration(recordingDuration))
                 .font(.system(size: 14, design: .monospaced))
                 .foregroundStyle(Color.pabloBrownSoft)
+
+            HStack(spacing: 6) {
+                LevelMeter(label: "Mic", level: micLevel)
+                LevelMeter(label: "Sys", level: systemLevel)
+            }
+            .frame(height: 32)
 
             StatusIndicator(
                 isActive: systemAudioActive,

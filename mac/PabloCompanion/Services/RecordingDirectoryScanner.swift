@@ -72,6 +72,7 @@ enum RecordingDirectoryScanner {
             channelLayout: group.system != nil ? .separatedStereo : .blended,
             micPCMFileURL: group.mic,
             systemPCMFileURL: group.system,
+            sampleRate: 48000,
             isUploaded: false
         )
     }
