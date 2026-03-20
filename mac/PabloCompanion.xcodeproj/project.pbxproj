@@ -380,6 +380,7 @@
 					"$(inherited)",
 					"$(SRCROOT)/PabloCompanion/Generated",
 				);
+				INFOPLIST_FILE = PabloCompanion/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
 				INFOPLIST_KEY_CFBundleName = Pablo;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -439,6 +440,7 @@
 					"$(inherited)",
 					"$(SRCROOT)/PabloCompanion/Generated",
 				);
+				INFOPLIST_FILE = PabloCompanion/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
 				INFOPLIST_KEY_CFBundleName = Pablo;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
