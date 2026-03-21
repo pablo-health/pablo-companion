@@ -17,6 +17,7 @@ public partial class SessionViewModel : ObservableObject
     private readonly APIClient _apiClient;
     private readonly VideoLaunchService _videoLaunch;
     private readonly RecordingViewModel _recordingVm;
+    private readonly TranscriptionViewModel _transcriptionVm;
     private DispatcherTimer? _pollingTimer;
 
     // --- Today's sessions ---
@@ -56,11 +57,13 @@ public partial class SessionViewModel : ObservableObject
     private uint _historyPage = 1;
     private const uint HistoryPageSize = 20;
 
-    public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch, RecordingViewModel recordingVm)
+    public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch,
+        RecordingViewModel recordingVm, TranscriptionViewModel transcriptionVm)
     {
         _apiClient = apiClient;
         _videoLaunch = videoLaunch;
         _recordingVm = recordingVm;
+        _transcriptionVm = transcriptionVm;
     }
 
     /// <summary>
@@ -144,6 +147,11 @@ public partial class SessionViewModel : ObservableObject
 
             await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.RecordingComplete);
             ActiveSession = null;
+
+            // Auto-transcribe if enabled (fire-and-forget)
+            if (_transcriptionVm.AutoTranscribe)
+                _ = _transcriptionVm.TranscribeSessionAsync(sessionId);
+
             await LoadTodaySessionsAsync();
         }
         catch (PabloException)

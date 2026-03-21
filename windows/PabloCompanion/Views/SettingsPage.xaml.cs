@@ -4,7 +4,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
-using uniffi.pablo_core;
 
 namespace PabloCompanion.Views;
 
@@ -13,6 +12,7 @@ public sealed partial class SettingsPage : Page
     private readonly AuthViewModel _authVm;
     private readonly APIClient _apiClient;
     private readonly RecordingViewModel _recordingVm;
+    private readonly TranscriptionViewModel _transcriptionVm;
 
     public SettingsPage()
     {
@@ -20,6 +20,7 @@ public sealed partial class SettingsPage : Page
         _authVm = App.Services.GetRequiredService<AuthViewModel>();
         _apiClient = App.Services.GetRequiredService<APIClient>();
         _recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
+        _transcriptionVm = App.Services.GetRequiredService<TranscriptionViewModel>();
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -33,9 +34,12 @@ public sealed partial class SettingsPage : Page
         await _recordingVm.LoadAudioDevicesAsync();
         PopulateMicDropdown();
 
+        // Transcription settings
+        PopulateTranscriptionSettings();
+
         try
         {
-            var coreVersion = PabloCoreMethods.CoreVersion();
+            var coreVersion = uniffi.pablo_core.PabloCoreMethods.CoreVersion();
             VersionText.Text = $"Pablo Companion (Windows) — Core v{coreVersion}";
         }
         catch
@@ -91,6 +95,74 @@ public sealed partial class SettingsPage : Page
         if (MicDropdown.SelectedItem is ComboBoxItem item)
         {
             _recordingVm.SelectedMicId = item.Tag as string;
+        }
+    }
+
+    private void PopulateTranscriptionSettings()
+    {
+        // Quality preset
+        int presetIndex = (int)_transcriptionVm.QualityPreset;
+        TranscriptionQualityDropdown.SelectedIndex = presetIndex;
+
+        // Auto-transcribe toggle
+        AutoTranscribeToggle.IsOn = _transcriptionVm.AutoTranscribe;
+
+        UpdateModelStatus();
+    }
+
+    private void UpdateModelStatus()
+    {
+        bool available = _transcriptionVm.IsModelAvailable;
+        ModelStatusText.Text = available ? "Model downloaded" : "Model not downloaded";
+        ModelActionButton.Content = available ? "Delete Model" : "Download Model";
+    }
+
+    private void TranscriptionQuality_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TranscriptionQualityDropdown.SelectedItem is ComboBoxItem item && item.Tag is string presetStr)
+        {
+            if (Enum.TryParse<QualityPreset>(presetStr, out var preset))
+            {
+                _transcriptionVm.QualityPreset = preset;
+                UpdateModelStatus();
+            }
+        }
+    }
+
+    private void AutoTranscribe_Toggled(object sender, RoutedEventArgs e)
+    {
+        _transcriptionVm.AutoTranscribe = AutoTranscribeToggle.IsOn;
+    }
+
+    private async void ModelAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (_transcriptionVm.IsModelAvailable)
+        {
+            _transcriptionVm.DeleteModelCommand.Execute(null);
+            UpdateModelStatus();
+        }
+        else
+        {
+            ModelDownloadProgress.Visibility = Visibility.Visible;
+            ModelActionButton.IsEnabled = false;
+
+            _transcriptionVm.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName is nameof(TranscriptionViewModel.Progress) or
+                    nameof(TranscriptionViewModel.ProgressMessage))
+                {
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        ModelDownloadProgress.Value = _transcriptionVm.Progress * 100;
+                    });
+                }
+            };
+
+            await _transcriptionVm.DownloadModelAsync();
+
+            ModelDownloadProgress.Visibility = Visibility.Collapsed;
+            ModelActionButton.IsEnabled = true;
+            UpdateModelStatus();
         }
     }
 

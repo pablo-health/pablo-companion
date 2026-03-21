@@ -43,6 +43,10 @@ public sealed partial class RecordingBanner : UserControl
         var ts = TimeSpan.FromSeconds(_vm.Duration);
         DurationText.Text = ts.ToString(@"hh\:mm\:ss");
 
+        // Volume meters
+        MicMeter.Level = _vm.MicLevel;
+        SysMeter.Level = _vm.SystemLevel;
+
         // System audio indicator
         SystemAudioDot.Fill = _vm.SystemAudioActive
             ? new SolidColorBrush(Colors.LimeGreen)

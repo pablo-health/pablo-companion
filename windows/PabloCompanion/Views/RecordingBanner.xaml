@@ -1,7 +1,8 @@
 <UserControl
     x:Class="PabloCompanion.Views.RecordingBanner"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PabloCompanion.Views">
 
     <Border Background="{StaticResource PabloSage}"
             CornerRadius="8"
@@ -9,6 +10,8 @@
             x:Name="BannerBorder">
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
@@ -41,8 +44,17 @@
                        FontFamily="Consolas"
                        VerticalAlignment="Center" />
 
+            <!-- Volume meters -->
+            <local:LevelMeter Grid.Column="3"
+                              x:Name="MicMeter"
+                              Label="Mic" />
+
+            <local:LevelMeter Grid.Column="4"
+                              x:Name="SysMeter"
+                              Label="Sys" />
+
             <!-- System audio indicator -->
-            <StackPanel Grid.Column="3"
+            <StackPanel Grid.Column="5"
                         Orientation="Horizontal"
                         Spacing="4"
                         VerticalAlignment="Center">
@@ -57,7 +69,7 @@
             </StackPanel>
 
             <!-- Stop button -->
-            <Button Grid.Column="5"
+            <Button Grid.Column="7"
                     x:Name="StopButton"
                     Content="Stop"
                     Click="StopButton_Click"

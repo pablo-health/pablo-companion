@@ -84,10 +84,15 @@ public partial class App : Application
         services.AddSingleton<Services.RecordingService>();
         services.AddSingleton<Services.SessionRecordingStore>();
 
+        services.AddSingleton<Services.WhisperModelManager>();
+        services.AddSingleton<Services.TranscriptStore>();
+        services.AddSingleton<Services.SessionTranscriptionPipeline>();
+
         services.AddSingleton<ViewModels.AuthViewModel>();
         services.AddSingleton<ViewModels.SessionViewModel>();
         services.AddSingleton<ViewModels.PatientViewModel>();
         services.AddSingleton<ViewModels.RecordingViewModel>();
+        services.AddSingleton<ViewModels.TranscriptionViewModel>();
     }
 
     public static void HandleProtocolActivationStatic(Uri uri)

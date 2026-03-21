@@ -71,7 +71,7 @@ public partial class RecordingViewModel : ObservableObject
 
             StartTimers();
 
-            var recording = await _recordingService.StartAsync(sessionId, SelectedMicId);
+            var recording = await _recordingService.StartAsync(sessionId, SelectedMicId, exportRawPcm: true);
             _store.Save(sessionId, recording);
         }
         catch (CaptureException ex)
