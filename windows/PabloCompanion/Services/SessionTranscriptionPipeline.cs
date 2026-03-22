@@ -1,3 +1,5 @@
+using AudioCapture.Storage;
+
 namespace PabloCompanion.Services;
 
 /// <summary>
@@ -6,8 +8,16 @@ namespace PabloCompanion.Services;
 /// </summary>
 public sealed class SessionTranscriptionPipeline
 {
+    private readonly CredentialManager _credentials;
+
+    public SessionTranscriptionPipeline(CredentialManager credentials)
+    {
+        _credentials = credentials;
+    }
+
     /// <summary>
     /// Transcribe a 1:1 session from mic and optional system audio PCM sidecars.
+    /// Automatically decrypts .enc.pcm files using the device encryption key.
     /// </summary>
     public async Task<TranscriptResult> TranscribeSessionAsync(
         string sessionId,
@@ -21,18 +31,30 @@ public sealed class SessionTranscriptionPipeline
         var micLabel = swapSpeakers ? SpeakerLabel.Client : SpeakerLabel.Therapist;
         var sysLabel = swapSpeakers ? SpeakerLabel.Therapist : SpeakerLabel.Client;
 
+        // Create encryptor for decrypting .enc.pcm files
+        AesGcmEncryptor? encryptor = null;
+        var keyBytes = _credentials.GetOrCreateDeviceEncryptionKey();
+        if (keyBytes != null)
+            encryptor = new AesGcmEncryptor(keyBytes, "device-key");
+
         // Preprocess mic audio
         progress?.Report(new TranscriptionProgress(
             TranscriptionState.Preprocessing, 0, "Preprocessing mic audio..."));
 
-        var micAudio = await AudioPreprocessor.PreprocessMicPcmAsync(micPath);
+        var micAudio = await AudioPreprocessor.PreprocessMicPcmAsync(micPath, encryptor: encryptor);
         ct.ThrowIfCancellationRequested();
 
         // Transcribe mic
         progress?.Report(new TranscriptionProgress(
             TranscriptionState.Transcribing, 0.1, "Transcribing mic audio..."));
 
-        var micRaw = await WhisperTranscriber.TranscribeAsync(modelPath, micAudio, ct);
+        var micRegionProgress = new Progress<(int current, int total)>(p =>
+            progress?.Report(new TranscriptionProgress(
+                TranscriptionState.Transcribing,
+                0.1 + 0.4 * ((double)p.current / p.total),
+                $"Transcribing mic audio (region {p.current}/{p.total})...")));
+
+        var micRaw = await WhisperTranscriber.TranscribeAsync(modelPath, micAudio, ct, micRegionProgress);
 
         var segments = new List<TranscriptSegment>();
         foreach (var s in micRaw)
@@ -47,13 +69,19 @@ public sealed class SessionTranscriptionPipeline
             progress?.Report(new TranscriptionProgress(
                 TranscriptionState.Preprocessing, 0.5, "Preprocessing system audio..."));
 
-            var sysAudio = await AudioPreprocessor.PreprocessSystemPcmAsync(systemPath);
+            var sysAudio = await AudioPreprocessor.PreprocessSystemPcmAsync(systemPath, encryptor: encryptor);
             ct.ThrowIfCancellationRequested();
 
             progress?.Report(new TranscriptionProgress(
                 TranscriptionState.Transcribing, 0.6, "Transcribing system audio..."));
 
-            var sysRaw = await WhisperTranscriber.TranscribeAsync(modelPath, sysAudio, ct);
+            var sysRegionProgress = new Progress<(int current, int total)>(p =>
+                progress?.Report(new TranscriptionProgress(
+                    TranscriptionState.Transcribing,
+                    0.6 + 0.35 * ((double)p.current / p.total),
+                    $"Transcribing system audio (region {p.current}/{p.total})...")));
+
+            var sysRaw = await WhisperTranscriber.TranscribeAsync(modelPath, sysAudio, ct, sysRegionProgress);
 
             foreach (var s in sysRaw)
             {

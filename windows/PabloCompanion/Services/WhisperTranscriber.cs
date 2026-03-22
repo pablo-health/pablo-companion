@@ -19,15 +19,16 @@ public static class WhisperTranscriber
     /// Audio is split at silence boundaries before transcription.
     /// </summary>
     public static async Task<RawSegment[]> TranscribeAsync(string modelPath, float[] audio,
-        CancellationToken ct = default)
+        CancellationToken ct = default, IProgress<(int current, int total)>? regionProgress = null)
     {
         if (audio.Length == 0)
             return [];
 
-        return await Task.Run(() => RunTranscription(modelPath, audio, ct), ct);
+        return await Task.Run(() => RunTranscription(modelPath, audio, ct, regionProgress), ct);
     }
 
-    private static RawSegment[] RunTranscription(string modelPath, float[] audio, CancellationToken ct)
+    private static RawSegment[] RunTranscription(string modelPath, float[] audio,
+        CancellationToken ct, IProgress<(int current, int total)>? regionProgress)
     {
         var regions = DetectSpeechRegions(audio);
         if (regions.Length == 0)
@@ -36,10 +37,12 @@ public static class WhisperTranscriber
         using var factory = WhisperFactory.FromPath(modelPath);
         var segments = new List<RawSegment>();
 
-        foreach (var region in regions)
+        for (int i = 0; i < regions.Length; i++)
         {
             ct.ThrowIfCancellationRequested();
+            regionProgress?.Report((i + 1, regions.Length));
 
+            var region = regions[i];
             var chunk = audio.AsSpan(region.StartSample,
                 Math.Min(region.EndSample, audio.Length) - region.StartSample).ToArray();
             long offsetMs = region.StartSample * 1000L / WhisperSampleRate;
