@@ -1,7 +1,8 @@
 <UserControl
     x:Class="PabloCompanion.Views.RecordingBanner"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PabloCompanion.Views">
 
     <Border Background="{StaticResource PabloSage}"
             CornerRadius="8"
@@ -9,6 +10,8 @@
             x:Name="BannerBorder">
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
@@ -41,8 +44,17 @@
                        FontFamily="Consolas"
                        VerticalAlignment="Center" />
 
+            <!-- Volume meters -->
+            <local:LevelMeter Grid.Column="3"
+                              x:Name="MicMeter"
+                              Label="Mic" />
+
+            <local:LevelMeter Grid.Column="4"
+                              x:Name="SysMeter"
+                              Label="Sys" />
+
             <!-- System audio indicator -->
-            <StackPanel Grid.Column="3"
+            <StackPanel Grid.Column="5"
                         Orientation="Horizontal"
                         Spacing="4"
                         VerticalAlignment="Center">
@@ -56,17 +68,27 @@
                            VerticalAlignment="Center" />
             </StackPanel>
 
-            <!-- Stop button -->
-            <Button Grid.Column="5"
-                    x:Name="StopButton"
-                    Content="Stop"
-                    Click="StopButton_Click"
-                    Background="#C45B4A"
-                    Foreground="White"
-                    Padding="16,6"
-                    CornerRadius="4"
-                    VerticalAlignment="Center"
-                    AutomationProperties.Name="Stop recording" />
+            <!-- Stop Recording + End Session buttons -->
+            <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="8">
+                <Button x:Name="StopRecordingButton"
+                        Content="Stop Recording"
+                        Click="StopRecordingButton_Click"
+                        Background="#8B7355"
+                        Foreground="White"
+                        Padding="12,6"
+                        CornerRadius="4"
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="Stop recording only" />
+                <Button x:Name="EndSessionButton"
+                        Content="End Session"
+                        Click="EndSessionButton_Click"
+                        Background="#C45B4A"
+                        Foreground="White"
+                        Padding="12,6"
+                        CornerRadius="4"
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="Stop recording and end session" />
+            </StackPanel>
         </Grid>
     </Border>
 </UserControl>

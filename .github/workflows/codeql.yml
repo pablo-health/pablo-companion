@@ -90,10 +90,13 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup .NET 9
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
+
+      - name: Checkout AudioCaptureKit (sibling repo for project reference)
+        run: git clone --depth 1 https://github.com/pablo-health/AudioCaptureKit.git ../AudioCaptureKit
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -117,11 +120,9 @@ jobs:
         # WinUI XAML compilation or linking may fail under CodeQL
         # instrumentation — that's fine, same as the Swift job.
         continue-on-error: true
-        shell: pwsh
         run: |
           dotnet restore windows/PabloCompanion.sln
-          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe"
-          & $msbuild windows/PabloCompanion/PabloCompanion.csproj /t:Build /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal
+          dotnet build windows/PabloCompanion/PabloCompanion.csproj -c Debug -p:Platform=x64 --no-restore
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4.33.0

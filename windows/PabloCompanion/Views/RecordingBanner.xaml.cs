@@ -43,14 +43,27 @@ public sealed partial class RecordingBanner : UserControl
         var ts = TimeSpan.FromSeconds(_vm.Duration);
         DurationText.Text = ts.ToString(@"hh\:mm\:ss");
 
+        // Volume meters
+        MicMeter.Level = _vm.MicLevel;
+        SysMeter.Level = _vm.SystemLevel;
+
         // System audio indicator
         SystemAudioDot.Fill = _vm.SystemAudioActive
             ? new SolidColorBrush(Colors.LimeGreen)
             : new SolidColorBrush(Windows.UI.Color.FromArgb(128, 255, 255, 255));
     }
 
-    private async void StopButton_Click(object sender, RoutedEventArgs e)
+    private async void StopRecordingButton_Click(object sender, RoutedEventArgs e)
     {
         await _vm.StopRecordingAsync();
+    }
+
+    private async void EndSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+        if (_vm.ActiveSessionId != null)
+        {
+            await sessionVm.EndSessionAsync(_vm.ActiveSessionId);
+        }
     }
 }

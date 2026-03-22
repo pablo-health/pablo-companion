@@ -1,0 +1,26 @@
+<UserControl
+    x:Class="PabloCompanion.Views.LevelMeter"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="4" VerticalAlignment="Center">
+        <!-- Meter bar -->
+        <Border Width="24" Height="32"
+                Background="#40FFFFFF"
+                CornerRadius="3"
+                VerticalAlignment="Bottom">
+            <Border x:Name="FillBar"
+                    CornerRadius="3"
+                    VerticalAlignment="Bottom"
+                    Height="0"
+                    AutomationProperties.Name="Audio level meter" />
+        </Border>
+
+        <!-- Label -->
+        <TextBlock x:Name="LabelText"
+                   Text="Mic"
+                   Foreground="#C0FFFFFF"
+                   FontSize="10"
+                   HorizontalAlignment="Center" />
+    </StackPanel>
+</UserControl>

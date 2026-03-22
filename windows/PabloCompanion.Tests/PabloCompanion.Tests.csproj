@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <LangVersion>preview</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -8,8 +8,8 @@
     <Platforms>x64;arm64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
-    <!-- Ensure test host matches platform -->
-    <TestHostArchitecture>x64</TestHostArchitecture>
+    <!-- On ARM64 with .NET 10, let test host use ARM64 runtime -->
+    <!-- TestHostArchitecture: omitted to use default (matches SDK arch) -->
   </PropertyGroup>
 
   <ItemGroup>

@@ -6,7 +6,8 @@
     Title="Session Details"
     CloseButtonText="Close"
     DefaultButton="Close"
-    FullSizeDesired="False">
+    FullSizeDesired="False"
+    Closing="Dialog_Closing">
 
     <ScrollViewer MaxHeight="500" VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="20" MinWidth="400">
@@ -111,9 +112,60 @@
                         Padding="16"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1">
-                    <TextBlock x:Name="RecordingText"
-                               Style="{StaticResource PabloBodyMedium}"
-                               Foreground="{StaticResource PabloBrownSoft}" />
+                    <StackPanel Spacing="8">
+                        <TextBlock x:Name="RecordingText"
+                                   Style="{StaticResource PabloBodyMedium}"
+                                   Foreground="{StaticResource PabloBrownSoft}" />
+
+                        <!-- Playback controls -->
+                        <StackPanel x:Name="PlaybackControls" Visibility="Collapsed" Spacing="8">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <Button x:Name="PlayPauseButton"
+                                        Grid.Column="0"
+                                        Click="PlayPause_Click"
+                                        Style="{StaticResource PabloPrimaryButton}"
+                                        Padding="10,6"
+                                        AutomationProperties.Name="Play or pause recording">
+                                    <SymbolIcon x:Name="PlayPauseIcon" Symbol="Play" />
+                                </Button>
+
+                                <Button x:Name="StopButton"
+                                        Grid.Column="1"
+                                        Click="Stop_Click"
+                                        Style="{StaticResource PabloSecondaryButton}"
+                                        Padding="10,6"
+                                        IsEnabled="False"
+                                        AutomationProperties.Name="Stop playback">
+                                    <SymbolIcon Symbol="Stop" />
+                                </Button>
+
+                                <Slider x:Name="PositionSlider"
+                                        Grid.Column="2"
+                                        Minimum="0"
+                                        Maximum="100"
+                                        Value="0"
+                                        VerticalAlignment="Center"
+                                        ThumbToolTipValueConverter="{x:Null}"
+                                        PointerPressed="PositionSlider_PointerPressed"
+                                        PointerReleased="PositionSlider_PointerReleased"
+                                        AutomationProperties.Name="Playback position" />
+
+                                <TextBlock x:Name="PositionText"
+                                           Grid.Column="3"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource PabloBodySmall}"
+                                           Foreground="{StaticResource PabloBrownSoft}"
+                                           Text="0:00 / 0:00" />
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
                 </Border>
             </StackPanel>
 
@@ -140,6 +192,86 @@
                                Foreground="{StaticResource PabloBrownSoft}"
                                MaxLines="3"
                                TextTrimming="CharacterEllipsis" />
+                </Border>
+            </StackPanel>
+
+            <!-- Local transcription section -->
+            <StackPanel Spacing="8" x:Name="LocalTranscriptSection" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Local Transcription"
+                               Style="{StaticResource PabloBodyLarge}"
+                               FontWeight="SemiBold" />
+                    <!-- Pending upload badge -->
+                    <Border x:Name="PendingUploadBadge"
+                            Visibility="Collapsed"
+                            Background="#FFF3E0"
+                            CornerRadius="4"
+                            Padding="8,2"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="Pending upload"
+                                   FontSize="11"
+                                   Foreground="#E65100" />
+                    </Border>
+                </StackPanel>
+
+                <!-- Transcribe button + quality selector -->
+                <StackPanel x:Name="TranscribeControls" Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="TranscribeButton"
+                            Content="Transcribe"
+                            Click="Transcribe_Click"
+                            Style="{StaticResource PabloPrimaryButton}"
+                            Padding="12,6"
+                            AutomationProperties.Name="Transcribe this session locally" />
+                    <ComboBox x:Name="QualityDropdown"
+                              SelectedIndex="0"
+                              AutomationProperties.Name="Transcription quality">
+                        <ComboBoxItem Content="Fast (small)" Tag="Fast" />
+                        <ComboBoxItem Content="Balanced (large-v3-turbo)" Tag="Balanced" />
+                        <ComboBoxItem Content="Accurate (large-v3)" Tag="Accurate" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Progress -->
+                <StackPanel x:Name="TranscriptionProgress" Visibility="Collapsed" Spacing="4">
+                    <ProgressBar x:Name="TranscriptionProgressBar"
+                                 Minimum="0" Maximum="100"
+                                 IsIndeterminate="False" />
+                    <TextBlock x:Name="TranscriptionStatusText"
+                               Style="{StaticResource PabloBodySmall}"
+                               Foreground="{StaticResource PabloBrownSoft}" />
+                </StackPanel>
+
+                <!-- Local transcript preview -->
+                <Border x:Name="LocalTranscriptPreview"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="16"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        Visibility="Collapsed">
+                    <StackPanel Spacing="8">
+                        <TextBlock x:Name="LocalTranscriptText"
+                                   Style="{StaticResource PabloBodySmall}"
+                                   Foreground="{StaticResource PabloBrownSoft}"
+                                   MaxLines="5"
+                                   TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="View Full Transcript"
+                                    Click="ViewLocalTranscript_Click"
+                                    Style="{StaticResource PabloSecondaryButton}"
+                                    Padding="8,4"
+                                    FontSize="12"
+                                    AutomationProperties.Name="View full local transcript" />
+                            <Button x:Name="RetryUploadButton"
+                                    Content="Retry Upload"
+                                    Click="RetryUpload_Click"
+                                    Style="{StaticResource PabloSecondaryButton}"
+                                    Padding="8,4"
+                                    FontSize="12"
+                                    Visibility="Collapsed"
+                                    AutomationProperties.Name="Retry uploading transcript" />
+                        </StackPanel>
+                    </StackPanel>
                 </Border>
             </StackPanel>
 
