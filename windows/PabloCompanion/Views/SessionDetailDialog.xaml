@@ -225,9 +225,9 @@
                     <ComboBox x:Name="QualityDropdown"
                               SelectedIndex="0"
                               AutomationProperties.Name="Transcription quality">
-                        <ComboBoxItem Content="Fast (base.en)" Tag="Fast" />
-                        <ComboBoxItem Content="Balanced (small.en)" Tag="Balanced" />
-                        <ComboBoxItem Content="Accurate (medium.en)" Tag="Accurate" />
+                        <ComboBoxItem Content="Fast (small)" Tag="Fast" />
+                        <ComboBoxItem Content="Balanced (large-v3-turbo)" Tag="Balanced" />
+                        <ComboBoxItem Content="Accurate (large-v3)" Tag="Accurate" />
                     </ComboBox>
                 </StackPanel>
 
