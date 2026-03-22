@@ -68,17 +68,27 @@
                            VerticalAlignment="Center" />
             </StackPanel>
 
-            <!-- Stop button -->
-            <Button Grid.Column="7"
-                    x:Name="StopButton"
-                    Content="Stop"
-                    Click="StopButton_Click"
-                    Background="#C45B4A"
-                    Foreground="White"
-                    Padding="16,6"
-                    CornerRadius="4"
-                    VerticalAlignment="Center"
-                    AutomationProperties.Name="Stop recording" />
+            <!-- Stop Recording + End Session buttons -->
+            <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="8">
+                <Button x:Name="StopRecordingButton"
+                        Content="Stop Recording"
+                        Click="StopRecordingButton_Click"
+                        Background="#8B7355"
+                        Foreground="White"
+                        Padding="12,6"
+                        CornerRadius="4"
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="Stop recording only" />
+                <Button x:Name="EndSessionButton"
+                        Content="End Session"
+                        Click="EndSessionButton_Click"
+                        Background="#C45B4A"
+                        Foreground="White"
+                        Padding="12,6"
+                        CornerRadius="4"
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="Stop recording and end session" />
+            </StackPanel>
         </Grid>
     </Border>
 </UserControl>

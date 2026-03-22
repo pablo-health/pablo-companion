@@ -53,8 +53,17 @@ public sealed partial class RecordingBanner : UserControl
             : new SolidColorBrush(Windows.UI.Color.FromArgb(128, 255, 255, 255));
     }
 
-    private async void StopButton_Click(object sender, RoutedEventArgs e)
+    private async void StopRecordingButton_Click(object sender, RoutedEventArgs e)
     {
         await _vm.StopRecordingAsync();
+    }
+
+    private async void EndSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+        if (_vm.ActiveSessionId != null)
+        {
+            await sessionVm.EndSessionAsync(_vm.ActiveSessionId);
+        }
     }
 }
