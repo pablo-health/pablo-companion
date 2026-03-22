@@ -9,9 +9,9 @@ public sealed partial class LevelMeter : UserControl
 {
     private const double MaxBarHeight = 32;
 
-    // Colors matching Pablo brand
-    private static readonly SolidColorBrush SageBrush = new(Windows.UI.Color.FromArgb(255, 122, 158, 126)); // #7A9E7E
-    private static readonly SolidColorBrush HoneyBrush = new(Windows.UI.Color.FromArgb(255, 212, 146, 46)); // #D4922E
+    // Colors designed for visibility on sage green recording banner
+    private static readonly SolidColorBrush NormalBrush = new(Windows.UI.Color.FromArgb(255, 255, 255, 255)); // white
+    private static readonly SolidColorBrush HoneyBrush = new(Windows.UI.Color.FromArgb(255, 212, 146, 46));  // #D4922E
     private static readonly SolidColorBrush BlushBrush = new(Windows.UI.Color.FromArgb(255, 232, 180, 162)); // #E8B4A2
 
     public static readonly DependencyProperty LevelProperty = DependencyProperty.Register(
@@ -58,7 +58,7 @@ public sealed partial class LevelMeter : UserControl
 
         FillBar.Background = clamped switch
         {
-            <= 0.5 => SageBrush,
+            <= 0.5 => NormalBrush,
             <= 0.8 => HoneyBrush,
             _ => BlushBrush,
         };

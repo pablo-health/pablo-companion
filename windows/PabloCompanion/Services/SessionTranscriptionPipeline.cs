@@ -48,13 +48,12 @@ public sealed class SessionTranscriptionPipeline
         progress?.Report(new TranscriptionProgress(
             TranscriptionState.Transcribing, 0.1, "Transcribing mic audio..."));
 
-        var micRegionProgress = new Progress<(int current, int total)>(p =>
-            progress?.Report(new TranscriptionProgress(
-                TranscriptionState.Transcribing,
-                0.1 + 0.4 * ((double)p.current / p.total),
-                $"Transcribing mic audio (region {p.current}/{p.total})...")));
-
-        var micRaw = await WhisperTranscriber.TranscribeAsync(modelPath, micAudio, ct, micRegionProgress);
+        var micRaw = await WhisperTranscriber.TranscribeAsync(modelPath, micAudio, ct,
+            onRegionProgress: (current, total) =>
+                progress?.Report(new TranscriptionProgress(
+                    TranscriptionState.Transcribing,
+                    0.1 + 0.4 * ((double)current / total),
+                    $"Transcribing mic audio (region {current}/{total})...")));
 
         var segments = new List<TranscriptSegment>();
         foreach (var s in micRaw)
@@ -75,13 +74,12 @@ public sealed class SessionTranscriptionPipeline
             progress?.Report(new TranscriptionProgress(
                 TranscriptionState.Transcribing, 0.6, "Transcribing system audio..."));
 
-            var sysRegionProgress = new Progress<(int current, int total)>(p =>
-                progress?.Report(new TranscriptionProgress(
-                    TranscriptionState.Transcribing,
-                    0.6 + 0.35 * ((double)p.current / p.total),
-                    $"Transcribing system audio (region {p.current}/{p.total})...")));
-
-            var sysRaw = await WhisperTranscriber.TranscribeAsync(modelPath, sysAudio, ct, sysRegionProgress);
+            var sysRaw = await WhisperTranscriber.TranscribeAsync(modelPath, sysAudio, ct,
+                onRegionProgress: (current, total) =>
+                    progress?.Report(new TranscriptionProgress(
+                        TranscriptionState.Transcribing,
+                        0.6 + 0.35 * ((double)current / total),
+                        $"Transcribing system audio (region {current}/{total})...")));
 
             foreach (var s in sysRaw)
             {

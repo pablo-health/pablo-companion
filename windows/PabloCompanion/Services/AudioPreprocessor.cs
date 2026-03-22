@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using AudioCapture.Storage;
 
 namespace PabloCompanion.Services;
 
@@ -6,6 +7,9 @@ namespace PabloCompanion.Services;
 /// Converts raw PCM audio (signed 16-bit LE) to mono float normalized at 16 kHz.
 /// Port of core/src/audio_preprocessing.rs — uses simple block-average decimation
 /// instead of rubato (good enough for Whisper, avoids native dependency).
+///
+/// Handles both plaintext (.pcm) and encrypted (.enc.pcm) sidecar files.
+/// Encrypted files use length-prefixed AES-256-GCM chunks matching the macOS format.
 /// </summary>
 public static class AudioPreprocessor
 {
@@ -13,31 +17,46 @@ public static class AudioPreprocessor
 
     /// <summary>
     /// Preprocess a mic PCM sidecar (mono, 48 kHz i16 LE) to 16 kHz mono float.
+    /// Automatically decrypts .enc.pcm files when an encryptor is provided.
     /// </summary>
-    public static async Task<float[]> PreprocessMicPcmAsync(string path, int sampleRate = 48000)
+    public static async Task<float[]> PreprocessMicPcmAsync(string path, int sampleRate = 48000,
+        AesGcmEncryptor? encryptor = null)
     {
-        return await PreprocessPcmAsync(path, channels: 1, sampleRate);
+        return await PreprocessPcmAsync(path, channels: 1, sampleRate, encryptor);
     }
 
     /// <summary>
     /// Preprocess a system audio PCM sidecar (stereo interleaved, 48 kHz i16 LE) to 16 kHz mono float.
+    /// Automatically decrypts .enc.pcm files when an encryptor is provided.
     /// </summary>
-    public static async Task<float[]> PreprocessSystemPcmAsync(string path, int channels = 2, int sampleRate = 48000)
+    public static async Task<float[]> PreprocessSystemPcmAsync(string path, int channels = 2, int sampleRate = 48000,
+        AesGcmEncryptor? encryptor = null)
     {
-        return await PreprocessPcmAsync(path, channels, sampleRate);
+        return await PreprocessPcmAsync(path, channels, sampleRate, encryptor);
     }
 
     /// <summary>
     /// Read raw PCM (i16 LE), downmix to mono if stereo, decimate to 16 kHz.
+    /// If path ends in .enc.pcm and encryptor is provided, decrypts first.
     /// </summary>
-    internal static async Task<float[]> PreprocessPcmAsync(string path, int channels, int sampleRate)
+    internal static async Task<float[]> PreprocessPcmAsync(string path, int channels, int sampleRate,
+        AesGcmEncryptor? encryptor = null)
     {
         if (channels < 1 || channels > 2)
             throw new ArgumentException($"Unsupported channel count: {channels} (expected 1 or 2)");
         if (sampleRate <= 0)
             throw new ArgumentException("Sample rate must be > 0");
 
-        var rawBytes = await File.ReadAllBytesAsync(path);
+        byte[] rawBytes;
+        if (path.EndsWith(".enc.pcm", StringComparison.OrdinalIgnoreCase) && encryptor != null)
+        {
+            rawBytes = await DecryptPcmFileAsync(path, encryptor);
+        }
+        else
+        {
+            rawBytes = await File.ReadAllBytesAsync(path);
+        }
+
         if (rawBytes.Length == 0)
             return [];
 
@@ -116,5 +135,38 @@ public static class AudioPreprocessor
         }
 
         return output;
+    }
+
+    /// <summary>
+    /// Decrypts a length-prefixed encrypted PCM file.
+    /// Format per chunk: [4-byte LE length][nonce|ciphertext|tag]
+    /// Matches the macOS Swift and C# AudioCaptureKit encrypted sidecar format.
+    /// </summary>
+    internal static async Task<byte[]> DecryptPcmFileAsync(string path, AesGcmEncryptor encryptor)
+    {
+        var fileBytes = await File.ReadAllBytesAsync(path);
+        if (fileBytes.Length == 0)
+            return [];
+
+        using var output = new MemoryStream();
+        int offset = 0;
+
+        while (offset + 4 <= fileBytes.Length)
+        {
+            uint chunkLength = BinaryPrimitives.ReadUInt32LittleEndian(fileBytes.AsSpan(offset, 4));
+            offset += 4;
+
+            if (offset + (int)chunkLength > fileBytes.Length)
+                break;
+
+            var encryptedChunk = new byte[chunkLength];
+            Buffer.BlockCopy(fileBytes, offset, encryptedChunk, 0, (int)chunkLength);
+            offset += (int)chunkLength;
+
+            var decrypted = encryptor.Decrypt(encryptedChunk);
+            output.Write(decrypted, 0, decrypted.Length);
+        }
+
+        return output.ToArray();
     }
 }
