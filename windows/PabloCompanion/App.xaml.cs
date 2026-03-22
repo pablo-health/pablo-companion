@@ -72,6 +72,9 @@ public partial class App : Application
             HandleProtocolActivation(PendingProtocolUri);
             PendingProtocolUri = null;
         }
+
+        // Resume pending transcription uploads after launch
+        _ = ResumePendingTranscriptionsAsync();
     }
 
     private static void ConfigureServices(ServiceCollection services)
@@ -87,6 +90,8 @@ public partial class App : Application
         services.AddSingleton<Services.WhisperModelManager>();
         services.AddSingleton<Services.TranscriptStore>();
         services.AddSingleton<Services.SessionTranscriptionPipeline>();
+        services.AddSingleton<Services.PendingTranscriptionStore>();
+        services.AddSingleton<Services.PlaybackService>();
 
         services.AddSingleton<ViewModels.AuthViewModel>();
         services.AddSingleton<ViewModels.SessionViewModel>();
@@ -105,5 +110,20 @@ public partial class App : Application
     {
         var authVm = Services.GetRequiredService<ViewModels.AuthViewModel>();
         _ = authVm.HandleAuthCallbackAsync(uri);
+    }
+
+    private static async Task ResumePendingTranscriptionsAsync()
+    {
+        try
+        {
+            // Small delay to let the UI settle before background work
+            await Task.Delay(2000);
+            var transcriptionVm = Services.GetRequiredService<ViewModels.TranscriptionViewModel>();
+            await transcriptionVm.ResumePendingTranscriptionsAsync();
+        }
+        catch
+        {
+            // Best effort — don't crash on resume failures
+        }
     }
 }

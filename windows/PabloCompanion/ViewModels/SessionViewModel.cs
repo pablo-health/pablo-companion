@@ -18,6 +18,7 @@ public partial class SessionViewModel : ObservableObject
     private readonly VideoLaunchService _videoLaunch;
     private readonly RecordingViewModel _recordingVm;
     private readonly TranscriptionViewModel _transcriptionVm;
+    private readonly PendingTranscriptionStore _pendingStore;
     private DispatcherTimer? _pollingTimer;
 
     // --- Today's sessions ---
@@ -58,12 +59,14 @@ public partial class SessionViewModel : ObservableObject
     private const uint HistoryPageSize = 20;
 
     public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch,
-        RecordingViewModel recordingVm, TranscriptionViewModel transcriptionVm)
+        RecordingViewModel recordingVm, TranscriptionViewModel transcriptionVm,
+        PendingTranscriptionStore pendingStore)
     {
         _apiClient = apiClient;
         _videoLaunch = videoLaunch;
         _recordingVm = recordingVm;
         _transcriptionVm = transcriptionVm;
+        _pendingStore = pendingStore;
     }
 
     /// <summary>
@@ -148,9 +151,12 @@ public partial class SessionViewModel : ObservableObject
             await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.RecordingComplete);
             ActiveSession = null;
 
-            // Auto-transcribe if enabled (fire-and-forget)
+            // Auto-transcribe if enabled — add to pending store for resiliency
             if (_transcriptionVm.AutoTranscribe)
+            {
+                _pendingStore.Add(sessionId, _transcriptionVm.QualityPreset);
                 _ = _transcriptionVm.TranscribeSessionAsync(sessionId);
+            }
 
             await LoadTodaySessionsAsync();
         }

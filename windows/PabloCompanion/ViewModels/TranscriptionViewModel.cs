@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PabloCompanion.Services;
@@ -5,7 +6,8 @@ using PabloCompanion.Services;
 namespace PabloCompanion.ViewModels;
 
 /// <summary>
-/// Manages transcription state, model downloads, and transcript display.
+/// Manages transcription state, model downloads, transcript display,
+/// upload to backend, pending store for resiliency, and settings persistence.
 /// </summary>
 public partial class TranscriptionViewModel : ObservableObject
 {
@@ -13,7 +15,24 @@ public partial class TranscriptionViewModel : ObservableObject
     private readonly WhisperModelManager _modelManager;
     private readonly TranscriptStore _store;
     private readonly SessionRecordingStore _recordingStore;
+    private readonly PendingTranscriptionStore _pendingStore;
+    private readonly APIClient _apiClient;
     private CancellationTokenSource? _cts;
+
+    private static readonly string SettingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "PabloCompanion", "TranscriptionSettings.json");
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    // Exponential backoff constants (matching macOS)
+    private const int BaseBackoffSeconds = 300;   // 5 minutes
+    private const int MaxBackoffSeconds = 14400;   // 4 hours
+    private const int MaxAutoRetries = 10;
 
     [ObservableProperty]
     public partial TranscriptionState State { get; set; } = TranscriptionState.Idle;
@@ -43,21 +62,34 @@ public partial class TranscriptionViewModel : ObservableObject
         SessionTranscriptionPipeline pipeline,
         WhisperModelManager modelManager,
         TranscriptStore store,
-        SessionRecordingStore recordingStore)
+        SessionRecordingStore recordingStore,
+        PendingTranscriptionStore pendingStore,
+        APIClient apiClient)
     {
         _pipeline = pipeline;
         _modelManager = modelManager;
         _store = store;
         _recordingStore = recordingStore;
+        _pendingStore = pendingStore;
+        _apiClient = apiClient;
+
+        LoadSettings();
     }
 
     public bool IsModelAvailable => _modelManager.IsModelAvailable(QualityPreset);
+
+    partial void OnAutoTranscribeChanged(bool value) => SaveSettings();
+    partial void OnQualityPresetChanged(QualityPreset value)
+    {
+        SaveSettings();
+        OnPropertyChanged(nameof(IsModelAvailable));
+    }
 
     [RelayCommand]
     public async Task TranscribeSessionAsync(string sessionId)
     {
         if (State != TranscriptionState.Idle && State != TranscriptionState.Complete &&
-            State != TranscriptionState.Error)
+            State != TranscriptionState.PendingUpload && State != TranscriptionState.Error)
             return;
 
         // Check for existing transcript
@@ -67,6 +99,11 @@ public partial class TranscriptionViewModel : ObservableObject
             TranscriptText = existing;
             State = TranscriptionState.Complete;
             ActiveSessionId = sessionId;
+
+            // Try uploading if pending
+            var pending = _pendingStore.Get(sessionId);
+            if (pending?.TranscriptText != null)
+                await TryUploadTranscriptAsync(sessionId, existing);
             return;
         }
 
@@ -114,12 +151,15 @@ public partial class TranscriptionViewModel : ObservableObject
 
             var rendered = GoogleMeetRenderer.Render(result, opts);
 
-            // Persist and display
+            // Persist locally
             _store.Save(sessionId, rendered);
+            _pendingStore.UpdateWithTranscript(sessionId, rendered);
             TranscriptText = rendered;
-            State = TranscriptionState.Complete;
             Progress = 1.0;
             ProgressMessage = "Transcription complete";
+
+            // Upload to backend
+            await TryUploadTranscriptAsync(sessionId, rendered);
         }
         catch (OperationCanceledException)
         {
@@ -131,6 +171,105 @@ public partial class TranscriptionViewModel : ObservableObject
             ErrorMessage = ex.Message;
             State = TranscriptionState.Error;
         }
+    }
+
+    /// <summary>
+    /// Attempt to upload transcript to backend. Sets state to PendingUpload on failure.
+    /// </summary>
+    private async Task TryUploadTranscriptAsync(string sessionId, string text)
+    {
+        try
+        {
+            await _apiClient.UploadTranscriptAsync(sessionId, "txt", text);
+            _pendingStore.Remove(sessionId);
+            State = TranscriptionState.Complete;
+            ProgressMessage = "Transcript uploaded";
+        }
+        catch
+        {
+            _pendingStore.UpdateWithTranscript(sessionId, text);
+            State = TranscriptionState.PendingUpload;
+            ProgressMessage = "Upload failed — will retry later";
+        }
+    }
+
+    /// <summary>
+    /// Resume pending transcriptions and uploads on app launch.
+    /// Items with transcript text: retry upload with exponential backoff.
+    /// Items without transcript text: re-transcribe then upload.
+    /// </summary>
+    public async Task ResumePendingTranscriptionsAsync()
+    {
+        var pending = _pendingStore.GetAll();
+        if (pending.Length == 0) return;
+
+        foreach (var item in pending)
+        {
+            if (item.RetryCount >= MaxAutoRetries)
+                continue;
+
+            // Exponential backoff check
+            var backoffSeconds = Math.Min(BaseBackoffSeconds * Math.Pow(2, item.RetryCount), MaxBackoffSeconds);
+            var nextRetry = item.CreatedAt.AddSeconds(backoffSeconds * (item.RetryCount + 1));
+            if (DateTime.UtcNow < nextRetry && item.RetryCount > 0)
+                continue;
+
+            if (item.TranscriptText != null)
+            {
+                // Already transcribed — just retry upload
+                _pendingStore.IncrementRetry(item.SessionId);
+                try
+                {
+                    await _apiClient.UploadTranscriptAsync(item.SessionId, "txt", item.TranscriptText);
+                    _pendingStore.Remove(item.SessionId);
+                }
+                catch
+                {
+                    // Will retry on next launch or manual retry
+                }
+            }
+            else
+            {
+                // Need to re-transcribe
+                await TranscribeSessionAsync(item.SessionId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Manual retry — ignores backoff, retries all pending uploads immediately.
+    /// </summary>
+    public async Task ForceRetryPendingUploadsAsync()
+    {
+        var pending = _pendingStore.GetAll();
+        foreach (var item in pending)
+        {
+            if (item.TranscriptText != null)
+            {
+                try
+                {
+                    await _apiClient.UploadTranscriptAsync(item.SessionId, "txt", item.TranscriptText);
+                    _pendingStore.Remove(item.SessionId);
+                }
+                catch
+                {
+                    _pendingStore.IncrementRetry(item.SessionId);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Get transcription state for a specific session (for UI badges).
+    /// </summary>
+    public TranscriptionState GetSessionTranscriptionState(string sessionId)
+    {
+        if (_store.Get(sessionId) != null)
+        {
+            var pending = _pendingStore.Get(sessionId);
+            return pending != null ? TranscriptionState.PendingUpload : TranscriptionState.Complete;
+        }
+        return TranscriptionState.Idle;
     }
 
     [RelayCommand]
@@ -179,9 +318,6 @@ public partial class TranscriptionViewModel : ObservableObject
         OnPropertyChanged(nameof(IsModelAvailable));
     }
 
-    /// <summary>
-    /// Get an existing transcript for a session from the local store.
-    /// </summary>
     public string? GetTranscript(string sessionId) => _store.Get(sessionId);
 
     public string GetModelSizeLabel() => _modelManager.GetModelSizeLabel(QualityPreset);
@@ -193,6 +329,7 @@ public partial class TranscriptionViewModel : ObservableObject
     {
         CancelTranscription();
         _store.Clear();
+        _pendingStore.Clear();
         State = TranscriptionState.Idle;
         Progress = 0;
         ProgressMessage = null;
@@ -200,4 +337,46 @@ public partial class TranscriptionViewModel : ObservableObject
         TranscriptText = null;
         ActiveSessionId = null;
     }
+
+    // --- Settings persistence ---
+
+    private void LoadSettings()
+    {
+        if (!File.Exists(SettingsPath)) return;
+
+        try
+        {
+            var json = File.ReadAllText(SettingsPath);
+            var settings = JsonSerializer.Deserialize<TranscriptionSettings>(json, JsonOptions);
+            if (settings != null)
+            {
+                AutoTranscribe = settings.AutoTranscribe;
+                QualityPreset = settings.QualityPreset;
+            }
+        }
+        catch
+        {
+            // Corrupt settings — use defaults
+        }
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(SettingsPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            var settings = new TranscriptionSettings(AutoTranscribe, QualityPreset);
+            var json = JsonSerializer.Serialize(settings, JsonOptions);
+            File.WriteAllText(SettingsPath, json);
+        }
+        catch
+        {
+            // Best effort — non-critical
+        }
+    }
+
+    private sealed record TranscriptionSettings(bool AutoTranscribe, QualityPreset QualityPreset);
 }
