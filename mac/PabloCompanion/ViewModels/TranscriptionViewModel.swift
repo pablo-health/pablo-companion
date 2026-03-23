@@ -256,7 +256,9 @@ final class TranscriptionViewModel {
             return
         }
 
-        for rec in viable { states[rec.id] = .running }
+        for rec in viable {
+            states[rec.id] = .running
+        }
         logger.info("Transcribing \(viable.count) segments for session")
 
         var transcriptParts: [String] = []
