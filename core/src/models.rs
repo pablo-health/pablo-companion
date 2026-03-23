@@ -54,6 +54,14 @@ pub enum QualityPreset {
 // ── Structs ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoapNote {
+    pub subjective: String,
+    pub objective: String,
+    pub assessment: String,
+    pub plan: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatientSummary {
     pub id: String,
     pub first_name: String,
@@ -75,6 +83,9 @@ pub struct Session {
     pub session_type: Option<SessionType>,
     pub source: Option<SessionSource>,
     pub notes: Option<String>,
+    pub soap_note: Option<SoapNote>,
+    pub transcript: Option<String>,
+    pub quality_rating: Option<u8>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -232,6 +243,9 @@ mod tests {
             "session_type": "individual",
             "source": "companion",
             "notes": null,
+            "soap_note": null,
+            "transcript": null,
+            "quality_rating": null,
             "created_at": "2026-03-06T12:00:00Z",
             "updated_at": "2026-03-06T12:00:00Z"
         }"#;
@@ -241,6 +255,30 @@ mod tests {
         assert_eq!(session.session_type, Some(SessionType::Individual));
         assert_eq!(session.source, Some(SessionSource::Companion));
         assert_eq!(session.duration_minutes, Some(50));
+    }
+
+    #[test]
+    fn session_with_soap_note_deserialization() {
+        let json = r#"{
+            "id": "sess-002",
+            "status": "pending_review",
+            "soap_note": {
+                "subjective": "Patient reports improvement with breathing exercises.",
+                "objective": "Patient appeared calm, maintained eye contact.",
+                "assessment": "Progress noted in anxiety management.",
+                "plan": "Continue CBT techniques, next session in one week."
+            },
+            "quality_rating": 4
+        }"#;
+        let session: Session = serde_json::from_str(json).unwrap();
+        assert_eq!(session.id, "sess-002");
+        assert_eq!(session.status, SessionStatus::PendingReview);
+        let soap = session.soap_note.unwrap();
+        assert!(soap.subjective.contains("breathing exercises"));
+        assert!(soap.objective.contains("eye contact"));
+        assert!(soap.assessment.contains("anxiety management"));
+        assert!(soap.plan.contains("CBT techniques"));
+        assert_eq!(session.quality_rating, Some(4));
     }
 
     #[test]

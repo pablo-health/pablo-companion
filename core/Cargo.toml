@@ -50,3 +50,4 @@ uniffi = { version = "0.31", features = ["build"] }
 uniffi = { version = "0.31", features = ["cli"] }
 dotenvy = "0.15"
 http = "1.4.0"
+tempfile = "3"

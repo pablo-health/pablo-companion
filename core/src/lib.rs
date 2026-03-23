@@ -11,6 +11,7 @@ uniffi::include_scaffolding!("pablo_core");
 pub mod api_client;
 #[cfg(feature = "transcription")]
 pub mod audio_preprocessing;
+pub mod ehr;
 pub mod google_meet_renderer;
 pub mod models;
 #[cfg(feature = "transcription")]
