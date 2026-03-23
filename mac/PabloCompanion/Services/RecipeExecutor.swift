@@ -27,10 +27,10 @@ struct RecipeExecutionResult {
     var failedSections: [String] {
         fieldResults.compactMap {
             switch $0 {
-            case .selectorNotFound(let section), .setValueFailed(let section, _):
-                return section
+            case let .selectorNotFound(section), let .setValueFailed(section, _):
+                section
             case .success:
-                return nil
+                nil
             }
         }
     }
@@ -45,11 +45,11 @@ struct SoapNoteContent {
 
     func content(for section: String) -> String? {
         switch section.lowercased() {
-        case "subjective": return subjective
-        case "objective": return objective
-        case "assessment": return assessment
-        case "plan": return plan
-        default: return nil
+        case "subjective": subjective
+        case "objective": objective
+        case "assessment": assessment
+        case "plan": plan
+        default: nil
         }
     }
 }
@@ -174,11 +174,12 @@ final class RecipeExecutor {
             kAXFocusedWindowAttribute as CFString,
             &windowRef
         )
-        guard windowResult == .success, let window = windowRef else { return nil }
+        guard windowResult == .success,
+              let window = windowRef as? AXUIElement else { return nil }
 
         // Search the window's tree for matching elements
         return searchTree(
-            root: window as! AXUIElement,
+            root: window,
             label: label.lowercased(),
             role: role,
             maxDepth: 15
@@ -226,10 +227,10 @@ final class RecipeExecutor {
     private func fillElement(_ element: AXUIElement, with content: String, action: String) -> Bool {
         switch action {
         case "click_and_type":
-            return clickAndType(element, content: content)
+            clickAndType(element, content: content)
         default:
             // "set_value" — preferred path
-            return setValue(element, content: content)
+            setValue(element, content: content)
         }
     }
 
@@ -252,10 +253,11 @@ final class RecipeExecutor {
         // Get element position and click it
         var positionValue: AnyObject?
         let posResult = AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue)
-        guard posResult == .success, let posAXValue = positionValue else { return false }
+        guard posResult == .success,
+              let posAXValue = positionValue as? AXValue else { return false }
 
         var position = CGPoint.zero
-        AXValueGetValue(posAXValue as! AXValue, .cgPoint, &position)
+        AXValueGetValue(posAXValue, .cgPoint, &position)
 
         // Perform AX press action instead of simulating click (more reliable)
         AXUIElementPerformAction(element, kAXPressAction as CFString)

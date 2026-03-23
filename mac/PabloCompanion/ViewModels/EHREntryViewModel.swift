@@ -101,7 +101,10 @@ final class EHREntryViewModel {
 
         // Check accessibility permission
         guard AccessibilityObserver.hasAccessibilityPermission() else {
-            state = .error(message: "Pablo needs Accessibility permission to fill in your EHR. Please grant it in System Settings > Privacy & Security > Accessibility.")
+            state =
+                .error(
+                    message: "Pablo needs Accessibility permission to fill in your EHR. Please grant it in System Settings > Privacy & Security > Accessibility."
+                )
             AccessibilityObserver.requestAccessibilityPermission()
             return
         }
@@ -203,10 +206,34 @@ final class EHREntryViewModel {
         // For now, create placeholder identified fields
         // In production this will be populated by the model's response
         identifiedFields = [
-            IdentifiedField(id: "subjective", soapSection: "Subjective", elementLabel: "(scanning...)", confidence: 0, confirmed: false),
-            IdentifiedField(id: "objective", soapSection: "Objective", elementLabel: "(scanning...)", confidence: 0, confirmed: false),
-            IdentifiedField(id: "assessment", soapSection: "Assessment", elementLabel: "(scanning...)", confidence: 0, confirmed: false),
-            IdentifiedField(id: "plan", soapSection: "Plan", elementLabel: "(scanning...)", confidence: 0, confirmed: false),
+            IdentifiedField(
+                id: "subjective",
+                soapSection: "Subjective",
+                elementLabel: "(scanning...)",
+                confidence: 0,
+                confirmed: false
+            ),
+            IdentifiedField(
+                id: "objective",
+                soapSection: "Objective",
+                elementLabel: "(scanning...)",
+                confidence: 0,
+                confirmed: false
+            ),
+            IdentifiedField(
+                id: "assessment",
+                soapSection: "Assessment",
+                elementLabel: "(scanning...)",
+                confidence: 0,
+                confirmed: false
+            ),
+            IdentifiedField(
+                id: "plan",
+                soapSection: "Plan",
+                elementLabel: "(scanning...)",
+                confidence: 0,
+                confirmed: false
+            ),
         ]
 
         state = .confirming

@@ -87,7 +87,9 @@ final class AccessibilityObserver {
         guard !isObserving else { return }
         guard Self.hasAccessibilityPermission() else {
             logger.warning("Accessibility permission not granted")
-            onError?("Pablo needs Accessibility permission to learn where your notes go. Please grant it in System Settings > Privacy & Security > Accessibility.")
+            let message = "Pablo needs Accessibility permission to learn where your notes go. "
+                + "Please grant it in System Settings > Privacy & Security > Accessibility."
+            onError?(message)
             Self.requestAccessibilityPermission()
             return
         }
@@ -120,7 +122,7 @@ final class AccessibilityObserver {
 
     // MARK: - Private
 
-    private func handleGlobalClick(at windowPoint: NSPoint, screenLocation: NSPoint) {
+    private func handleGlobalClick(at _: NSPoint, screenLocation: NSPoint) {
         // Convert to screen coordinates (Cocoa uses bottom-left origin, AX uses top-left)
         guard let screen = NSScreen.main else { return }
         let axPoint = CGPoint(
@@ -174,11 +176,11 @@ final class AccessibilityObserver {
 
         var position = CGPoint.zero
         var size = CGSize.zero
-        if let posValue = getAttribute(element, kAXPositionAttribute as String) {
-            AXValueGetValue(posValue as! AXValue, .cgPoint, &position)
+        if let posValue = getAXValue(element, kAXPositionAttribute as String) {
+            AXValueGetValue(posValue, .cgPoint, &position)
         }
-        if let sizeValue = getAttribute(element, kAXSizeAttribute as String) {
-            AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        if let sizeValue = getAXValue(element, kAXSizeAttribute as String) {
+            AXValueGetValue(sizeValue, .cgSize, &size)
         }
 
         let isEditable = isTextInputRole(role)
@@ -208,8 +210,8 @@ final class AccessibilityObserver {
             }
             var parent: AnyObject?
             let result = AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent)
-            guard result == .success, let parentElement = parent else { break }
-            current = parentElement as! AXUIElement
+            guard result == .success, let next = parent as? AXUIElement else { break }
+            current = next
         }
         if let app {
             return getStringAttribute(app, kAXTitleAttribute as String)
@@ -227,8 +229,8 @@ final class AccessibilityObserver {
             }
             var parent: AnyObject?
             let result = AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent)
-            guard result == .success, let parentElement = parent else { break }
-            current = parentElement as! AXUIElement
+            guard result == .success, let next = parent as? AXUIElement else { break }
+            current = next
         }
         return nil
     }
@@ -245,8 +247,8 @@ final class AccessibilityObserver {
             }
             var parent: AnyObject?
             let result = AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent)
-            guard result == .success, let parentElement = parent else { return nil }
-            current = parentElement as! AXUIElement
+            guard result == .success, let next = parent as? AXUIElement else { return nil }
+            current = next
         }
 
         // For browsers, the focused window's document often has a URL attribute
@@ -257,10 +259,11 @@ final class AccessibilityObserver {
             kAXFocusedWindowAttribute as CFString,
             &focusedWindow
         )
-        guard windowResult == .success, let window = focusedWindow else { return nil }
+        guard windowResult == .success,
+              let window = focusedWindow as? AXUIElement else { return nil }
 
         // Chrome/Edge: AXDocument attribute on the window
-        if let url = getStringAttribute(window as! AXUIElement, kAXDocumentAttribute as String) {
+        if let url = getStringAttribute(window, kAXDocumentAttribute as String) {
             return url
         }
 
@@ -275,9 +278,10 @@ final class AccessibilityObserver {
         guard result == .success, let parent = parentRef else { return [] }
 
         // Get all children of the parent
+        guard let parentElement = parent as? AXUIElement else { return [] }
         var childrenRef: AnyObject?
         let childResult = AXUIElementCopyAttributeValue(
-            parent as! AXUIElement,
+            parentElement,
             kAXChildrenAttribute as CFString,
             &childrenRef
         )
@@ -317,6 +321,11 @@ final class AccessibilityObserver {
 
     private func getStringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
         getAttribute(element, attribute) as? String
+    }
+
+    private func getAXValue(_ element: AXUIElement, _ attribute: String) -> AXValue? {
+        guard let value = getAttribute(element, attribute) else { return nil }
+        return (value as? AXValue)
     }
 
     private func isTextInputRole(_ role: String) -> Bool {

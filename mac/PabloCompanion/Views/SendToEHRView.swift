@@ -24,19 +24,19 @@ struct SendToEHRView: View {
             switch viewModel.state {
             case .idle:
                 idleView
-            case .navigating(let step, let description):
+            case let .navigating(step, description):
                 navigatingView(step: step, description: description)
             case .identifying:
                 identifyingView
             case .confirming:
                 confirmingView
-            case .filling(let section):
+            case let .filling(section):
                 fillingView(section: section)
             case .completed:
                 completedView
-            case .error(let message):
+            case let .error(message):
                 errorView(message: message)
-            case .askingHuman(let question):
+            case let .askingHuman(question):
                 askingHumanView(question: question)
             }
         }
