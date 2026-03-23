@@ -113,7 +113,11 @@ struct ContentView: View {
         await transcriptionVM.retryPendingUploads()
 
         recordingVM.onRecordingCompleted = { [recordingVM, transcriptionVM] recording in
-            transcriptionVM.transcribeIfNeeded(recording, sessionId: recordingVM.activeSessionId)
+            // Only auto-transcribe standalone recordings (no active session).
+            // Session recordings are transcribed after the session ends via onStopRecording.
+            if recordingVM.activeSessionId == nil {
+                transcriptionVM.transcribeIfNeeded(recording)
+            }
         }
 
         ModelManager.shared.onModelDownloaded = { [transcriptionVM] preset in
@@ -255,10 +259,16 @@ struct ContentView: View {
             onStopRecording: {
                 Task {
                     await recordingVM.stopRecording()
+                    let sessionId = activeSessionId
                     recordingVM.activeSessionId = nil
-                    if let sessionId = activeSessionId {
+                    activeSessionId = nil
+                    if let sessionId {
                         _ = await sessionVM.endSession(sessionId)
-                        activeSessionId = nil
+                        let segments = recordingVM.allRecordingsForSession(sessionId)
+                        if !segments.isEmpty {
+                            await transcriptionVM.transcribeSegments(segments, sessionId: sessionId)
+                        }
+                        recordingVM.clearSessionSegments(sessionId)
                     }
                     await sessionVM.loadTodaySessions()
                 }

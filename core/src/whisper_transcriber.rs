@@ -1,11 +1,15 @@
 // whisper_transcriber.rs — Whisper-based ASR via whisper-rs.
 //
-// Pipeline: audio → VAD split → transcribe each speech chunk → reassemble.
+// Pipeline: audio → VAD split → transcribe each speech chunk → filter → reassemble.
 //
 // The audio is scanned for speech regions using RMS energy detection. Each
 // contiguous speech region is fed to Whisper independently, so the model never
 // sees long silence gaps and can't bridge across them. Segment timestamps are
 // offset back to the original file timeline.
+//
+// Post-inference, segments are filtered by Whisper's confidence scores
+// (no_speech_prob, avg token logprob) to suppress hallucinations that slip
+// past the VAD — e.g. Bluetooth mic noise floor triggering false speech regions.
 //
 // Fixed inference params (per design doc §4):
 //   language      = en
@@ -18,8 +22,9 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 /// Sample rate of audio fed to Whisper (always 16 kHz after preprocessing).
 const WHISPER_SAMPLE_RATE: usize = 16000;
 
-/// RMS energy below this threshold = silence.
-const SILENCE_RMS_THRESHOLD: f32 = 0.01;
+/// RMS energy below this threshold = silence. Set above typical Bluetooth/AirPod
+/// mic noise floor (~-35 to -30 dB) to avoid feeding low-level noise to Whisper.
+const SILENCE_RMS_THRESHOLD: f32 = 0.025;
 
 /// Window size in samples for VAD scanning (20ms at 16 kHz = 320 samples).
 const VAD_WINDOW_SAMPLES: usize = (WHISPER_SAMPLE_RATE * 20) / 1000;
@@ -32,6 +37,13 @@ const MIN_SILENCE_GAP_MS: usize = 500;
 /// of audio; regions shorter than this are discarded to avoid the
 /// "input is too short" warning.
 const MIN_REGION_SAMPLES: usize = WHISPER_SAMPLE_RATE / 10; // 1600 samples = 100ms
+
+/// Segments with no_speech_prob above this are likely hallucinations.
+const NO_SPEECH_PROB_THRESHOLD: f32 = 0.6;
+
+/// Segments with average token log-probability below this are low-confidence
+/// and likely hallucinated (Whisper guessing on noise).
+const AVG_LOGPROB_THRESHOLD: f32 = -1.0;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -138,6 +150,27 @@ fn transcribe_chunk(
 
     let mut segments = Vec::new();
     for seg in state.as_iter() {
+        // Post-inference hallucination filter: check Whisper's confidence scores.
+        // High no_speech_prob means Whisper itself thinks this isn't speech.
+        let no_speech_prob = seg.no_speech_probability();
+        if no_speech_prob > NO_SPEECH_PROB_THRESHOLD {
+            continue;
+        }
+
+        // Compute average token log-probability. Low values indicate Whisper
+        // is guessing (hallucinating on noise rather than transcribing speech).
+        let n_tokens = seg.n_tokens();
+        if n_tokens > 0 {
+            let sum_logprob: f32 = (0..n_tokens)
+                .filter_map(|i| seg.get_token(i))
+                .map(|t| t.token_data().plog)
+                .sum();
+            let avg_logprob = sum_logprob / n_tokens as f32;
+            if avg_logprob < AVG_LOGPROB_THRESHOLD {
+                continue;
+            }
+        }
+
         let start_ms = seg.start_timestamp() * 10 + offset_ms;
         let end_ms = seg.end_timestamp() * 10 + offset_ms;
 
@@ -303,6 +336,18 @@ mod tests {
         let silence = vec![0.0f32; 48000]; // 3 seconds
         let regions = detect_speech_regions(&silence);
         assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn bluetooth_noise_floor_produces_no_regions() {
+        // Simulate AirPod/Bluetooth mic noise floor (~-35 dB, RMS ~0.018).
+        // Must be rejected by the raised threshold (0.025).
+        let noise: Vec<f32> = (0..48000).map(|i| (i as f32 * 0.1).sin() * 0.015).collect();
+        let regions = detect_speech_regions(&noise);
+        assert!(
+            regions.is_empty(),
+            "Bluetooth noise floor should not trigger speech detection"
+        );
     }
 
     #[test]
