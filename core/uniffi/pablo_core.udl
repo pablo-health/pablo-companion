@@ -146,6 +146,37 @@ namespace pablo_core {
         string token,
         CreatePatientRequest request
     );
+
+    // ── SOAP Entry orchestration ────────────────────────────────────────────
+
+    [Async, Throws=PabloError]
+    SoapEntryStatus start_soap_entry(
+        string base_url,
+        string token,
+        string session_id,
+        SoapEntryRequest request
+    );
+
+    [Async, Throws=PabloError]
+    SoapEntryStatus poll_soap_entry_status(
+        string base_url,
+        string token,
+        string session_id
+    );
+
+    [Async, Throws=PabloError]
+    SoapEntryStatus confirm_soap_entry(
+        string base_url,
+        string token,
+        string session_id
+    );
+
+    [Async, Throws=PabloError]
+    SoapEntryStatus cancel_soap_entry(
+        string base_url,
+        string token,
+        string session_id
+    );
 };
 
 // Unified error type for pablo-core operations.
@@ -386,4 +417,45 @@ dictionary TranscriptUploadResponse {
 dictionary UploadResponse {
     string id;
     string status;
+};
+
+// ── SOAP Entry types ────────────────────────────────────────────────────────
+
+// Phase of the EHR entry pipeline.
+enum SoapEntryPhase {
+    "Queued",
+    "Navigating",
+    "MatchingPatient",
+    "AwaitingConfirmation",
+    "Entering",
+    "Completed",
+    "Failed",
+    "Cancelled",
+};
+
+// Request to start SOAP note entry into an EHR.
+dictionary SoapEntryRequest {
+    string ehr_system;
+    string soap_note_id;
+    string patient_name;
+    string appointment_time;
+};
+
+// Current status of a SOAP entry job.
+dictionary SoapEntryStatus {
+    string job_id;
+    SoapEntryPhase phase;
+    string message;
+    string? patient_match;
+    string? appointment_match;
+    string? ehr_target_field;
+    string? error;
+};
+
+// Preview data for therapist confirmation before committing.
+dictionary SoapEntryConfirmation {
+    string patient_match;
+    string appointment_match;
+    string ehr_target_field;
+    string? soap_preview;
 };
