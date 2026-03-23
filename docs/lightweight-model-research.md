@@ -298,6 +298,107 @@ This keeps the human in the loop for the most critical step.
 
 ---
 
+## Additional Model Research: Benchmark Data
+
+### BFCL (Berkeley Function Calling Leaderboard) — Small Model Results
+
+| Model | Params | BFCL Score | Multi-Turn Score | Notes |
+|-------|--------|-----------|-----------------|-------|
+| **xLAM-1B-fc-r (v1)** | 1B | 78.94% | — | Best size-to-performance ratio; non-commercial license |
+| **xLAM-2-3b-fc-r** | 3B | 65.74% | 55.62% | Multi-turn drops significantly |
+| **Hunyuan-1.8B-Instruct** | 1.8B | Leading on BFCL v3 | — | Hybrid reasoning (/think, /no_think), 256K context |
+| **SmolLM2-1.7B** | 1.7B | 27% | — | Poor — not suited for tool calling |
+
+### WebArena Benchmark (Real Web Navigation)
+
+- **Smallest effective model**: ScribeAgent-Small (fine-tuned Qwen2 **7B**) at 51.3% success
+- **Sub-10B**: Go-Browse at 21.7% with graph-based exploration
+- **No sub-3B model has been benchmarked on WebArena** — 7B is the current floor for general web nav
+- **State of the art**: ~61.7% (IBM CUGA, 2025-2026)
+
+### Key Insight: Fine-Tuning Changes Everything
+
+ScribeAgent (CMU, arXiv:2411.15004) showed that fine-tuning Qwen2 7B on production workflow data improved WebArena success from 37.2% → 51.3%, **surpassing GPT-4o**. For our constrained EHR workflow:
+- Fine-tuning a 1.5-3B model on ~1000-5000 annotated EHR workflow traces could match general-purpose 7B+ models
+- Constrained decoding (forcing valid actions only) further boosts small model reliability
+- The KDD 2025 paper on SLMs showed fine-tuned SLMs outperform prompted LLMs by 10% for structured workflows
+
+### Models Worth Watching
+
+| Model | Active Params | Why |
+|-------|--------------|-----|
+| **Qwen3-30B-A3B** | 3B (MoE) | Outcompetes QwQ-32B; strong tool calling |
+| **Ministral-3-3B** | 3.4B | Multimodal, agent-ready with function calling |
+| **FunctionGemma** | 270M | Google's edge function-calling model, 85% after fine-tuning |
+| **Phi-4-mini** | ~3.8B | Built-in function calling (unlike Phi-3.5) |
+
+---
+
+## Detailed Cost Analysis (from research)
+
+### API Costs Are Negligible
+
+Assumptions: 8 sessions/day, 7.5 nav actions each, ~250 tokens/action, 22 working days/month.
+
+| Provider/Model | Monthly Cost per Therapist |
+|---|---|
+| **Together AI (Llama 3.2 3B)** | $0.02 |
+| **GPT-5 nano** | $0.04 |
+| **GPT-4o mini** | $0.08 |
+| **Gemini 2.0 Flash (Vertex AI)** | $0.05 |
+| **Claude Haiku 4.5** | $0.59 |
+
+With the hybrid cached-routes approach (5-10% LLM fallback): **< $0.01/therapist/month**.
+
+At 1,000 therapists with Together AI: **$20/month total**. Self-hosted GPU ($160-250/month) only makes sense at 10,000+ therapists.
+
+### HIPAA Strategy: PHI Stripping
+
+Since Playwright runs on our backend, we can strip patient identifiers before LLM calls:
+- LLM sees: "find the row with appointment at 2:00 PM in the patient list"
+- LLM does NOT see: "find Jane Smith's session"
+- Patient matching happens deterministically in our code via text search
+- This sidesteps the BAA requirement for the model provider entirely
+
+If PHI must reach the model: GCP Vertex AI, AWS Bedrock, and Azure OpenAI all offer BAAs.
+
+---
+
+## Companion App Integration
+
+Since the entire Playwright + model stack runs on the **Python backend**, the Swift/Windows apps need only a thin integration:
+
+```
+┌──────────────────────┐        ┌─────────────────────────────┐
+│  Companion App       │        │  Pablo Backend (Python)      │
+│  (Swift / WinUI)     │        │                             │
+│                      │  POST  │  /sessions/{id}/enter-soap  │
+│  [Sync to EHR] ──────┼───────▶│  ┌─────────────────────┐   │
+│                      │        │  │ SOAP Note Agent      │   │
+│  Status: "Entering   │◀──SSE──│  │ - Route cache        │   │
+│   notes for Jane S." │        │  │ - Playwright headless│   │
+│                      │        │  │ - LLM fallback       │   │
+│  [✓ Confirm] [Cancel]│───────▶│  └─────────────────────┘   │
+└──────────────────────┘        └─────────────────────────────┘
+```
+
+### What the native apps do:
+1. **Trigger**: "Enter SOAP note into EHR" button after note generation
+2. **Confirm**: Show therapist what will be entered and where (verification gate)
+3. **Monitor**: SSE/polling for status updates ("Navigating...", "Found patient...", "Done")
+4. **EHR Auth**: One-time login flow (OAuth or stored session cookie)
+
+### What stays in Rust core:
+- API client for `/sessions/{id}/enter-soap` endpoint
+- Status polling/SSE handling
+- EHR credential storage (Keychain on macOS, Windows Credential Manager)
+
+### What stays native:
+- UI for the confirmation dialog and status display
+- Credential storage APIs
+
+---
+
 ## Summary & Recommendation
 
 | Decision | Recommendation |
@@ -306,6 +407,23 @@ This keeps the human in the loop for the most critical step.
 | **Orchestration** | deepagents + Playwright MCP |
 | **Model for fallback** | **Gemini 2.0 Flash on Vertex AI** (simplest) or **BU-30B-A3B self-hosted** (cheapest at scale) |
 | **Can 1B do it?** | No for general navigation. With caching, you rarely need a model at all, and when you do, 3B active params (BU-30B-A3B) is the floor. |
+| **Fine-tuning path** | If we want a dedicated small model: fine-tune Qwen2.5-3B or Hunyuan-1.8B on EHR workflow traces |
 | **Hosting** | Backend (GCP) — centralizes routes, simplifies HIPAA, removes client hardware dependency |
-| **Cost** | Negligible: $0.05-$1/therapist/month with Gemini Flash |
+| **Cost** | Negligible: $0.02-$0.59/therapist/month even without caching; ~$0 with caching |
+| **HIPAA** | Strip PHI before LLM calls; patient matching is deterministic code, not model inference |
+| **App integration** | Thin: one API call from Rust core, status display in native UI |
 | **Biggest risk** | EHR vendor ToS and pushback, not model capability or cost |
+
+---
+
+## References
+
+- [ScribeAgent (CMU)](https://arxiv.org/abs/2411.15004) — Fine-tuned 7B beats GPT-4 on web navigation
+- [TinyLLM](https://arxiv.org/abs/2511.22138) — Benchmark of sub-3B models for agentic tasks
+- [BU-30B-A3B](https://huggingface.co/browser-use/bu-30b-a3b-preview) — Browser Use's 3B-active MoE model
+- [Browser-Use Benchmark](https://browser-use.com/posts/ai-browser-agent-benchmark) — Agent benchmark methodology
+- [xLAM (Salesforce)](https://github.com/SalesforceAIResearch/xLAM) — 1B tool-calling model
+- [FunctionGemma (Google)](https://blog.google/innovation-and-ai/technology/developers-tools/functiongemma/) — 270M function-calling model
+- [deepagents (LangChain)](https://github.com/langchain-ai/deepagents) — Agent orchestration framework
+- [Small LMs for Agentic Tool Calling](https://arxiv.org/abs/2512.15943) — SLMs match LLMs when fine-tuned
+- [MedAgentBench (NEJM AI)](https://ai.nejm.org/doi/full/10.1056/AIdbp2500144) — Clinical LLM agent benchmark
