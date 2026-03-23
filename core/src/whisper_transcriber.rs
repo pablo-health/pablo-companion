@@ -342,9 +342,7 @@ mod tests {
     fn bluetooth_noise_floor_produces_no_regions() {
         // Simulate AirPod/Bluetooth mic noise floor (~-35 dB, RMS ~0.018).
         // Must be rejected by the raised threshold (0.025).
-        let noise: Vec<f32> = (0..48000)
-            .map(|i| (i as f32 * 0.1).sin() * 0.015)
-            .collect();
+        let noise: Vec<f32> = (0..48000).map(|i| (i as f32 * 0.1).sin() * 0.015).collect();
         let regions = detect_speech_regions(&noise);
         assert!(
             regions.is_empty(),
