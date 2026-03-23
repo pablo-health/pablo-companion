@@ -235,6 +235,56 @@ final class TranscriptionViewModel {
         }
     }
 
+    /// Transcribes multiple recording segments and uploads the combined transcript.
+    /// Used when a session has multiple recordings due to audio source changes.
+    func transcribeSegments(_ recordings: [LocalRecording], sessionId: String) async {
+        guard autoTranscribe else { return }
+        let viable = recordings.filter { $0.micPCMFileURL != nil }
+        guard !viable.isEmpty else { return }
+
+        if viable.count == 1 {
+            await transcribe(viable[0], sessionId: sessionId)
+            return
+        }
+
+        for rec in viable { states[rec.id] = .running }
+        logger.info("Transcribing \(viable.count) segments for session")
+
+        var transcriptParts: [String] = []
+        var failed = false
+
+        for rec in viable {
+            do {
+                let (micPath, systemPath, tempFiles) = try decryptPCMIfNeeded(rec)
+                defer { tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+
+                let config = try buildTranscriptionConfig(sampleRate: rec.sampleRate)
+                let result = try await transcribeSession1on1(
+                    sessionId: sessionId,
+                    micPath: micPath,
+                    systemPath: systemPath,
+                    config: config
+                )
+                let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: rec))
+                transcriptParts.append(text)
+                states[rec.id] = .done(transcript: text)
+            } catch is ModelError {
+                states[rec.id] = .awaitingModel
+                awaitingModelRecordings.append((recording: rec, sessionId: sessionId))
+                failed = true
+            } catch {
+                states[rec.id] = .failed(message: error.localizedDescription)
+                logger.error("Segment transcription failed: \(error.localizedDescription)")
+                failed = true
+            }
+        }
+
+        guard !failed, !transcriptParts.isEmpty else { return }
+
+        let combined = transcriptParts.joined(separator: "\n\n")
+        await uploadOrQueue(recording: viable[viable.count - 1], sessionId: sessionId, text: combined)
+    }
+
     /// Process recordings that were deferred because the Whisper model wasn't available.
     /// Called after a model download completes. Uses the just-downloaded preset so we
     /// don't fail again looking for a different model than what the user downloaded.

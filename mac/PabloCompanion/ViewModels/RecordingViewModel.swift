@@ -38,6 +38,10 @@ final class RecordingViewModel {
     var bluetoothRecommendation: String?
     var systemAudioPermitted: Bool = CGPreflightScreenCaptureAccess()
 
+    /// All recording segments accumulated during the current session (from audio source changes).
+    /// Consumed at session end for multi-segment transcription, then cleared.
+    private var sessionSegments: [String: [LocalRecording]] = [:]
+
     // MARK: - Debug / Diagnostics
 
     var debugEnableMic = true
@@ -221,6 +225,16 @@ final class RecordingViewModel {
         logger.info("Linked orphaned recording \(recording.id) to session \(sessionId)")
     }
 
+    /// Returns all recording segments accumulated during a session (from audio source changes).
+    func allRecordingsForSession(_ sessionId: String) -> [LocalRecording] {
+        sessionSegments[sessionId] ?? []
+    }
+
+    /// Removes accumulated segments for a session after transcription is kicked off.
+    func clearSessionSegments(_ sessionId: String) {
+        sessionSegments.removeValue(forKey: sessionId)
+    }
+
     /// The session ID whose recording is currently playing, if any.
     var playingSessionId: String? {
         guard let playingRecordingID else { return nil }
@@ -277,6 +291,7 @@ final class RecordingViewModel {
             if let sessionId = self?.activeSessionId {
                 self?.sessionRecordingMap[sessionId] = recording.id
                 self?.persistMapping(sessionId: sessionId, recording: recording)
+                self?.sessionSegments[sessionId, default: []].append(recording)
             }
             self?.onRecordingCompleted?(recording)
         }
