@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Debug view for testing EHR SOAP note entry end-to-end.
@@ -209,10 +208,10 @@ struct DebugSoapEntryView: View {
                 showA11yTree = true
                 Task { await readA11yTree() }
             } label: {
-                Label("Read A11y Tree", systemImage: "tree")
+                Label("Read DOM", systemImage: "doc.text.magnifyingglass")
             }
             .buttonStyle(.bordered)
-            .accessibilityLabel("Read accessibility tree from browser")
+            .accessibilityLabel("Read DOM snapshot from Chrome via CDP")
 
             Button("Reset") {
                 vm.reset()
@@ -285,7 +284,7 @@ struct DebugSoapEntryView: View {
 
     private var a11yTreeSheet: some View {
         VStack(spacing: 12) {
-            Text("Browser Accessibility Tree")
+            Text("Browser DOM Snapshot (via CDP)")
                 .font(.custom("Fraunces", size: 16).weight(.semibold))
 
             ScrollView {
@@ -358,62 +357,51 @@ struct DebugSoapEntryView: View {
     }
 
     private func readA11yTree() async {
-        // Direct accessibility tree read for debugging — shows what the navigator sees
-        let browserBundleIDs = [
-            "com.apple.Safari",
-            "com.google.Chrome",
-            "org.mozilla.firefox",
-            "company.thebrowser.Browser",
-            "com.microsoft.edgemac",
-        ]
-
-        for app in NSWorkspace.shared.runningApplications {
-            guard let bundleID = app.bundleIdentifier, browserBundleIDs.contains(bundleID) else {
-                continue
+        // Read DOM snapshot via CDP — shows what the navigator/LLM sees
+        do {
+            guard let listURL = URL(string: "http://localhost:9222/json") else {
+                a11yTreePreview = "Invalid CDP URL"
+                return
             }
-            let appElement = AXUIElementCreateApplication(app.processIdentifier)
-            var windowRef: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowRef) == .success,
-                  let window = windowRef else {
-                continue
+            let (data, _) = try await URLSession.shared.data(from: listURL)
+            guard let targets = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let pageTarget = targets.first(where: { ($0["type"] as? String) == "page" }),
+                  let wsURL = pageTarget["webSocketDebuggerUrl"] as? String else {
+                a11yTreePreview = "No page target found. Is Chrome running with --remote-debugging-port=9222?"
+                return
             }
-            // swiftlint:disable:next force_cast
-            a11yTreePreview = serializeTree(window as! AXUIElement, depth: 0, maxDepth: 8)
-            return
+
+            let cdp = CDPConnection(wsURL: wsURL)
+            try await cdp.connect()
+
+            // Get a simplified DOM snapshot (same as what the LLM sees)
+            let js = """
+                (() => {
+                    const elements = [];
+                    const walk = (el, depth) => {
+                        if (depth > 6) return;
+                        const tag = el.tagName?.toLowerCase() || '';
+                        const text = (el.innerText || '').substring(0, 100);
+                        const href = el.getAttribute?.('href') || '';
+                        const role = el.getAttribute?.('role') || '';
+                        const ariaLabel = el.getAttribute?.('aria-label') || '';
+                        const indent = '  '.repeat(depth);
+                        let desc = `${indent}<${tag}`;
+                        if (role) desc += ` role="${role}"`;
+                        if (href) desc += ` href="${href}"`;
+                        if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
+                        desc += `> ${text.substring(0, 80).replace(/\\n/g, ' ')}`;
+                        elements.push(desc);
+                        for (const child of (el.children || [])) walk(child, depth + 1);
+                    };
+                    walk(document.body, 0);
+                    return elements.join('\\n');
+                })()
+                """
+            a11yTreePreview = try await cdp.evaluateJS(js)
+        } catch {
+            a11yTreePreview = "Error: \(error.localizedDescription)"
         }
-
-        a11yTreePreview = "No browser window found. Open Safari, Chrome, or Firefox."
-    }
-
-    private func serializeTree(_ element: AXUIElement, depth: Int, maxDepth: Int) -> String {
-        guard depth < maxDepth else { return "" }
-        var result = ""
-        let indent = String(repeating: "  ", count: depth)
-
-        let role = axAttr(element, kAXRoleAttribute) ?? "?"
-        let title = axAttr(element, kAXTitleAttribute) ?? ""
-        let value = axAttr(element, kAXValueAttribute) ?? ""
-        let desc = axAttr(element, kAXDescriptionAttribute) ?? ""
-
-        let label = [title, value, desc].filter { !$0.isEmpty }.joined(separator: " | ")
-        result += "\(indent)[\(role)] \(label)\n"
-
-        var childrenRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-           let children = childrenRef as? [AXUIElement] {
-            for child in children {
-                result += serializeTree(child, depth: depth + 1, maxDepth: maxDepth)
-            }
-        }
-        return result
-    }
-
-    private func axAttr(_ element: AXUIElement, _ attribute: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
-            return nil
-        }
-        return value as? String
     }
 }
 

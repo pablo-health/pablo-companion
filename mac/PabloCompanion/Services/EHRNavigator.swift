@@ -1,27 +1,26 @@
-import AppKit
-import ApplicationServices
 import Foundation
 import os
 
-/// Orchestrates EHR browser automation using macOS Accessibility APIs.
+/// Orchestrates EHR browser automation via Chrome DevTools Protocol (CDP).
 ///
-/// The navigator controls the therapist's browser (Safari, Chrome, etc.)
-/// via AXUIElement to enter SOAP notes into their EHR. All intelligence
-/// stays local except when the DOM doesn't match a cached route — then
-/// it calls the backend for LLM-assisted navigation.
+/// Connects to Chrome's remote debugging WebSocket (localhost:9222) to get
+/// full DOM access — can find elements by CSS selector, click, fill forms,
+/// and read page content. No macOS permissions required.
 ///
 /// Flow:
-///   1. Fetch cached route for this EHR system from backend
-///   2. For each step: read accessibility tree → match fingerprint?
-///      - YES → execute deterministically
+///   1. Connect to Chrome CDP via WebSocket
+///   2. Fetch cached route from backend (or discover via LLM)
+///   3. For each step: get DOM snapshot → match fingerprint?
+///      - YES → execute deterministically via CDP
 ///      - NO  → call backend `/navigate` (LLM fallback, PHI stripped)
-///   3. Find patient by text search (deterministic, no LLM)
-///   4. Pause at awaiting_confirmation → therapist reviews
-///   5. On confirm → fill SOAP fields and save
+///   4. Find patient by text search in DOM (deterministic, no LLM)
+///   5. Pause at awaiting_confirmation → therapist reviews
+///   6. On confirm → fill SOAP fields and save via CDP
 @MainActor
 final class EHRNavigator {
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "EHRNavigator")
     private let apiClient: NavigationAPIClient
+    private var cdp: CDPConnection?
 
     init(apiClient: NavigationAPIClient) {
         self.apiClient = apiClient
@@ -40,18 +39,14 @@ final class EHRNavigator {
 
     /// Runs the full SOAP entry flow. Returns confirmation data for the therapist to review.
     /// Does NOT save — caller must invoke `commitEntry()` after therapist confirms.
-    ///
-    /// Two modes:
-    /// 1. Cached route exists → replay deterministically, LLM fallback per broken step
-    /// 2. No cached route → LLM drives entire navigation, learns the route for next time
     func navigateToSoapForm(
         input: SoapEntryInput,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws -> SoapEntryConfirmation {
-        // 1. Find the browser window first
-        guard let browserWindow = findBrowserWindow() else {
-            throw EHRNavigatorError.browserNotFound
-        }
+        // 1. Connect to Chrome CDP
+        onPhaseChange(.navigating, "Connecting to browser...")
+        let connection = try await connectToChrome()
+        self.cdp = connection
 
         let dynamicData: [String: String] = [
             "patient_name": input.patientName,
@@ -67,26 +62,23 @@ final class EHRNavigator {
         onPhaseChange(.navigating, "Navigating \(input.ehrSystem)...")
 
         if let route = cachedRoute {
-            // Mode 1: Replay cached route, LLM fallback per step if needed
             logger.info("Using cached route for \(input.ehrSystem) (\(route.steps.count) steps)")
             learnedSteps = try await executeCachedRoute(
                 route: route,
                 dynamicData: dynamicData,
                 input: input,
-                browserWindow: browserWindow,
+                cdp: connection,
                 onPhaseChange: onPhaseChange
             )
         } else {
-            // Mode 2: No cached route — LLM drives everything, we record what works
-            logger.info("No cached route for \(input.ehrSystem) — learning from scratch via LLM")
+            logger.info("No cached route for \(input.ehrSystem) — learning via LLM")
             onPhaseChange(.navigating, "Learning \(input.ehrSystem) navigation (first time)...")
             learnedSteps = try await discoverRoute(
                 input: input,
-                browserWindow: browserWindow,
+                cdp: connection,
                 onPhaseChange: onPhaseChange
             )
 
-            // Save the learned route so all therapists benefit next time
             let newRoute = CachedRoute(
                 ehrSystem: input.ehrSystem,
                 routeName: "navigate_to_soap_entry",
@@ -95,16 +87,15 @@ final class EHRNavigator {
                 lastSuccess: ISO8601DateFormatter().string(from: Date())
             )
             try? await apiClient.saveRoute(route: newRoute)
-            logger.info("Saved newly learned route for \(input.ehrSystem) (\(learnedSteps.count) steps)")
+            logger.info("Saved learned route for \(input.ehrSystem) (\(learnedSteps.count) steps)")
         }
 
-        // 4. Find and verify patient
+        // 4. Find and verify patient in the DOM
         onPhaseChange(.matchingPatient, "Looking for \(input.patientName)...")
-        let tree = try accessibilitySnapshot(for: browserWindow)
-        let patientMatch = try findPatientMatch(in: tree, name: input.patientName)
-        let appointmentMatch = try findAppointmentMatch(in: tree, time: input.appointmentTime)
+        let pageText = try await connection.evaluateJS("document.body.innerText")
+        let patientMatch = try findPatientMatch(in: pageText, name: input.patientName)
+        let appointmentMatch = try findAppointmentMatch(in: pageText, time: input.appointmentTime)
 
-        // 5. Return confirmation for therapist review
         return SoapEntryConfirmation(
             patientMatch: patientMatch,
             appointmentMatch: appointmentMatch,
@@ -113,40 +104,104 @@ final class EHRNavigator {
         )
     }
 
+    /// After therapist confirms, fill the SOAP fields and click Save.
+    func commitEntry(
+        input: SoapEntryInput,
+        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
+    ) async throws {
+        guard let cdp else {
+            throw EHRNavigatorError.browserNotFound
+        }
+
+        onPhaseChange(.entering, "Entering SOAP note...")
+
+        // Ask the LLM to identify the form fields on the current page
+        let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
+        let fieldAction = try await llmNavigate(
+            intent: .identifyFormFields,
+            ehrSystem: input.ehrSystem,
+            domSnapshot: domSnapshot,
+            patientName: input.patientName
+        )
+
+        // The LLM returns a selector pattern for the form fields.
+        // We fill each SOAP section by evaluating JS directly.
+        let soapFields = [
+            ("Subjective", input.soapContent.subjective),
+            ("Objective", input.soapContent.objective),
+            ("Assessment", input.soapContent.assessment),
+            ("Plan", input.soapContent.plan),
+        ]
+
+        for (label, content) in soapFields {
+            onPhaseChange(.entering, "Filling \(label)...")
+            // Use the LLM's selector as a base, fill via JS
+            let escapedContent = content.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+                .replacingOccurrences(of: "\n", with: "\\n")
+            let fillJS = """
+                (() => {
+                    const fields = document.querySelectorAll('\(fieldAction.selector)');
+                    for (const f of fields) {
+                        if (f.labels?.[0]?.innerText?.includes('\(label)') ||
+                            f.placeholder?.includes('\(label)') ||
+                            f.getAttribute('aria-label')?.includes('\(label)')) {
+                            f.value = '\(escapedContent)';
+                            f.dispatchEvent(new Event('input', {bubbles: true}));
+                            f.dispatchEvent(new Event('change', {bubbles: true}));
+                            return true;
+                        }
+                    }
+                    return false;
+                })()
+                """
+            _ = try await cdp.evaluateJS(fillJS)
+            try await Task.sleep(for: .milliseconds(300))
+        }
+
+        // Click save
+        onPhaseChange(.entering, "Saving note...")
+        let saveJS = """
+            (() => {
+                const btn = document.querySelector('button[type="submit"], input[type="submit"]')
+                    || [...document.querySelectorAll('button')].find(b => /save|submit/i.test(b.innerText));
+                if (btn) { btn.click(); return true; }
+                return false;
+            })()
+            """
+        _ = try await cdp.evaluateJS(saveJS)
+    }
+
     // MARK: - Cached route execution
 
-    /// Replays a cached route. Returns the (possibly updated) steps for re-saving.
     private func executeCachedRoute(
         route: CachedRoute,
         dynamicData: [String: String],
         input: SoapEntryInput,
-        browserWindow: AXUIElement,
+        cdp: CDPConnection,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws -> [CachedStep] {
         var updatedSteps = route.steps
 
         for (index, step) in route.steps.enumerated() {
-            let tree = try accessibilitySnapshot(for: browserWindow)
+            let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
 
-            if matchesFingerprint(tree: tree, fingerprint: step.a11yFingerprint) {
-                // Deterministic — no LLM
+            if matchesFingerprint(snapshot: domSnapshot, fingerprint: step.a11yFingerprint) {
                 let resolvedSelector = resolveSelector(step.selector, dynamicKey: step.dynamicKey, data: dynamicData)
-                try await executeAction(step.action, selector: resolvedSelector, on: browserWindow)
+                try await executeStepViaCDP(action: step.action, selector: resolvedSelector, cdp: cdp)
                 logger.info("Step \(index + 1)/\(route.steps.count) matched — deterministic")
             } else {
-                // Step broke — ask LLM
                 logger.info("Step \(index + 1)/\(route.steps.count) mismatch — calling LLM")
                 onPhaseChange(.navigating, "Step \(index + 1) changed — asking AI...")
                 let action = try await llmNavigate(
                     intent: step.intent,
                     ehrSystem: input.ehrSystem,
-                    tree: tree,
+                    domSnapshot: domSnapshot,
                     patientName: input.patientName,
                     failedSelector: step.selector
                 )
-                try await executeAction(action.action, selector: action.selector, on: browserWindow)
+                try await executeStepViaCDP(action: action.action, selector: action.selector, cdp: cdp)
 
-                // Update the step so the route improves
                 updatedSteps[index] = CachedStep(
                     action: action.action,
                     selector: action.selector,
@@ -165,7 +220,8 @@ final class EHRNavigator {
                 }
             }
 
-            try await Task.sleep(for: .milliseconds(500))
+            // Wait for page to settle after action
+            try await Task.sleep(for: .milliseconds(800))
         }
 
         return updatedSteps
@@ -173,30 +229,26 @@ final class EHRNavigator {
 
     // MARK: - LLM-driven route discovery
 
-    /// No cached route — LLM figures out every step from scratch.
-    /// Returns the learned steps to be saved as a new cached route.
     private func discoverRoute(
         input: SoapEntryInput,
-        browserWindow: AXUIElement,
+        cdp: CDPConnection,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws -> [CachedStep] {
         var learnedSteps: [CachedStep] = []
 
         for (index, intent) in Self.navigationIntents.enumerated() {
-            let tree = try accessibilitySnapshot(for: browserWindow)
+            let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
             onPhaseChange(.navigating, "Step \(index + 1)/\(Self.navigationIntents.count): \(intent.rawValue.replacingOccurrences(of: "_", with: " "))...")
 
             let action = try await llmNavigate(
                 intent: intent,
                 ehrSystem: input.ehrSystem,
-                tree: tree,
-                patientName: input.patientName,
-                failedSelector: ""
+                domSnapshot: domSnapshot,
+                patientName: input.patientName
             )
 
-            try await executeAction(action.action, selector: action.selector, on: browserWindow)
+            try await executeStepViaCDP(action: action.action, selector: action.selector, cdp: cdp)
 
-            // Record what worked
             let dynamicKey: String? = switch intent {
             case .findPatientRow: "patient_name"
             default: nil
@@ -211,300 +263,323 @@ final class EHRNavigator {
             ))
 
             logger.info("Learned step \(index + 1): \(intent.rawValue) → \(action.action.rawValue) on \(action.selector)")
-            try await Task.sleep(for: .milliseconds(500))
+            try await Task.sleep(for: .milliseconds(800))
         }
 
         return learnedSteps
     }
 
-    // MARK: - LLM call
+    // MARK: - CDP actions
 
-    /// Calls the backend LLM to determine the next navigation action.
-    /// PHI is stripped before sending.
-    private func llmNavigate(
-        intent: NavigationIntent,
-        ehrSystem: String,
-        tree: String,
-        patientName: String,
-        failedSelector: String = ""
-    ) async throws -> NavigationAction {
-        let strippedTree = stripPHI(from: tree, patientName: patientName)
-        return try await apiClient.getNavigationAction(
-            request: NavigationRequest(
-                ehrSystem: ehrSystem,
-                intent: intent,
-                a11ySnapshot: strippedTree,
-                failedSelector: failedSelector
-            )
-        )
-    }
-
-    /// After therapist confirms, fill the SOAP fields and click Save.
-    func commitEntry(
-        input: SoapEntryInput,
-        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
-    ) async throws {
-        guard let browserWindow = findBrowserWindow() else {
-            throw EHRNavigatorError.browserNotFound
-        }
-
-        onPhaseChange(.entering, "Entering SOAP note...")
-
-        // Fill each SOAP field using cached field selectors
-        let fields: [(NavigationIntent, String)] = [
-            (.findSoapForm, input.soapContent.subjective),
-            (.findSoapForm, input.soapContent.objective),
-            (.findSoapForm, input.soapContent.assessment),
-            (.findSoapForm, input.soapContent.plan),
-        ]
-
-        for (_, content) in fields {
-            // The actual field identification logic would use cached selectors
-            // or LLM fallback to find S/O/A/P fields in the EHR form
-            try await typeText(content, into: browserWindow)
-            try await Task.sleep(for: .milliseconds(300))
-        }
-
-        // Click save
-        onPhaseChange(.entering, "Saving note...")
-        try await executeAction(.click, selector: "button[type='submit'], button:contains('Save')", on: browserWindow)
-    }
-
-    // MARK: - Accessibility tree
-
-    /// Reads the accessibility tree of the browser window as a text snapshot.
-    private func accessibilitySnapshot(for window: AXUIElement) throws -> String {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(window, kAXChildrenAttribute as CFString, &value)
-        guard result == .success, let children = value as? [AXUIElement] else {
-            throw EHRNavigatorError.accessibilityTreeUnavailable
-        }
-        return serializeAccessibilityTree(children, depth: 0, maxDepth: 10)
-    }
-
-    /// Recursively serializes the accessibility tree to a text representation.
-    private func serializeAccessibilityTree(_ elements: [AXUIElement], depth: Int, maxDepth: Int) -> String {
-        guard depth < maxDepth else { return "" }
-        var result = ""
-        let indent = String(repeating: "  ", count: depth)
-
-        for element in elements {
-            let role = axAttribute(element, kAXRoleAttribute) ?? "unknown"
-            let title = axAttribute(element, kAXTitleAttribute) ?? ""
-            let value = axAttribute(element, kAXValueAttribute) ?? ""
-            let desc = axAttribute(element, kAXDescriptionAttribute) ?? ""
-
-            let label = [title, value, desc].filter { !$0.isEmpty }.joined(separator: " | ")
-            result += "\(indent)[\(role)] \(label)\n"
-
-            // Recurse into children
-            var childrenRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-               let children = childrenRef as? [AXUIElement] {
-                result += serializeAccessibilityTree(children, depth: depth + 1, maxDepth: maxDepth)
-            }
-        }
-        return result
-    }
-
-    /// Reads a single string attribute from an AXUIElement.
-    private func axAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
-            return nil
-        }
-        return value as? String
-    }
-
-    // MARK: - Browser discovery
-
-    /// Finds the frontmost browser window (Safari, Chrome, Firefox, Arc, Edge).
-    private func findBrowserWindow() -> AXUIElement? {
-        let browserBundleIDs = [
-            "com.apple.Safari",
-            "com.google.Chrome",
-            "org.mozilla.firefox",
-            "company.thebrowser.Browser", // Arc
-            "com.microsoft.edgemac",
-        ]
-
-        for app in NSWorkspace.shared.runningApplications where app.isActive {
-            if let bundleID = app.bundleIdentifier, browserBundleIDs.contains(bundleID) {
-                let appElement = AXUIElementCreateApplication(app.processIdentifier)
-                var windowRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowRef) == .success {
-                    // swiftlint:disable:next force_cast
-                    return (windowRef as! AXUIElement)
-                }
-            }
-        }
-
-        // Fallback: check all running browsers, not just the active one
-        for app in NSWorkspace.shared.runningApplications {
-            if let bundleID = app.bundleIdentifier, browserBundleIDs.contains(bundleID) {
-                let appElement = AXUIElementCreateApplication(app.processIdentifier)
-                var windowRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowRef) == .success {
-                    // swiftlint:disable:next force_cast
-                    return (windowRef as! AXUIElement)
-                }
-            }
-        }
-
-        return nil
-    }
-
-    // MARK: - Matching
-
-    /// Checks if the current accessibility tree matches a cached step's fingerprint.
-    private func matchesFingerprint(tree: String, fingerprint: String) -> Bool {
-        // Exact substring match on key structural elements.
-        // The fingerprint is a hash or snippet of the expected tree structure
-        // (excluding dynamic content like patient names or times).
-        tree.contains(fingerprint)
-    }
-
-    /// Deterministic text search for the patient name in the accessibility tree.
-    /// No LLM needed — pure string matching.
-    private func findPatientMatch(in tree: String, name: String) throws -> String {
-        // Try exact match first
-        if tree.localizedCaseInsensitiveContains(name) {
-            return name
-        }
-
-        // Try last name, first name format
-        let parts = name.split(separator: " ")
-        if parts.count >= 2 {
-            let reversed = "\(parts.last!), \(parts.first!)"
-            if tree.localizedCaseInsensitiveContains(reversed) {
-                return String(reversed)
-            }
-        }
-
-        throw EHRNavigatorError.patientNotFound(name: name)
-    }
-
-    /// Deterministic text search for the appointment time.
-    private func findAppointmentMatch(in tree: String, time: String) throws -> String {
-        // Try the ISO time directly
-        if tree.contains(time) {
-            return time
-        }
-
-        // Try common display formats (2:00 PM, 14:00, etc.)
-        if let date = ISO8601DateFormatter().date(from: time) {
-            let formatter = DateFormatter()
-            for format in ["h:mm a", "HH:mm", "h:mma"] {
-                formatter.dateFormat = format
-                let formatted = formatter.string(from: date)
-                if tree.localizedCaseInsensitiveContains(formatted) {
-                    return formatted
-                }
-            }
-        }
-
-        throw EHRNavigatorError.appointmentNotFound(time: time)
-    }
-
-    // MARK: - PHI stripping
-
-    /// Removes patient-identifiable information before sending to the backend LLM.
-    private func stripPHI(from tree: String, patientName: String) -> String {
-        var stripped = tree.replacingOccurrences(of: patientName, with: "[PATIENT]")
-
-        // Also strip individual name parts (handles "Smith, Jane" formats)
-        for part in patientName.split(separator: " ") where part.count > 2 {
-            stripped = stripped.replacingOccurrences(of: String(part), with: "[NAME]")
-        }
-
-        return stripped
-    }
-
-    // MARK: - Action execution
-
-    /// Resolves a selector with dynamic data substitution.
-    private func resolveSelector(_ selector: String, dynamicKey: String?, data: [String: String]) -> String {
-        guard let key = dynamicKey, let value = data[key] else {
-            return selector
-        }
-        return selector.replacingOccurrences(of: "{\(key)}", with: value)
-    }
-
-    /// Executes a browser action via Accessibility APIs.
-    private func executeAction(_ action: StepAction, selector: String, on window: AXUIElement) async throws {
-        // In a full implementation, this would:
-        // 1. Walk the accessibility tree to find the element matching `selector`
-        // 2. Perform the action (click via AXPress, fill via AXValue, etc.)
-        //
-        // For now, this is the integration point. The selector format and
-        // tree-walking logic will be refined per EHR system during testing.
-        logger.info("Executing \(action.rawValue) on selector: \(selector)")
+    /// Executes a navigation action via CDP (click, fill, navigate, wait).
+    private func executeStepViaCDP(action: StepAction, selector: String, cdp: CDPConnection) async throws {
+        logger.info("CDP: \(action.rawValue) on \(selector)")
 
         switch action {
         case .click:
-            try pressElement(matching: selector, in: window)
+            let js = """
+                (() => {
+                    const el = document.querySelector('\(selector.escapedForJS)');
+                    if (el) { el.click(); return true; }
+                    return false;
+                })()
+                """
+            let result = try await cdp.evaluateJS(js)
+            if result == "false" {
+                throw EHRNavigatorError.elementNotFound(selector: selector)
+            }
+
         case .fill:
-            // Fill is handled by typeText — selector identifies the field
+            // Fill is handled separately in commitEntry with field-specific logic
             break
+
         case .navigate:
-            // URL navigation — would set the browser's URL bar
-            break
+            _ = try await cdp.evaluateJS("window.location.href = '\(selector.escapedForJS)'")
+
         case .wait:
             try await Task.sleep(for: .seconds(1))
         }
     }
 
-    /// Presses (clicks) an element found by walking the accessibility tree.
-    private func pressElement(matching selector: String, in root: AXUIElement) throws {
-        guard let element = findElement(matching: selector, in: root) else {
-            throw EHRNavigatorError.elementNotFound(selector: selector)
-        }
-        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
-        guard result == .success else {
-            throw EHRNavigatorError.actionFailed(action: "press", selector: selector)
-        }
+    /// Gets a simplified DOM snapshot for the LLM. Strips PHI before returning.
+    private func getDOMSnapshot(cdp: CDPConnection, patientName: String) async throws -> String {
+        // Get a simplified representation of the page — interactive elements + text
+        let js = """
+            (() => {
+                const elements = [];
+                const walk = (el, depth) => {
+                    if (depth > 6) return;
+                    const tag = el.tagName?.toLowerCase() || '';
+                    const role = el.getAttribute?.('role') || '';
+                    const text = el.innerText?.substring(0, 100) || '';
+                    const href = el.getAttribute?.('href') || '';
+                    const type = el.getAttribute?.('type') || '';
+                    const placeholder = el.getAttribute?.('placeholder') || '';
+                    const ariaLabel = el.getAttribute?.('aria-label') || '';
+                    const isInteractive = ['A','BUTTON','INPUT','SELECT','TEXTAREA'].includes(el.tagName)
+                        || el.getAttribute?.('onclick')
+                        || role === 'button' || role === 'link' || role === 'tab';
+                    if (isInteractive || text.length > 0) {
+                        const indent = '  '.repeat(depth);
+                        let desc = `${indent}<${tag}`;
+                        if (role) desc += ` role="${role}"`;
+                        if (href) desc += ` href="${href}"`;
+                        if (type) desc += ` type="${type}"`;
+                        if (placeholder) desc += ` placeholder="${placeholder}"`;
+                        if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
+                        desc += `>${text.substring(0, 80).replace(/\\n/g, ' ')}`;
+                        elements.push(desc);
+                    }
+                    for (const child of (el.children || [])) walk(child, depth + 1);
+                };
+                walk(document.body, 0);
+                return elements.join('\\n');
+            })()
+            """
+        let rawSnapshot = try await cdp.evaluateJS(js)
+        return stripPHI(from: rawSnapshot, patientName: patientName)
     }
 
-    /// Walks the accessibility tree to find an element matching a selector.
-    private func findElement(matching selector: String, in root: AXUIElement) -> AXUIElement? {
-        // Simple text-based matching against title/description/role
-        let title = axAttribute(root, kAXTitleAttribute) ?? ""
-        let desc = axAttribute(root, kAXDescriptionAttribute) ?? ""
-        let role = axAttribute(root, kAXRoleAttribute) ?? ""
+    // MARK: - CDP connection
 
-        if title.localizedCaseInsensitiveContains(selector)
-            || desc.localizedCaseInsensitiveContains(selector)
-            || "\(role):\(title)".localizedCaseInsensitiveContains(selector) {
-            return root
+    /// Connects to Chrome's remote debugging port and finds the active page target.
+    private func connectToChrome(port: Int = 9222) async throws -> CDPConnection {
+        // Step 1: Get the list of debuggable targets
+        guard let listURL = URL(string: "http://localhost:\(port)/json") else {
+            throw EHRNavigatorError.browserNotFound
         }
 
-        // Recurse into children
-        var childrenRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(root, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-           let children = childrenRef as? [AXUIElement] {
-            for child in children {
-                if let found = findElement(matching: selector, in: child) {
-                    return found
+        let (data, _) = try await URLSession.shared.data(from: listURL)
+
+        guard let targets = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw EHRNavigatorError.browserNotFound
+        }
+
+        // Find the first "page" target (not extension, service worker, etc.)
+        guard let pageTarget = targets.first(where: { ($0["type"] as? String) == "page" }),
+              let wsURL = pageTarget["webSocketDebuggerUrl"] as? String else {
+            throw EHRNavigatorError.browserNotFound
+        }
+
+        logger.info("CDP: Connecting to \(wsURL)")
+
+        // Step 2: Connect WebSocket
+        let connection = CDPConnection(wsURL: wsURL)
+        try await connection.connect()
+
+        logger.info("CDP: Connected to Chrome")
+        return connection
+    }
+
+    // MARK: - LLM call
+
+    private func llmNavigate(
+        intent: NavigationIntent,
+        ehrSystem: String,
+        domSnapshot: String,
+        patientName: String,
+        failedSelector: String = ""
+    ) async throws -> NavigationAction {
+        let strippedSnapshot = stripPHI(from: domSnapshot, patientName: patientName)
+        return try await apiClient.getNavigationAction(
+            request: NavigationRequest(
+                ehrSystem: ehrSystem,
+                intent: intent,
+                a11ySnapshot: strippedSnapshot,
+                failedSelector: failedSelector
+            )
+        )
+    }
+
+    // MARK: - Matching
+
+    private func matchesFingerprint(snapshot: String, fingerprint: String) -> Bool {
+        guard !fingerprint.isEmpty else { return false }
+        return snapshot.contains(fingerprint)
+    }
+
+    private func findPatientMatch(in pageText: String, name: String) throws -> String {
+        if pageText.localizedCaseInsensitiveContains(name) {
+            return name
+        }
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            let reversed = "\(parts.last!), \(parts.first!)"
+            if pageText.localizedCaseInsensitiveContains(reversed) {
+                return String(reversed)
+            }
+        }
+        throw EHRNavigatorError.patientNotFound(name: name)
+    }
+
+    private func findAppointmentMatch(in pageText: String, time: String) throws -> String {
+        if pageText.contains(time) { return time }
+        if let date = ISO8601DateFormatter().date(from: time) {
+            let formatter = DateFormatter()
+            for format in ["h:mm a", "HH:mm", "h:mma", "h:mm\u{202F}a", "h:mm\u{00A0}a"] {
+                formatter.dateFormat = format
+                let formatted = formatter.string(from: date)
+                if pageText.localizedCaseInsensitiveContains(formatted) {
+                    return formatted
                 }
             }
         }
-
-        return nil
+        throw EHRNavigatorError.appointmentNotFound(time: time)
     }
 
-    /// Types text into the currently focused element.
-    private func typeText(_ text: String, into window: AXUIElement) async throws {
-        // Use AXValue to set text on the focused element
-        var focusedRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success else {
-            throw EHRNavigatorError.accessibilityTreeUnavailable
+    // MARK: - Helpers
+
+    private func resolveSelector(_ selector: String, dynamicKey: String?, data: [String: String]) -> String {
+        guard let key = dynamicKey, let value = data[key] else { return selector }
+        return selector.replacingOccurrences(of: "{\(key)}", with: value)
+    }
+
+    private func stripPHI(from text: String, patientName: String) -> String {
+        var stripped = text.replacingOccurrences(of: patientName, with: "[PATIENT]")
+        for part in patientName.split(separator: " ") where part.count > 2 {
+            stripped = stripped.replacingOccurrences(of: String(part), with: "[NAME]")
         }
-        // swiftlint:disable:next force_cast
-        let focused = focusedRef as! AXUIElement
-        let result = AXUIElementSetAttributeValue(focused, kAXValueAttribute as CFString, text as CFTypeRef)
-        guard result == .success else {
-            throw EHRNavigatorError.actionFailed(action: "type", selector: "focused element")
+        return stripped
+    }
+}
+
+// MARK: - CDP WebSocket Connection
+
+/// Minimal Chrome DevTools Protocol client over WebSocket.
+/// Sends JSON commands and receives responses by matching request IDs.
+final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+    private let wsURL: String
+    private var webSocket: URLSessionWebSocketTask?
+    private var nextID = 1
+    private var pendingCallbacks: [Int: CheckedContinuation<String, Error>] = [:]
+    private let lock = NSLock()
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "CDPConnection")
+
+    init(wsURL: String) {
+        self.wsURL = wsURL
+    }
+
+    func connect() async throws {
+        guard let url = URL(string: wsURL) else {
+            throw EHRNavigatorError.browserNotFound
         }
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        let ws = session.webSocketTask(with: url)
+        self.webSocket = ws
+        ws.resume()
+        startReceiving()
+        // Give the connection a moment to establish
+        try await Task.sleep(for: .milliseconds(200))
+    }
+
+    /// Evaluates JavaScript in the page and returns the string result.
+    func evaluateJS(_ expression: String) async throws -> String {
+        let id = nextRequestID()
+        let command: [String: Any] = [
+            "id": id,
+            "method": "Runtime.evaluate",
+            "params": [
+                "expression": expression,
+                "returnByValue": true,
+            ],
+        ]
+        return try await sendCommand(command, id: id)
+    }
+
+    // MARK: - Internal
+
+    private func nextRequestID() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        let id = nextID
+        nextID += 1
+        return id
+    }
+
+    private func sendCommand(_ command: [String: Any], id: Int) async throws -> String {
+        guard let ws = webSocket else {
+            throw EHRNavigatorError.browserNotFound
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: command)
+        let message = URLSessionWebSocketTask.Message.data(data)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            pendingCallbacks[id] = continuation
+            lock.unlock()
+
+            ws.send(message) { [weak self] error in
+                if let error {
+                    self?.lock.lock()
+                    let cb = self?.pendingCallbacks.removeValue(forKey: id)
+                    self?.lock.unlock()
+                    cb?.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func startReceiving() {
+        webSocket?.receive { [weak self] result in
+            switch result {
+            case let .success(message):
+                self?.handleMessage(message)
+                self?.startReceiving() // Continue listening
+            case let .failure(error):
+                self?.logger.error("CDP WebSocket error: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
+        let data: Data
+        switch message {
+        case let .string(text):
+            data = Data(text.utf8)
+        case let .data(d):
+            data = d
+        @unknown default:
+            return
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = json["id"] as? Int else {
+            return // Event message (no id) — ignore for now
+        }
+
+        lock.lock()
+        let continuation = pendingCallbacks.removeValue(forKey: id)
+        lock.unlock()
+
+        // Extract the result value
+        if let result = json["result"] as? [String: Any],
+           let innerResult = result["result"] as? [String: Any],
+           let value = innerResult["value"] {
+            if let strValue = value as? String {
+                continuation?.resume(returning: strValue)
+            } else if let boolValue = value as? Bool {
+                continuation?.resume(returning: boolValue ? "true" : "false")
+            } else {
+                continuation?.resume(returning: String(describing: value))
+            }
+        } else if let error = json["error"] as? [String: Any],
+                  let errorMessage = error["message"] as? String {
+            continuation?.resume(throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: errorMessage))
+        } else {
+            continuation?.resume(returning: "")
+        }
+    }
+}
+
+// MARK: - String helper
+
+private extension String {
+    /// Escapes a string for safe inclusion in a JS string literal (single-quoted).
+    var escapedForJS: String {
+        self.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 }
 
@@ -512,7 +587,6 @@ final class EHRNavigator {
 
 enum EHRNavigatorError: LocalizedError {
     case browserNotFound
-    case accessibilityTreeUnavailable
     case patientNotFound(name: String)
     case appointmentNotFound(time: String)
     case elementNotFound(selector: String)
@@ -522,19 +596,17 @@ enum EHRNavigatorError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .browserNotFound:
-            "No supported browser found. Please open your EHR in Safari, Chrome, or Firefox."
-        case .accessibilityTreeUnavailable:
-            "Unable to read browser content. Please grant Accessibility permission in System Settings."
+            "Could not connect to Chrome. Make sure Chrome is running with --remote-debugging-port=9222"
         case let .patientNotFound(name):
-            "Could not find patient \"\(name)\" in the current page."
+            "Could not find patient \"\(name)\" on the current page."
         case let .appointmentNotFound(time):
-            "Could not find appointment at \(time) in the current page."
+            "Could not find appointment at \(time) on the current page."
         case let .elementNotFound(selector):
             "Could not find element: \(selector)"
         case let .actionFailed(action, selector):
-            "Failed to \(action) on \(selector)"
+            "Failed to \(action): \(selector)"
         case let .routeNotAvailable(ehrSystem):
-            "No navigation route available for \(ehrSystem). Please contact support."
+            "No navigation route available for \(ehrSystem)."
         }
     }
 }
