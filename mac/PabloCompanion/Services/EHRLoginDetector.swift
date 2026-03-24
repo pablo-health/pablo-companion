@@ -13,6 +13,7 @@ enum EHRLoginDetector {
 
     /// Waits for the therapist to sign in if a login page is detected.
     /// Returns immediately if already signed in.
+    @MainActor
     static func waitForLogin(
         cdp: CDPConnection,
         ehrSystem: String,

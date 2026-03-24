@@ -82,11 +82,12 @@ final class EHRNavigator {
         let goal = "Navigate to the \(input.noteType) form for the appointment at \(input.appointmentDisplay)"
         var previousActions: [PreviousAction] = []
 
+        let loginCallback = onEHRLoginRequired
         try await EHRLoginDetector.waitForLogin(
             cdp: cdp,
             ehrSystem: input.ehrSystem,
             onPhaseChange: onPhaseChange,
-            onLoginRequired: onEHRLoginRequired
+            onLoginRequired: loginCallback
         )
 
         for step in 1 ... maxSteps {
