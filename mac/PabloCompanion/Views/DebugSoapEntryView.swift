@@ -15,7 +15,7 @@ struct DebugSoapEntryView: View {
     @State private var selectedEHR = "simplepractice"
     @State private var configError: String?
 
-    private let ehrSystems = ["simplepractice", "therapynotes", "janeapp"]
+    private let ehrSystems = ["simplepractice", "therapynotes", "janeapp", "sessions_health"]
 
     var body: some View {
         VStack(spacing: 20) {
@@ -37,6 +37,12 @@ struct DebugSoapEntryView: View {
         .padding(24)
         .frame(minWidth: 440, maxWidth: 520)
         .task { configureFromKeychain() }
+        .alert("Relaunch Chrome?", isPresented: $vm.showChromeRelaunchAlert) {
+            Button("Relaunch") { vm.respondToChromeRelaunch(approved: true) }
+            Button("Cancel", role: .cancel) { vm.respondToChromeRelaunch(approved: false) }
+        } message: {
+            Text("Chrome needs to be relaunched with debugging enabled so Pablo can control the browser. Your tabs will be restored.")
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") { dismiss() }
@@ -63,11 +69,21 @@ struct DebugSoapEntryView: View {
     private var ehrPicker: some View {
         Picker("Target EHR", selection: $selectedEHR) {
             ForEach(ehrSystems, id: \.self) { ehr in
-                Text(ehr.capitalized).tag(ehr)
+                Text(ehrDisplayName(ehr)).tag(ehr)
             }
         }
         .pickerStyle(.segmented)
         .accessibilityLabel("Select target EHR system")
+    }
+
+    private func ehrDisplayName(_ system: String) -> String {
+        switch system {
+        case "simplepractice": "SimplePractice"
+        case "therapynotes": "TherapyNotes"
+        case "janeapp": "Jane App"
+        case "sessions_health": "Sessions Health"
+        default: system.capitalized
+        }
     }
 
     // MARK: - Test Session Card

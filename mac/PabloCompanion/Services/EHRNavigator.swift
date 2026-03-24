@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import os
 
@@ -21,6 +22,10 @@ final class EHRNavigator {
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "EHRNavigator")
     private let apiClient: NavigationAPIClient
     private var cdp: CDPConnection?
+
+    /// Called when Chrome needs to be relaunched with debugging enabled.
+    /// The UI should show a confirmation dialog. Return `true` to proceed.
+    var onChromeRelaunchNeeded: (() async -> Bool)?
 
     init(apiClient: NavigationAPIClient) {
         self.apiClient = apiClient
@@ -342,9 +347,55 @@ final class EHRNavigator {
 
     // MARK: - CDP connection
 
-    /// Connects to Chrome's remote debugging port and finds the active page target.
+    /// Connects to Chrome's remote debugging port.
+    /// If Chrome isn't running with debugging enabled, asks the user to relaunch.
     private func connectToChrome(port: Int = 9222) async throws -> CDPConnection {
-        // Step 1: Get the list of debuggable targets
+        // Try connecting to an already-running debug port first
+        if let connection = try? await attemptCDPConnection(port: port) {
+            return connection
+        }
+
+        // Chrome isn't listening on the debug port — ask user to relaunch
+        logger.info("CDP: Chrome not available on port \(port), requesting relaunch")
+
+        guard let onRelaunch = onChromeRelaunchNeeded,
+              await onRelaunch() else {
+            throw EHRNavigatorError.chromeRelaunchDeclined
+        }
+
+        // Quit Chrome gracefully
+        for app in NSWorkspace.shared.runningApplications
+            where app.bundleIdentifier == "com.google.Chrome" {
+            app.terminate()
+        }
+
+        // Wait for Chrome to fully quit
+        try await Task.sleep(for: .seconds(2))
+
+        // Relaunch with remote debugging enabled
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = [
+            "-a", "Google Chrome",
+            "--args",
+            "--remote-debugging-port=\(port)",
+        ]
+        try process.run()
+
+        // Wait for Chrome to start and the debug port to become available
+        for attempt in 1 ... 10 {
+            try await Task.sleep(for: .seconds(1))
+            if let connection = try? await attemptCDPConnection(port: port) {
+                logger.info("CDP: Connected after relaunch (attempt \(attempt))")
+                return connection
+            }
+        }
+
+        throw EHRNavigatorError.browserNotFound
+    }
+
+    /// Tries to connect to the CDP debug port. Returns nil if not available.
+    private func attemptCDPConnection(port: Int) async throws -> CDPConnection {
         guard let listURL = URL(string: "http://localhost:\(port)/json") else {
             throw EHRNavigatorError.browserNotFound
         }
@@ -355,18 +406,14 @@ final class EHRNavigator {
             throw EHRNavigatorError.browserNotFound
         }
 
-        // Find the first "page" target (not extension, service worker, etc.)
         guard let pageTarget = targets.first(where: { ($0["type"] as? String) == "page" }),
               let wsURL = pageTarget["webSocketDebuggerUrl"] as? String else {
             throw EHRNavigatorError.browserNotFound
         }
 
         logger.info("CDP: Connecting to \(wsURL)")
-
-        // Step 2: Connect WebSocket
         let connection = CDPConnection(wsURL: wsURL)
         try await connection.connect()
-
         logger.info("CDP: Connected to Chrome")
         return connection
     }
@@ -587,6 +634,7 @@ private extension String {
 
 enum EHRNavigatorError: LocalizedError {
     case browserNotFound
+    case chromeRelaunchDeclined
     case patientNotFound(name: String)
     case appointmentNotFound(time: String)
     case elementNotFound(selector: String)
@@ -597,6 +645,8 @@ enum EHRNavigatorError: LocalizedError {
         switch self {
         case .browserNotFound:
             "Could not connect to Chrome. Make sure Chrome is running with --remote-debugging-port=9222"
+        case .chromeRelaunchDeclined:
+            "Chrome needs to be relaunched with debugging enabled to control the browser."
         case let .patientNotFound(name):
             "Could not find patient \"\(name)\" on the current page."
         case let .appointmentNotFound(time):

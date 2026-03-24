@@ -18,6 +18,10 @@ final class SoapEntryViewModel {
     var statusMessage = ""
     var confirmation: SoapEntryConfirmation?
     var errorMessage: String?
+    /// Set to true when Chrome needs to be relaunched — the view shows a confirmation alert.
+    var showChromeRelaunchAlert = false
+    /// Continuation held while waiting for the user's relaunch decision.
+    private var relaunchContinuation: CheckedContinuation<Bool, Never>?
 
     // MARK: - Dependencies
 
@@ -30,7 +34,26 @@ final class SoapEntryViewModel {
     /// Call after auth is configured. Creates the navigator with the backend API client.
     func configure(baseURL: String, getToken: @escaping @Sendable () async throws -> String) {
         let apiClient = NavigationAPIClient(baseURL: baseURL, getToken: getToken)
-        self.navigator = EHRNavigator(apiClient: apiClient)
+        let nav = EHRNavigator(apiClient: apiClient)
+        nav.onChromeRelaunchNeeded = { [weak self] in
+            await self?.requestChromeRelaunch() ?? false
+        }
+        self.navigator = nav
+    }
+
+    /// Called by the navigator when Chrome needs relaunching. Shows alert, waits for user.
+    private func requestChromeRelaunch() async -> Bool {
+        showChromeRelaunchAlert = true
+        return await withCheckedContinuation { continuation in
+            relaunchContinuation = continuation
+        }
+    }
+
+    /// Called by the view when the user responds to the Chrome relaunch alert.
+    func respondToChromeRelaunch(approved: Bool) {
+        relaunchContinuation?.resume(returning: approved)
+        relaunchContinuation = nil
+        showChromeRelaunchAlert = false
     }
 
     // MARK: - Entry flow
