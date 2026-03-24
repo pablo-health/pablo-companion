@@ -16,13 +16,28 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
     }
 
     func connect() async throws {
+        // Chrome CDP returns ws:// URLs — URLSessionWebSocketTask handles both ws:// and wss://
         guard let url = URL(string: wsURL) else { throw EHRNavigatorError.browserNotFound }
-        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         let task = session.webSocketTask(with: url)
         self.webSocket = task
         task.resume()
         startReceiving()
-        try await Task.sleep(for: .milliseconds(200))
+
+        // Verify the connection is alive by sending a ping
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            task.sendPing { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+        logger.info("CDP WebSocket connected to \(self.wsURL)")
     }
 
     /// Evaluates JavaScript in the page and returns the string result.
