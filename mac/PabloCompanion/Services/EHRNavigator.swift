@@ -4,19 +4,9 @@ import os
 
 /// Orchestrates EHR browser automation via Chrome DevTools Protocol (CDP).
 ///
-/// Connects to Chrome's remote debugging WebSocket (localhost:9222) to get
-/// full DOM access — can find elements by CSS selector, click, fill forms,
-/// and read page content. No macOS permissions required.
-///
-/// Flow:
-///   1. Connect to Chrome CDP via WebSocket
-///   2. Fetch cached route from backend (or discover via LLM)
-///   3. For each step: get DOM snapshot → match fingerprint?
-///      - YES → execute deterministically via CDP
-///      - NO  → call backend `/navigate` (LLM fallback, PHI stripped)
-///   4. Find patient by text search in DOM (deterministic, no LLM)
-///   5. Pause at awaiting_confirmation → therapist reviews
-///   6. On confirm → fill SOAP fields and save via CDP
+/// Uses a goal-based navigation loop: sends the current page DOM + goal to
+/// the backend LLM, executes the returned action, and repeats until the LLM
+/// says we're on the target page. PHI is stripped before every LLM call.
 @MainActor
 final class EHRNavigator {
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "EHRNavigator")
@@ -27,76 +17,98 @@ final class EHRNavigator {
     /// The UI should show a confirmation dialog. Return `true` to proceed.
     var onChromeRelaunchNeeded: (() async -> Bool)?
 
+    /// Maximum navigation steps before giving up (safety limit).
+    private let maxSteps = 10
+
     init(apiClient: NavigationAPIClient) {
         self.apiClient = apiClient
     }
 
-    // MARK: - Main orchestration
+    // MARK: - EHR login URLs
 
-    /// The ordered intents that get us from EHR dashboard to SOAP entry form.
-    /// When there's no cached route, the LLM works through these one at a time.
-    private static let navigationIntents: [NavigationIntent] = [
-        .findPatientList,
-        .findPatientRow,
-        .findSoapForm,
-        .identifyFormFields,
+    private static let ehrLoginURLs: [String: String] = [
+        "simplepractice": "https://secure.simplepractice.com",
+        "therapynotes": "https://www.therapynotes.com/Account/Login",
+        "janeapp": "https://jane.app/login",
+        "sessions_health": "https://app.sessionshealth.com",
     ]
 
-    /// Runs the full SOAP entry flow. Returns confirmation data for the therapist to review.
-    /// Does NOT save — caller must invoke `commitEntry()` after therapist confirms.
+    // MARK: - Main orchestration
+
+    /// Navigates to the SOAP note form using a goal-based LLM loop.
+    ///
+    /// 1. Connect to Chrome via CDP
+    /// 2. Send current page DOM + goal to backend LLM
+    /// 3. Execute the returned action (click, navigate, wait)
+    /// 4. Repeat until LLM says we're on the target page
+    /// 5. Verify patient + time via local text match (no LLM)
+    /// 6. Return confirmation for therapist review
     func navigateToSoapForm(
         input: SoapEntryInput,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws -> SoapEntryConfirmation {
-        // 1. Connect to Chrome CDP
-        onPhaseChange(.navigating, "Connecting to browser...")
+        // 1. Connect to Chrome
+        onPhaseChange(.connecting, "Connecting to browser...")
         let connection = try await connectToChrome(ehrSystem: input.ehrSystem)
         self.cdp = connection
 
-        let dynamicData: [String: String] = [
-            "patient_name": input.patientName,
-            "appointment_time": input.appointmentTime,
-        ]
+        // 2. Goal-based navigation loop
+        let goal = "Navigate to the SOAP note form for the appointment at \(input.appointmentDisplay)"
+        var previousActions: [PreviousAction] = []
+        var formFields: SoapFormFields?
 
-        // 2. Try to fetch cached route (404 is fine — means we learn from scratch)
-        onPhaseChange(.fetchingRoute, "Loading navigation route for \(input.ehrSystem)...")
-        let cachedRoute = try? await apiClient.fetchRoute(ehrSystem: input.ehrSystem)
+        onPhaseChange(.navigating, "Looking for the appointment...")
 
-        // 3. Navigate — cached replay or full LLM discovery
-        var learnedSteps: [CachedStep] = []
-        onPhaseChange(.navigating, "Navigating \(input.ehrSystem)...")
+        for step in 1 ... maxSteps {
+            let currentURL = try await connection.evaluateJS("window.location.href")
+            let domSnapshot = try await getDOMSnapshot(cdp: connection, patientName: input.patientName)
 
-        if let route = cachedRoute {
-            logger.info("Using cached route for \(input.ehrSystem) (\(route.steps.count) steps)")
-            learnedSteps = try await executeCachedRoute(
-                route: route,
-                dynamicData: dynamicData,
-                input: input,
-                cdp: connection,
-                onPhaseChange: onPhaseChange
-            )
-        } else {
-            logger.info("No cached route for \(input.ehrSystem) — learning via LLM")
-            onPhaseChange(.navigating, "Learning \(input.ehrSystem) navigation (first time)...")
-            learnedSteps = try await discoverRoute(
-                input: input,
-                cdp: connection,
-                onPhaseChange: onPhaseChange
+            // Ask the LLM what to do next
+            let response = try await apiClient.navigate(
+                request: GoalNavigationRequest(
+                    ehrSystem: input.ehrSystem,
+                    goal: goal,
+                    currentUrl: currentURL,
+                    domSnapshot: domSnapshot,
+                    previousActions: previousActions,
+                    failedAction: nil
+                )
             )
 
-            let newRoute = CachedRoute(
-                ehrSystem: input.ehrSystem,
-                routeName: "navigate_to_soap_entry",
-                steps: learnedSteps,
-                successCount: 1,
-                lastSuccess: ISO8601DateFormatter().string(from: Date())
-            )
-            try? await apiClient.saveRoute(route: newRoute)
-            logger.info("Saved learned route for \(input.ehrSystem) (\(learnedSteps.count) steps)")
+            logger.info("Step \(step): \(response.action.rawValue) → \(response.selector) (\(response.reasoning))")
+            onPhaseChange(.navigating, "Step \(step): \(response.reasoning)")
+
+            // Are we on the target page?
+            if response.isOnTargetPage {
+                formFields = response.formFields
+                logger.info("On target page after \(step) step(s)")
+                break
+            }
+
+            // Execute the action
+            do {
+                try await executeAction(response.action, selector: response.selector, cdp: connection)
+                previousActions.append(PreviousAction(
+                    action: response.action.rawValue,
+                    target: response.selector,
+                    result: "success"
+                ))
+            } catch {
+                logger.warning("Step \(step) failed: \(error.localizedDescription)")
+                previousActions.append(PreviousAction(
+                    action: response.action.rawValue,
+                    target: response.selector,
+                    result: "failed: \(error.localizedDescription)"
+                ))
+                // Don't throw — let the LLM see the failure and try an alternative
+            }
+
+            // Wait for page to settle
+            try await Task.sleep(for: .milliseconds(800))
         }
 
-        // 4. Find and verify patient in the DOM
-        onPhaseChange(.matchingPatient, "Looking for \(input.patientName)...")
+        // 3. Verify patient + time via local text match (no LLM)
+        onPhaseChange(.matchingPatient, "Verifying patient...")
         let pageText = try await connection.evaluateJS("document.body.innerText")
         let patientMatch = try findPatientMatch(in: pageText, name: input.patientName)
         let appointmentMatch = try findAppointmentMatch(in: pageText, time: input.appointmentTime)
@@ -104,14 +116,16 @@ final class EHRNavigator {
         return SoapEntryConfirmation(
             patientMatch: patientMatch,
             appointmentMatch: appointmentMatch,
-            ehrTargetField: "\(input.ehrSystem) → Patient Notes → SOAP Note",
-            soapPreview: "S: \(input.soapContent.subjective.prefix(80))..."
+            ehrTargetField: "\(input.ehrSystem) → SOAP Note",
+            soapPreview: "S: \(input.soapContent.subjective.prefix(80))...",
+            formFields: formFields
         )
     }
 
-    /// After therapist confirms, fill the SOAP fields and click Save.
+    /// After therapist confirms, fill the SOAP fields and leave for them to review/submit.
     func commitEntry(
         input: SoapEntryInput,
+        formFields: SoapFormFields?,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws {
         guard let cdp else {
@@ -120,195 +134,95 @@ final class EHRNavigator {
 
         onPhaseChange(.entering, "Entering SOAP note...")
 
-        // Ask the LLM to identify the form fields on the current page
-        let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
-        let fieldAction = try await llmNavigate(
-            intent: .identifyFormFields,
-            ehrSystem: input.ehrSystem,
-            domSnapshot: domSnapshot,
-            patientName: input.patientName
+        // Use LLM-identified selectors if available, otherwise fall back to position-based
+        let fields = formFields ?? SoapFormFields(
+            subjective: "textarea.expanding-textarea:nth-of-type(1)",
+            objective: "textarea.expanding-textarea:nth-of-type(2)",
+            assessment: "textarea.expanding-textarea:nth-of-type(3)",
+            plan: "textarea.expanding-textarea:nth-of-type(4)"
         )
 
-        // The LLM returns a selector pattern for the form fields.
-        // We fill each SOAP section by evaluating JS directly.
-        let soapFields = [
-            ("Subjective", input.soapContent.subjective),
-            ("Objective", input.soapContent.objective),
-            ("Assessment", input.soapContent.assessment),
-            ("Plan", input.soapContent.plan),
+        let soapEntries: [(String, String, String)] = [
+            ("Subjective", fields.subjective, input.soapContent.subjective),
+            ("Objective", fields.objective, input.soapContent.objective),
+            ("Assessment", fields.assessment, input.soapContent.assessment),
+            ("Plan", fields.plan, input.soapContent.plan),
         ]
 
-        for (label, content) in soapFields {
+        for (label, selector, content) in soapEntries {
             onPhaseChange(.entering, "Filling \(label)...")
-            // Use the LLM's selector as a base, fill via JS
-            let escapedContent = content.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "'", with: "\\'")
-                .replacingOccurrences(of: "\n", with: "\\n")
-            let fillJS = """
+            let escaped = content.escapedForJS
+            let js = """
                 (() => {
-                    const fields = document.querySelectorAll('\(fieldAction.selector)');
-                    for (const f of fields) {
-                        if (f.labels?.[0]?.innerText?.includes('\(label)') ||
-                            f.placeholder?.includes('\(label)') ||
-                            f.getAttribute('aria-label')?.includes('\(label)')) {
-                            f.value = '\(escapedContent)';
-                            f.dispatchEvent(new Event('input', {bubbles: true}));
-                            f.dispatchEvent(new Event('change', {bubbles: true}));
-                            return true;
-                        }
+                    // Try the LLM selector first
+                    let el = document.querySelector('\(selector.escapedForJS)');
+                    // Fallback: find by position among expanding textareas
+                    if (!el) {
+                        const all = document.querySelectorAll('textarea.expanding-textarea');
+                        const idx = {'Subjective':0,'Objective':1,'Assessment':2,'Plan':3}['\(label)'];
+                        el = all[idx];
                     }
-                    return false;
+                    if (!el) return 'NOT_FOUND';
+                    el.focus();
+                    el.value = '\(escaped)';
+                    el.dispatchEvent(new Event('input', {bubbles: true}));
+                    el.dispatchEvent(new Event('change', {bubbles: true}));
+                    return 'filled';
                 })()
                 """
-            _ = try await cdp.evaluateJS(fillJS)
+            let result = try await cdp.evaluateJS(js)
+            if result == "NOT_FOUND" {
+                throw EHRNavigatorError.elementNotFound(selector: "\(label) field")
+            }
+            logger.info("Filled \(label)")
             try await Task.sleep(for: .milliseconds(300))
         }
 
-        // Click save
-        onPhaseChange(.entering, "Saving note...")
-        let saveJS = """
-            (() => {
-                const btn = document.querySelector('button[type="submit"], input[type="submit"]')
-                    || [...document.querySelectorAll('button')].find(b => /save|submit/i.test(b.innerText));
-                if (btn) { btn.click(); return true; }
-                return false;
-            })()
-            """
-        _ = try await cdp.evaluateJS(saveJS)
-    }
-
-    // MARK: - Cached route execution
-
-    private func executeCachedRoute(
-        route: CachedRoute,
-        dynamicData: [String: String],
-        input: SoapEntryInput,
-        cdp: CDPConnection,
-        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
-    ) async throws -> [CachedStep] {
-        var updatedSteps = route.steps
-
-        for (index, step) in route.steps.enumerated() {
-            let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
-
-            if matchesFingerprint(snapshot: domSnapshot, fingerprint: step.a11yFingerprint) {
-                let resolvedSelector = resolveSelector(step.selector, dynamicKey: step.dynamicKey, data: dynamicData)
-                try await executeStepViaCDP(action: step.action, selector: resolvedSelector, cdp: cdp)
-                logger.info("Step \(index + 1)/\(route.steps.count) matched — deterministic")
-            } else {
-                logger.info("Step \(index + 1)/\(route.steps.count) mismatch — calling LLM")
-                onPhaseChange(.navigating, "Step \(index + 1) changed — asking AI...")
-                let action = try await llmNavigate(
-                    intent: step.intent,
-                    ehrSystem: input.ehrSystem,
-                    domSnapshot: domSnapshot,
-                    patientName: input.patientName,
-                    failedSelector: step.selector
-                )
-                try await executeStepViaCDP(action: action.action, selector: action.selector, cdp: cdp)
-
-                updatedSteps[index] = CachedStep(
-                    action: action.action,
-                    selector: action.selector,
-                    a11yFingerprint: action.updatedFingerprint.isEmpty ? step.a11yFingerprint : action.updatedFingerprint,
-                    intent: step.intent,
-                    dynamicKey: step.dynamicKey
-                )
-
-                if !action.updatedFingerprint.isEmpty {
-                    try? await apiClient.reportRouteUpdate(
-                        ehrSystem: input.ehrSystem,
-                        stepIndex: index,
-                        newSelector: action.selector,
-                        newFingerprint: action.updatedFingerprint
-                    )
-                }
-            }
-
-            // Wait for page to settle after action
-            try await Task.sleep(for: .milliseconds(800))
-        }
-
-        return updatedSteps
-    }
-
-    // MARK: - LLM-driven route discovery
-
-    private func discoverRoute(
-        input: SoapEntryInput,
-        cdp: CDPConnection,
-        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
-    ) async throws -> [CachedStep] {
-        var learnedSteps: [CachedStep] = []
-
-        for (index, intent) in Self.navigationIntents.enumerated() {
-            let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
-            onPhaseChange(.navigating, "Step \(index + 1)/\(Self.navigationIntents.count): \(intent.rawValue.replacingOccurrences(of: "_", with: " "))...")
-
-            let action = try await llmNavigate(
-                intent: intent,
-                ehrSystem: input.ehrSystem,
-                domSnapshot: domSnapshot,
-                patientName: input.patientName
-            )
-
-            try await executeStepViaCDP(action: action.action, selector: action.selector, cdp: cdp)
-
-            let dynamicKey: String? = switch intent {
-            case .findPatientRow: "patient_name"
-            default: nil
-            }
-
-            learnedSteps.append(CachedStep(
-                action: action.action,
-                selector: action.selector,
-                a11yFingerprint: action.updatedFingerprint,
-                intent: intent,
-                dynamicKey: dynamicKey
-            ))
-
-            logger.info("Learned step \(index + 1): \(intent.rawValue) → \(action.action.rawValue) on \(action.selector)")
-            try await Task.sleep(for: .milliseconds(800))
-        }
-
-        return learnedSteps
+        // Done — therapist reviews and clicks "Sign and Complete" themselves
+        onPhaseChange(.completed, "SOAP note entered. Please review and sign.")
     }
 
     // MARK: - CDP actions
 
-    /// Executes a navigation action via CDP (click, fill, navigate, wait).
-    private func executeStepViaCDP(action: StepAction, selector: String, cdp: CDPConnection) async throws {
-        logger.info("CDP: \(action.rawValue) on \(selector)")
-
+    private func executeAction(_ action: StepAction, selector: String, cdp: CDPConnection) async throws {
         switch action {
         case .click:
             let js = """
                 (() => {
                     const el = document.querySelector('\(selector.escapedForJS)');
-                    if (el) { el.click(); return true; }
-                    return false;
+                    if (el) { el.click(); return 'clicked'; }
+                    // Fallback: find by text content
+                    const all = document.querySelectorAll('a, button, [role="button"]');
+                    for (const e of all) {
+                        if (e.innerText.trim() === '\(selector.escapedForJS)') { e.click(); return 'clicked-by-text'; }
+                    }
+                    return 'not_found';
                 })()
                 """
             let result = try await cdp.evaluateJS(js)
-            if result == "false" {
+            if result == "not_found" {
                 throw EHRNavigatorError.elementNotFound(selector: selector)
             }
 
-        case .fill:
-            // Fill is handled separately in commitEntry with field-specific logic
-            break
-
         case .navigate:
-            _ = try await cdp.evaluateJS("window.location.href = '\(selector.escapedForJS)'")
+            let target = selector.hasPrefix("http") ? selector : selector
+            _ = try await cdp.evaluateJS("window.location.href = '\(target.escapedForJS)'")
+
+        case .fill:
+            break // Handled in commitEntry
 
         case .wait:
             try await Task.sleep(for: .seconds(1))
+
+        case .none:
+            break
         }
     }
 
-    /// Gets a simplified DOM snapshot for the LLM. Strips PHI before returning.
+    // MARK: - DOM snapshot
+
+    /// Gets a simplified DOM snapshot for the LLM. PHI is stripped.
     private func getDOMSnapshot(cdp: CDPConnection, patientName: String) async throws -> String {
-        // Get a simplified representation of the page — interactive elements + text
         let js = """
             (() => {
                 const elements = [];
@@ -316,15 +230,14 @@ final class EHRNavigator {
                     if (depth > 6) return;
                     const tag = el.tagName?.toLowerCase() || '';
                     const role = el.getAttribute?.('role') || '';
-                    const text = el.innerText?.substring(0, 100) || '';
+                    const text = (el.innerText || '').substring(0, 100);
                     const href = el.getAttribute?.('href') || '';
                     const type = el.getAttribute?.('type') || '';
                     const placeholder = el.getAttribute?.('placeholder') || '';
                     const ariaLabel = el.getAttribute?.('aria-label') || '';
                     const isInteractive = ['A','BUTTON','INPUT','SELECT','TEXTAREA'].includes(el.tagName)
-                        || el.getAttribute?.('onclick')
                         || role === 'button' || role === 'link' || role === 'tab';
-                    if (isInteractive || text.length > 0) {
+                    if (isInteractive || (text.length > 0 && text.length < 200)) {
                         const indent = '  '.repeat(depth);
                         let desc = `${indent}<${tag}`;
                         if (role) desc += ` role="${role}"`;
@@ -347,23 +260,11 @@ final class EHRNavigator {
 
     // MARK: - CDP connection
 
-    /// The EHR login URLs — where to navigate after launching Chrome.
-    private static let ehrLoginURLs: [String: String] = [
-        "simplepractice": "https://secure.simplepractice.com",
-        "therapynotes": "https://www.therapynotes.com/Account/Login",
-        "janeapp": "https://jane.app/login",
-        "sessions_health": "https://app.sessionshealth.com",
-    ]
-
-    /// Connects to Chrome's remote debugging port.
-    /// If Chrome isn't running with debugging enabled, asks the user to relaunch.
     private func connectToChrome(port: Int = 9222, ehrSystem: String? = nil) async throws -> CDPConnection {
-        // Try connecting to an already-running debug port first
         if let connection = try? await attemptCDPConnection(port: port) {
             return connection
         }
 
-        // Chrome isn't listening on the debug port — ask user to relaunch
         logger.info("CDP: Chrome not available on port \(port), requesting relaunch")
 
         guard let onRelaunch = onChromeRelaunchNeeded,
@@ -371,8 +272,6 @@ final class EHRNavigator {
             throw EHRNavigatorError.chromeRelaunchDeclined
         }
 
-        // Kill all Chrome processes (terminate() leaves helpers alive,
-        // which prevents the new instance from binding the debug port)
         let killProcess = Process()
         killProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
         killProcess.arguments = ["-9", "-f", "Google Chrome"]
@@ -381,24 +280,18 @@ final class EHRNavigator {
         try? killProcess.run()
         killProcess.waitUntilExit()
 
-        // Wait for all Chrome processes to fully exit
         for _ in 1 ... 10 {
             try await Task.sleep(for: .milliseconds(500))
-            let checkProcess = Process()
-            checkProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-            checkProcess.arguments = ["-f", "Google Chrome"]
-            checkProcess.standardOutput = FileHandle.nullDevice
-            checkProcess.standardError = FileHandle.nullDevice
-            try? checkProcess.run()
-            checkProcess.waitUntilExit()
-            if checkProcess.terminationStatus != 0 { break } // No processes found
+            let check = Process()
+            check.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+            check.arguments = ["-f", "Google Chrome"]
+            check.standardOutput = FileHandle.nullDevice
+            check.standardError = FileHandle.nullDevice
+            try? check.run()
+            check.waitUntilExit()
+            if check.terminationStatus != 0 { break }
         }
 
-        // Launch Chrome binary directly with the debugging flag.
-        // Uses a dedicated user-data-dir because Chrome's default profile
-        // silently ignores --remote-debugging-port when the profile is locked.
-        // The dedicated profile persists across launches so the therapist
-        // only needs to log into their EHR once.
         let chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         let profileDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Pablo/ChromeDebugProfile")
@@ -407,26 +300,20 @@ final class EHRNavigator {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: chromePath)
-
         var args = [
             "--remote-debugging-port=\(port)",
             "--user-data-dir=\(profileDir)",
             "--no-default-browser-check",
             "--no-first-run",
         ]
-        // Navigate to the EHR login page on launch
         if let ehr = ehrSystem, let loginURL = Self.ehrLoginURLs[ehr] {
             args.append(loginURL)
         }
         process.arguments = args
-
-        // Detach stdout/stderr so Chrome doesn't block our process
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-
         try process.run()
 
-        // Wait for Chrome to start and the debug port to become available
         for attempt in 1 ... 15 {
             try await Task.sleep(for: .seconds(1))
             if let connection = try? await attemptCDPConnection(port: port) {
@@ -438,67 +325,35 @@ final class EHRNavigator {
         throw EHRNavigatorError.browserNotFound
     }
 
-    /// Tries to connect to the CDP debug port. Returns nil if not available.
     private func attemptCDPConnection(port: Int) async throws -> CDPConnection {
         guard let listURL = URL(string: "http://localhost:\(port)/json") else {
             throw EHRNavigatorError.browserNotFound
         }
-
         let (data, _) = try await URLSession.shared.data(from: listURL)
-
         guard let targets = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw EHRNavigatorError.browserNotFound
         }
+        // Prefer a non-chrome:// page target
+        let pageTarget = targets.first(where: {
+            ($0["type"] as? String) == "page" && !(($0["url"] as? String)?.hasPrefix("chrome://") ?? true)
+        }) ?? targets.first(where: { ($0["type"] as? String) == "page" })
 
-        guard let pageTarget = targets.first(where: { ($0["type"] as? String) == "page" }),
-              let wsURL = pageTarget["webSocketDebuggerUrl"] as? String else {
+        guard let target = pageTarget, let wsURL = target["webSocketDebuggerUrl"] as? String else {
             throw EHRNavigatorError.browserNotFound
         }
-
-        logger.info("CDP: Connecting to \(wsURL)")
         let connection = CDPConnection(wsURL: wsURL)
         try await connection.connect()
-        logger.info("CDP: Connected to Chrome")
         return connection
     }
 
-    // MARK: - LLM call
-
-    private func llmNavigate(
-        intent: NavigationIntent,
-        ehrSystem: String,
-        domSnapshot: String,
-        patientName: String,
-        failedSelector: String = ""
-    ) async throws -> NavigationAction {
-        let strippedSnapshot = stripPHI(from: domSnapshot, patientName: patientName)
-        return try await apiClient.getNavigationAction(
-            request: NavigationRequest(
-                ehrSystem: ehrSystem,
-                intent: intent,
-                a11ySnapshot: strippedSnapshot,
-                failedSelector: failedSelector
-            )
-        )
-    }
-
-    // MARK: - Matching
-
-    private func matchesFingerprint(snapshot: String, fingerprint: String) -> Bool {
-        guard !fingerprint.isEmpty else { return false }
-        return snapshot.contains(fingerprint)
-    }
+    // MARK: - Matching (deterministic, no LLM)
 
     private func findPatientMatch(in pageText: String, name: String) throws -> String {
-        if pageText.localizedCaseInsensitiveContains(name) {
-            return name
-        }
+        if pageText.localizedCaseInsensitiveContains(name) { return name }
         let parts = name.split(separator: " ")
         if parts.count >= 2 {
             let reversed = "\(parts.last!), \(parts.first!)"
-            if pageText.localizedCaseInsensitiveContains(reversed) {
-                return String(reversed)
-            }
+            if pageText.localizedCaseInsensitiveContains(reversed) { return String(reversed) }
         }
         throw EHRNavigatorError.patientNotFound(name: name)
     }
@@ -510,19 +365,10 @@ final class EHRNavigator {
             for format in ["h:mm a", "HH:mm", "h:mma", "h:mm\u{202F}a", "h:mm\u{00A0}a"] {
                 formatter.dateFormat = format
                 let formatted = formatter.string(from: date)
-                if pageText.localizedCaseInsensitiveContains(formatted) {
-                    return formatted
-                }
+                if pageText.localizedCaseInsensitiveContains(formatted) { return formatted }
             }
         }
         throw EHRNavigatorError.appointmentNotFound(time: time)
-    }
-
-    // MARK: - Helpers
-
-    private func resolveSelector(_ selector: String, dynamicKey: String?, data: [String: String]) -> String {
-        guard let key = dynamicKey, let value = data[key] else { return selector }
-        return selector.replacingOccurrences(of: "{\(key)}", with: value)
     }
 
     private func stripPHI(from text: String, patientName: String) -> String {
@@ -536,8 +382,6 @@ final class EHRNavigator {
 
 // MARK: - CDP WebSocket Connection
 
-/// Minimal Chrome DevTools Protocol client over WebSocket.
-/// Sends JSON commands and receives responses by matching request IDs.
 final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
     private let wsURL: String
     private var webSocket: URLSessionWebSocketTask?
@@ -551,33 +395,24 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
     }
 
     func connect() async throws {
-        guard let url = URL(string: wsURL) else {
-            throw EHRNavigatorError.browserNotFound
-        }
+        guard let url = URL(string: wsURL) else { throw EHRNavigatorError.browserNotFound }
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         let ws = session.webSocketTask(with: url)
         self.webSocket = ws
         ws.resume()
         startReceiving()
-        // Give the connection a moment to establish
         try await Task.sleep(for: .milliseconds(200))
     }
 
-    /// Evaluates JavaScript in the page and returns the string result.
     func evaluateJS(_ expression: String) async throws -> String {
         let id = nextRequestID()
         let command: [String: Any] = [
             "id": id,
             "method": "Runtime.evaluate",
-            "params": [
-                "expression": expression,
-                "returnByValue": true,
-            ],
+            "params": ["expression": expression, "returnByValue": true],
         ]
         return try await sendCommand(command, id: id)
     }
-
-    // MARK: - Internal
 
     private func nextRequestID() -> Int {
         lock.lock()
@@ -588,10 +423,7 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
     }
 
     private func sendCommand(_ command: [String: Any], id: Int) async throws -> String {
-        guard let ws = webSocket else {
-            throw EHRNavigatorError.browserNotFound
-        }
-
+        guard let ws = webSocket else { throw EHRNavigatorError.browserNotFound }
         let data = try JSONSerialization.data(withJSONObject: command)
         let message = URLSessionWebSocketTask.Message.data(data)
 
@@ -614,11 +446,8 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
     private func startReceiving() {
         webSocket?.receive { [weak self] result in
             switch result {
-            case let .success(message):
-                self?.handleMessage(message)
-                self?.startReceiving() // Continue listening
-            case let .failure(error):
-                self?.logger.error("CDP WebSocket error: \(error.localizedDescription)")
+            case let .success(message): self?.handleMessage(message); self?.startReceiving()
+            case let .failure(error): self?.logger.error("CDP WebSocket error: \(error.localizedDescription)")
             }
         }
     }
@@ -626,37 +455,26 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
     private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
         let data: Data
         switch message {
-        case let .string(text):
-            data = Data(text.utf8)
-        case let .data(d):
-            data = d
-        @unknown default:
-            return
+        case let .string(text): data = Data(text.utf8)
+        case let .data(d): data = d
+        @unknown default: return
         }
-
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = json["id"] as? Int else {
-            return // Event message (no id) — ignore for now
-        }
+              let id = json["id"] as? Int else { return }
 
         lock.lock()
         let continuation = pendingCallbacks.removeValue(forKey: id)
         lock.unlock()
 
-        // Extract the result value
         if let result = json["result"] as? [String: Any],
            let innerResult = result["result"] as? [String: Any],
            let value = innerResult["value"] {
-            if let strValue = value as? String {
-                continuation?.resume(returning: strValue)
-            } else if let boolValue = value as? Bool {
-                continuation?.resume(returning: boolValue ? "true" : "false")
-            } else {
-                continuation?.resume(returning: String(describing: value))
-            }
+            if let s = value as? String { continuation?.resume(returning: s) }
+            else if let b = value as? Bool { continuation?.resume(returning: b ? "true" : "false") }
+            else { continuation?.resume(returning: String(describing: value)) }
         } else if let error = json["error"] as? [String: Any],
-                  let errorMessage = error["message"] as? String {
-            continuation?.resume(throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: errorMessage))
+                  let msg = error["message"] as? String {
+            continuation?.resume(throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: msg))
         } else {
             continuation?.resume(returning: "")
         }
@@ -665,8 +483,7 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
 
 // MARK: - String helper
 
-private extension String {
-    /// Escapes a string for safe inclusion in a JS string literal (single-quoted).
+extension String {
     var escapedForJS: String {
         self.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "'", with: "\\'")
@@ -683,7 +500,7 @@ enum EHRNavigatorError: LocalizedError {
     case appointmentNotFound(time: String)
     case elementNotFound(selector: String)
     case actionFailed(action: String, selector: String)
-    case routeNotAvailable(ehrSystem: String)
+    case maxStepsExceeded
 
     var errorDescription: String? {
         switch self {
@@ -699,8 +516,8 @@ enum EHRNavigatorError: LocalizedError {
             "Could not find element: \(selector)"
         case let .actionFailed(action, selector):
             "Failed to \(action): \(selector)"
-        case let .routeNotAvailable(ehrSystem):
-            "No navigation route available for \(ehrSystem)."
+        case .maxStepsExceeded:
+            "Navigation took too many steps. The EHR layout may have changed significantly."
         }
     }
 }

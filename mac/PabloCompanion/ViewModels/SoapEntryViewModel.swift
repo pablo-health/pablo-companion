@@ -5,7 +5,7 @@ import os
 /// confirmation flow.
 ///
 /// State machine:
-///   idle → fetchingRoute → navigating → matchingPatient → awaitingConfirmation
+///   idle → connecting → navigating → matchingPatient → awaitingConfirmation
 ///     → (therapist confirms) → entering → completed
 ///     → (therapist cancels) → cancelled
 ///     → (error at any point) → failed
@@ -20,13 +20,12 @@ final class SoapEntryViewModel {
     var errorMessage: String?
     /// Set to true when Chrome needs to be relaunched — the view shows a confirmation alert.
     var showChromeRelaunchAlert = false
-    /// Continuation held while waiting for the user's relaunch decision.
-    private var relaunchContinuation: CheckedContinuation<Bool, Never>?
 
     // MARK: - Dependencies
 
     private var navigator: EHRNavigator?
     private var currentInput: SoapEntryInput?
+    private var relaunchContinuation: CheckedContinuation<Bool, Never>?
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "SoapEntryViewModel")
 
     // MARK: - Setup
@@ -41,7 +40,6 @@ final class SoapEntryViewModel {
         self.navigator = nav
     }
 
-    /// Called by the navigator when Chrome needs relaunching. Shows alert, waits for user.
     private func requestChromeRelaunch() async -> Bool {
         showChromeRelaunchAlert = true
         return await withCheckedContinuation { continuation in
@@ -68,7 +66,7 @@ final class SoapEntryViewModel {
 
         currentInput = input
         errorMessage = nil
-        phase = .fetchingRoute
+        phase = .connecting
 
         do {
             let result = try await navigator.navigateToSoapForm(input: input) { [weak self] newPhase, message in
@@ -86,18 +84,21 @@ final class SoapEntryViewModel {
         }
     }
 
-    /// Therapist confirmed — fill the SOAP fields and save.
+    /// Therapist confirmed — fill the SOAP fields.
     func confirmEntry() async {
         guard let navigator, let input = currentInput else { return }
 
         do {
-            try await navigator.commitEntry(input: input) { [weak self] newPhase, message in
+            try await navigator.commitEntry(
+                input: input,
+                formFields: confirmation?.formFields
+            ) { [weak self] newPhase, message in
                 self?.phase = newPhase
                 self?.statusMessage = message
             }
 
             phase = .completed
-            statusMessage = "SOAP note entered successfully."
+            statusMessage = "SOAP note entered. Please review and click 'Sign and Complete'."
             logger.info("SOAP entry completed for session \(input.sessionId)")
         } catch {
             logger.error("SOAP entry commit failed: \(error.localizedDescription)")

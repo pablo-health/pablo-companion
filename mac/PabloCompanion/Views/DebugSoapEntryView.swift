@@ -364,6 +364,7 @@ struct DebugSoapEntryView: View {
             soapNoteId: "debug-note-001",
             patientName: "Pablo Bear",
             appointmentTime: "2026-03-23T20:00:00Z",
+            appointmentDisplay: "8:00 PM on March 23, 2026",
             soapContent: SoapContent(
                 subjective: "Patient reports feeling more optimistic this week. Sleep has improved from 5 hours to approximately 7 hours per night. Reports using the breathing exercises discussed last session before bed. Denies any suicidal ideation or self-harm urges.",
                 objective: "Affect noticeably brighter than previous sessions. Good eye contact maintained throughout. Speech rate and volume within normal limits. Engaged actively in session exercises. No signs of acute distress. Hygiene and grooming appropriate.",

@@ -1,12 +1,10 @@
 import Foundation
 import os
 
-/// Talks to the Pablo backend for two things only:
-///   1. Cached route CRUD (shared across all therapists per EHR system)
-///   2. LLM navigation fallback (when the accessibility tree doesn't match)
+/// Talks to the Pablo backend for goal-based navigation intelligence.
 ///
-/// The client never sends patient names or PHI to these endpoints.
-/// PHI is stripped by EHRNavigator before calling `getNavigationAction`.
+/// The client sends the current page DOM + a goal (no PHI). The backend
+/// constructs an LLM prompt and returns the next action to take.
 @MainActor
 final class NavigationAPIClient {
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "NavigationAPIClient")
@@ -26,74 +24,22 @@ final class NavigationAPIClient {
         encoder.keyEncodingStrategy = .convertToSnakeCase
     }
 
-    // MARK: - Route cache
+    // MARK: - Goal-based navigation
 
-    /// Fetches the cached navigation route for an EHR system.
-    /// These routes are shared — one therapist's successful navigation teaches all.
-    func fetchRoute(ehrSystem: String) async throws -> CachedRoute {
-        let url = try buildURL("/api/ehr-routes/\(ehrSystem)")
-        var request = try await authenticatedRequest(url: url)
-        request.httpMethod = "GET"
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validateResponse(response)
-        return try decoder.decode(CachedRoute.self, from: data)
-    }
-
-    /// Reports a route step update after a successful LLM-assisted recovery.
-    /// The backend merges this into the shared route for this EHR system.
-    func reportRouteUpdate(
-        ehrSystem: String,
-        stepIndex: Int,
-        newSelector: String,
-        newFingerprint: String
-    ) async throws {
-        let url = try buildURL("/api/ehr-routes/\(ehrSystem)/steps/\(stepIndex)")
-        var request = try await authenticatedRequest(url: url)
-        request.httpMethod = "PATCH"
-
-        let body: [String: String] = [
-            "selector": newSelector,
-            "a11y_fingerprint": newFingerprint,
-        ]
-        request.httpBody = try encoder.encode(body)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-        try validateResponse(response)
-        logger.info("Route step \(stepIndex) updated for \(ehrSystem)")
-    }
-
-    /// Saves a newly learned route to the backend so all therapists benefit.
-    func saveRoute(route: CachedRoute) async throws {
-        let url = try buildURL("/api/ehr-routes/\(route.ehrSystem)")
-        var request = try await authenticatedRequest(url: url)
-        request.httpMethod = "PUT"
-        request.httpBody = try encoder.encode(route)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-        try validateResponse(response)
-        logger.info("Saved learned route for \(route.ehrSystem) with \(route.steps.count) steps")
-    }
-
-    // MARK: - LLM navigation fallback
-
-    /// Asks the backend LLM to figure out the next navigation action.
+    /// Asks the backend LLM to decide the next navigation action.
     ///
-    /// Called only when the cached route's accessibility fingerprint doesn't
-    /// match the current page. The accessibility tree is PHI-stripped by the
-    /// caller — no patient names reach this endpoint.
-    ///
-    /// The backend constructs the LLM prompt internally from the structured
-    /// request. The client cannot send arbitrary prompts.
-    func getNavigationAction(request navigationRequest: NavigationRequest) async throws -> NavigationAction {
+    /// The client sends the current page URL + DOM snapshot (PHI stripped)
+    /// and a goal like "Navigate to SOAP note form for appointment at 8:00 PM on March 23".
+    /// The backend constructs the LLM prompt internally — the client cannot send arbitrary prompts.
+    func navigate(request: GoalNavigationRequest) async throws -> GoalNavigationResponse {
         let url = try buildURL("/api/ehr-navigate")
-        var request = try await authenticatedRequest(url: url)
-        request.httpMethod = "POST"
-        request.httpBody = try encoder.encode(navigationRequest)
+        var httpRequest = try await authenticatedRequest(url: url)
+        httpRequest.httpMethod = "POST"
+        httpRequest.httpBody = try encoder.encode(request)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: httpRequest)
         try validateResponse(response)
-        return try decoder.decode(NavigationAction.self, from: data)
+        return try decoder.decode(GoalNavigationResponse.self, from: data)
     }
 
     // MARK: - Helpers
@@ -123,10 +69,12 @@ final class NavigationAPIClient {
             return
         case 401:
             throw NavigationAPIError.notAuthenticated
-        case 404:
-            throw NavigationAPIError.routeNotFound
+        case 422:
+            throw NavigationAPIError.validationError
         case 429:
             throw NavigationAPIError.rateLimited
+        case 502:
+            throw NavigationAPIError.llmUnavailable
         default:
             throw NavigationAPIError.serverError(code: httpResponse.statusCode)
         }
@@ -139,8 +87,9 @@ enum NavigationAPIError: LocalizedError {
     case invalidURL(path: String)
     case invalidResponse
     case notAuthenticated
-    case routeNotFound
+    case validationError
     case rateLimited
+    case llmUnavailable
     case serverError(code: Int)
 
     var errorDescription: String? {
@@ -151,10 +100,12 @@ enum NavigationAPIError: LocalizedError {
             "Invalid response from server."
         case .notAuthenticated:
             "Not authenticated. Please sign in."
-        case .routeNotFound:
-            "No cached route found for this EHR system."
+        case .validationError:
+            "Request validation failed. Check the request format."
         case .rateLimited:
             "Too many navigation requests. Please try again later."
+        case .llmUnavailable:
+            "AI navigation service is temporarily unavailable."
         case let .serverError(code):
             "Server error (\(code)). Please try again."
         }
