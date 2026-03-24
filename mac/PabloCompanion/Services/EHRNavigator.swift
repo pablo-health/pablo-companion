@@ -357,7 +357,7 @@ final class EHRNavigator {
     }
 
     private func attemptCDPConnection(port: Int) async throws -> CDPConnection {
-        guard let listURL = URL(string: "http://localhost:\(port)/json") else {
+        guard let listURL = URL(string: "http://127.0.0.1:\(port)/json") else {
             throw EHRNavigatorError.browserNotFound
         }
         let (data, _) = try await URLSession.shared.data(from: listURL)
@@ -372,7 +372,10 @@ final class EHRNavigator {
         guard let target = pageTarget, let wsURL = target["webSocketDebuggerUrl"] as? String else {
             throw EHRNavigatorError.browserNotFound
         }
-        let connection = CDPConnection(wsURL: wsURL)
+        // Chrome reports ws://localhost but may only listen on IPv4.
+        // Force 127.0.0.1 to avoid IPv6 resolution failures.
+        let fixedURL = wsURL.replacingOccurrences(of: "ws://localhost:", with: "ws://127.0.0.1:")
+        let connection = CDPConnection(wsURL: fixedURL)
         try await connection.connect()
         return connection
     }
