@@ -380,25 +380,25 @@ struct DebugSoapEntryView: View {
 
     private enum TestSOAP {
         static let subjective = """
-            Patient reports feeling more optimistic this week. Sleep improved \
-            from 5 to ~7 hrs/night. Using breathing exercises before bed. \
-            Denies suicidal ideation or self-harm urges.
-            """
+        Patient reports feeling more optimistic this week. Sleep improved \
+        from 5 to ~7 hrs/night. Using breathing exercises before bed. \
+        Denies suicidal ideation or self-harm urges.
+        """
         static let objective = """
-            Affect brighter than previous sessions. Good eye contact. Speech \
-            rate/volume within normal limits. Engaged in session exercises. \
-            No acute distress. Hygiene and grooming appropriate.
-            """
+        Affect brighter than previous sessions. Good eye contact. Speech \
+        rate/volume within normal limits. Engaged in session exercises. \
+        No acute distress. Hygiene and grooming appropriate.
+        """
         static let assessment = """
-            Continued progress toward goals. PHQ-9 improved from 14 (moderate) \
-            to 9 (mild). CBT restructuring taking hold. Sleep hygiene correlating \
-            with mood gains. Therapeutic alliance strong.
-            """
+        Continued progress toward goals. PHQ-9 improved from 14 (moderate) \
+        to 9 (mild). CBT restructuring taking hold. Sleep hygiene correlating \
+        with mood gains. Therapeutic alliance strong.
+        """
         static let plan = """
-            Continue weekly CBT. Introduce behavioral activation next session. \
-            Assign mood tracking homework. Reassess PHQ-9 in 4 weeks. Consider \
-            biweekly if improvement sustained 6 weeks.
-            """
+        Continue weekly CBT. Introduce behavioral activation next session. \
+        Assign mood tracking homework. Reassess PHQ-9 in 4 weeks. Consider \
+        biweekly if improvement sustained 6 weeks.
+        """
     }
 
     private func readA11yTree() async {
@@ -417,7 +417,8 @@ struct DebugSoapEntryView: View {
         let (data, _) = try await URLSession.shared.data(from: listURL)
         guard let targets = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
               let page = targets.first(where: { ($0["type"] as? String) == "page" }),
-              let wsURL = page["webSocketDebuggerUrl"] as? String else {
+              let wsURL = page["webSocketDebuggerUrl"] as? String
+        else {
             throw EHRNavigatorError.browserNotFound
         }
         let cdp = CDPConnection(wsURL: wsURL)
@@ -426,28 +427,28 @@ struct DebugSoapEntryView: View {
     }
 
     private static let domSnapshotJS = """
-        (() => {
-            const els = [];
-            const walk = (el, d) => {
-                if (d > 6) return;
-                const tag = el.tagName?.toLowerCase() || '';
-                const text = (el.innerText || '').substring(0, 100);
-                const href = el.getAttribute?.('href') || '';
-                const role = el.getAttribute?.('role') || '';
-                const ariaLabel = el.getAttribute?.('aria-label') || '';
-                const indent = '  '.repeat(d);
-                let desc = `${indent}<${tag}`;
-                if (role) desc += ` role="${role}"`;
-                if (href) desc += ` href="${href}"`;
-                if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
-                desc += `> ${text.substring(0, 80).replace(/\\n/g, ' ')}`;
-                els.push(desc);
-                for (const child of (el.children || [])) walk(child, d + 1);
-            };
-            walk(document.body, 0);
-            return els.join('\\n');
-        })()
-        """
+    (() => {
+        const els = [];
+        const walk = (el, d) => {
+            if (d > 6) return;
+            const tag = el.tagName?.toLowerCase() || '';
+            const text = (el.innerText || '').substring(0, 100);
+            const href = el.getAttribute?.('href') || '';
+            const role = el.getAttribute?.('role') || '';
+            const ariaLabel = el.getAttribute?.('aria-label') || '';
+            const indent = '  '.repeat(d);
+            let desc = `${indent}<${tag}`;
+            if (role) desc += ` role="${role}"`;
+            if (href) desc += ` href="${href}"`;
+            if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
+            desc += `> ${text.substring(0, 80).replace(/\\n/g, ' ')}`;
+            els.push(desc);
+            for (const child of (el.children || [])) walk(child, d + 1);
+        };
+        walk(document.body, 0);
+        return els.join('\\n');
+    })()
+    """
 }
 
 #Preview {

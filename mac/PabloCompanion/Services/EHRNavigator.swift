@@ -149,25 +149,25 @@ final class EHRNavigator {
 
             // Works for both ProseMirror (innerHTML) and textarea (.value)
             let js = """
-                (() => {
-                    let el = document.querySelector('\(selectorEscaped)');
-                    // Fallback: nth textarea
-                    if (!el) {
-                        const all = document.querySelectorAll('textarea.expanding-textarea, .ProseMirror');
-                        el = all[\(index)];
-                    }
-                    if (!el) return 'NOT_FOUND';
-                    el.focus();
-                    if (el.contentEditable === 'true') {
-                        el.innerHTML = '<p>\(escaped)</p>';
-                    } else {
-                        el.value = '\(escaped)';
-                    }
-                    el.dispatchEvent(new Event('input', {bubbles: true}));
-                    el.dispatchEvent(new Event('change', {bubbles: true}));
-                    return 'filled';
-                })()
-                """
+            (() => {
+                let el = document.querySelector('\(selectorEscaped)');
+                // Fallback: nth textarea
+                if (!el) {
+                    const all = document.querySelectorAll('textarea.expanding-textarea, .ProseMirror');
+                    el = all[\(index)];
+                }
+                if (!el) return 'NOT_FOUND';
+                el.focus();
+                if (el.contentEditable === 'true') {
+                    el.innerHTML = '<p>\(escaped)</p>';
+                } else {
+                    el.value = '\(escaped)';
+                }
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+                return 'filled';
+            })()
+            """
             let result = try await cdp.evaluateJS(js)
             if result == "NOT_FOUND" {
                 throw EHRNavigatorError.elementNotFound(selector: "\(label) field")
@@ -186,17 +186,17 @@ final class EHRNavigator {
         switch action {
         case .click:
             let js = """
-                (() => {
-                    const el = document.querySelector('\(selector.escapedForJS)');
-                    if (el) { el.click(); return 'clicked'; }
-                    // Fallback: find by text content
-                    const all = document.querySelectorAll('a, button, [role="button"]');
-                    for (const e of all) {
-                        if (e.innerText.trim() === '\(selector.escapedForJS)') { e.click(); return 'clicked-by-text'; }
-                    }
-                    return 'not_found';
-                })()
-                """
+            (() => {
+                const el = document.querySelector('\(selector.escapedForJS)');
+                if (el) { el.click(); return 'clicked'; }
+                // Fallback: find by text content
+                const all = document.querySelectorAll('a, button, [role="button"]');
+                for (const e of all) {
+                    if (e.innerText.trim() === '\(selector.escapedForJS)') { e.click(); return 'clicked-by-text'; }
+                }
+                return 'not_found';
+            })()
+            """
             let result = try await cdp.evaluateJS(js)
             if result == "not_found" {
                 throw EHRNavigatorError.elementNotFound(selector: selector)
@@ -222,36 +222,36 @@ final class EHRNavigator {
     /// Gets a simplified DOM snapshot for the LLM. PHI is stripped.
     private func getDOMSnapshot(cdp: CDPConnection, patientName: String) async throws -> String {
         let js = """
-            (() => {
-                const elements = [];
-                const walk = (el, depth) => {
-                    if (depth > 6) return;
-                    const tag = el.tagName?.toLowerCase() || '';
-                    const role = el.getAttribute?.('role') || '';
-                    const text = (el.innerText || '').substring(0, 100);
-                    const href = el.getAttribute?.('href') || '';
-                    const type = el.getAttribute?.('type') || '';
-                    const placeholder = el.getAttribute?.('placeholder') || '';
-                    const ariaLabel = el.getAttribute?.('aria-label') || '';
-                    const isInteractive = ['A','BUTTON','INPUT','SELECT','TEXTAREA'].includes(el.tagName)
-                        || role === 'button' || role === 'link' || role === 'tab';
-                    if (isInteractive || (text.length > 0 && text.length < 200)) {
-                        const indent = '  '.repeat(depth);
-                        let desc = `${indent}<${tag}`;
-                        if (role) desc += ` role="${role}"`;
-                        if (href) desc += ` href="${href}"`;
-                        if (type) desc += ` type="${type}"`;
-                        if (placeholder) desc += ` placeholder="${placeholder}"`;
-                        if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
-                        desc += `>${text.substring(0, 80).replace(/\\n/g, ' ')}`;
-                        elements.push(desc);
-                    }
-                    for (const child of (el.children || [])) walk(child, depth + 1);
-                };
-                walk(document.body, 0);
-                return elements.join('\\n');
-            })()
-            """
+        (() => {
+            const elements = [];
+            const walk = (el, depth) => {
+                if (depth > 6) return;
+                const tag = el.tagName?.toLowerCase() || '';
+                const role = el.getAttribute?.('role') || '';
+                const text = (el.innerText || '').substring(0, 100);
+                const href = el.getAttribute?.('href') || '';
+                const type = el.getAttribute?.('type') || '';
+                const placeholder = el.getAttribute?.('placeholder') || '';
+                const ariaLabel = el.getAttribute?.('aria-label') || '';
+                const isInteractive = ['A','BUTTON','INPUT','SELECT','TEXTAREA'].includes(el.tagName)
+                    || role === 'button' || role === 'link' || role === 'tab';
+                if (isInteractive || (text.length > 0 && text.length < 200)) {
+                    const indent = '  '.repeat(depth);
+                    let desc = `${indent}<${tag}`;
+                    if (role) desc += ` role="${role}"`;
+                    if (href) desc += ` href="${href}"`;
+                    if (type) desc += ` type="${type}"`;
+                    if (placeholder) desc += ` placeholder="${placeholder}"`;
+                    if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
+                    desc += `>${text.substring(0, 80).replace(/\\n/g, ' ')}`;
+                    elements.push(desc);
+                }
+                for (const child of (el.children || [])) walk(child, depth + 1);
+            };
+            walk(document.body, 0);
+            return elements.join('\\n');
+        })()
+        """
         let rawSnapshot = try await cdp.evaluateJS(js)
         return stripPHI(from: rawSnapshot, patientName: patientName)
     }
@@ -266,7 +266,8 @@ final class EHRNavigator {
         logger.info("CDP: Chrome not available on port \(port), requesting relaunch")
 
         guard let onRelaunch = onChromeRelaunchNeeded,
-              await onRelaunch() else {
+              await onRelaunch()
+        else {
             throw EHRNavigatorError.chromeRelaunchDeclined
         }
 

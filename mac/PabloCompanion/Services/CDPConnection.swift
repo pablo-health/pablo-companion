@@ -99,7 +99,8 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
 
         if let result = json["result"] as? [String: Any],
            let innerResult = result["result"] as? [String: Any],
-           let value = innerResult["value"] {
+           let value = innerResult["value"]
+        {
             if let strValue = value as? String {
                 continuation?.resume(returning: strValue)
             } else if let boolValue = value as? Bool {
@@ -108,7 +109,8 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
                 continuation?.resume(returning: String(describing: value))
             }
         } else if let error = json["error"] as? [String: Any],
-                  let errorMsg = error["message"] as? String {
+                  let errorMsg = error["message"] as? String
+        {
             continuation?.resume(throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: errorMsg))
         } else {
             continuation?.resume(returning: "")

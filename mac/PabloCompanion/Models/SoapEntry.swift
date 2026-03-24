@@ -4,15 +4,15 @@ import Foundation
 
 /// Phase of the EHR navigation pipeline shown to the therapist.
 enum SoapEntryPhase: String, Codable, Sendable {
-    case idle = "idle"
-    case connecting = "connecting"
-    case navigating = "navigating"
+    case idle
+    case connecting
+    case navigating
     case matchingPatient = "matching_patient"
     case awaitingConfirmation = "awaiting_confirmation"
-    case entering = "entering"
-    case completed = "completed"
-    case failed = "failed"
-    case cancelled = "cancelled"
+    case entering
+    case completed
+    case failed
+    case cancelled
 }
 
 /// What action to take on the browser.
