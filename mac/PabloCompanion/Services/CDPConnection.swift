@@ -1,13 +1,18 @@
 import Foundation
 import os
+import Starscream
 
-/// Minimal Chrome DevTools Protocol client over WebSocket.
-/// Sends JSON commands and receives responses by matching request IDs.
-final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+/// Minimal Chrome DevTools Protocol client over WebSocket using Starscream.
+///
+/// URLSessionWebSocketTask has known issues with Chrome's CDP implementation
+/// (connection reset by peer). Starscream handles the WebSocket handshake
+/// correctly and maintains a stable connection.
+final class CDPConnection: WebSocketDelegate, @unchecked Sendable {
     private let wsURL: String
-    private var webSocket: URLSessionWebSocketTask?
+    private var socket: WebSocket?
     private var nextID = 1
     private var pendingCallbacks: [Int: CheckedContinuation<String, Error>] = [:]
+    private var connectContinuation: CheckedContinuation<Void, Error>?
     private let lock = NSLock()
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "CDPConnection")
 
@@ -18,33 +23,25 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
     func connect() async throws {
         guard let url = URL(string: wsURL) else { throw EHRNavigatorError.browserNotFound }
 
-        // Build a URLRequest matching what Chrome CDP expects
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
+        let ws = WebSocket(request: request)
+        ws.delegate = self
+        self.socket = ws
 
-        let config = URLSessionConfiguration.default
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        let task = session.webSocketTask(with: request)
-        self.webSocket = task
-        task.resume()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            lock.lock()
+            connectContinuation = continuation
+            lock.unlock()
+            ws.connect()
+        }
 
-        // Wait for the connection to establish, then start receiving
-        try await Task.sleep(for: .milliseconds(500))
-        startReceiving()
-
-        // Verify with a simple CDP call instead of ping
-        // (Chrome CDP doesn't always respond to WebSocket pings)
-        let testID = nextRequestID()
-        let testCmd: [String: Any] = [
-            "id": testID,
-            "method": "Runtime.evaluate",
-            "params": ["expression": "'cdp_connected'", "returnByValue": true],
-        ]
-        let result = try await sendCommand(testCmd, id: testID)
-        guard result == "cdp_connected" else {
+        // Verify with a test CDP call
+        let result = try await evaluateJS("'cdp_ok'")
+        guard result == "cdp_ok" else {
             throw EHRNavigatorError.browserNotFound
         }
-        logger.info("CDP WebSocket connected to \(self.wsURL)")
+        logger.info("CDP connected to \(self.wsURL)")
     }
 
     /// Evaluates JavaScript in the page and returns the string result.
@@ -58,6 +55,46 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         return try await sendCommand(command, id: reqID)
     }
 
+    // MARK: - WebSocketDelegate
+
+    func didReceive(event: WebSocketEvent, client _: any WebSocketClient) {
+        switch event {
+        case .connected:
+            lock.lock()
+            let continuation = connectContinuation
+            connectContinuation = nil
+            lock.unlock()
+            continuation?.resume()
+
+        case let .disconnected(reason, code):
+            logger.info("CDP disconnected: \(reason) (\(code))")
+
+        case let .text(text):
+            handleMessage(Data(text.utf8))
+
+        case let .binary(data):
+            handleMessage(data)
+
+        case let .error(error):
+            logger.error("CDP error: \(error?.localizedDescription ?? "unknown")")
+            lock.lock()
+            let continuation = connectContinuation
+            connectContinuation = nil
+            lock.unlock()
+            if let continuation {
+                continuation.resume(
+                    throwing: error ?? EHRNavigatorError.browserNotFound
+                )
+            }
+
+        case .cancelled:
+            logger.info("CDP cancelled")
+
+        default:
+            break
+        }
+    }
+
     // MARK: - Internal
 
     private func nextRequestID() -> Int {
@@ -69,49 +106,19 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
     }
 
     private func sendCommand(_ command: [String: Any], id: Int) async throws -> String {
-        guard let socket = webSocket else { throw EHRNavigatorError.browserNotFound }
+        guard let ws = socket else { throw EHRNavigatorError.browserNotFound }
         let data = try JSONSerialization.data(withJSONObject: command)
-        let message = URLSessionWebSocketTask.Message.data(data)
 
         return try await withCheckedThrowingContinuation { continuation in
             lock.lock()
             pendingCallbacks[id] = continuation
             lock.unlock()
 
-            socket.send(message) { [weak self] error in
-                if let error {
-                    self?.lock.lock()
-                    let callback = self?.pendingCallbacks.removeValue(forKey: id)
-                    self?.lock.unlock()
-                    callback?.resume(throwing: error)
-                }
-            }
+            ws.write(data: data)
         }
     }
 
-    private func startReceiving() {
-        webSocket?.receive { [weak self] result in
-            switch result {
-            case let .success(message):
-                self?.handleMessage(message)
-                self?.startReceiving()
-            case let .failure(error):
-                self?.logger.error("CDP WebSocket error: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
-        let data: Data
-        switch message {
-        case let .string(text):
-            data = Data(text.utf8)
-        case let .data(rawData):
-            data = rawData
-        @unknown default:
-            return
-        }
-
+    private func handleMessage(_ data: Data) {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let id = json["id"] as? Int else { return }
 
@@ -124,7 +131,9 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         case let .value(str):
             continuation?.resume(returning: str)
         case let .error(msg):
-            continuation?.resume(throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: msg))
+            continuation?.resume(
+                throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: msg)
+            )
         case .empty:
             continuation?.resume(returning: "")
         }

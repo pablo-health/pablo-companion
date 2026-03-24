@@ -103,6 +103,7 @@
 			name = Pablo;
 			packageProductDependencies = (
 				9588F2B12F46BD500052AF8F /* AudioCaptureKit */,
+				E1CDC0022F46EE000000STAR /* Starscream */,
 			);
 			productName = Pablo;
 			productReference = 9588F28A2F46BC910052AF8F /* Pablo.app */;
@@ -159,6 +160,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				9588F2B02F46BD500052AF8F /* XCRemoteSwiftPackageReference "AudioCaptureKit" */,
+				E1CDC0012F46EE000000STAR /* XCRemoteSwiftPackageReference "Starscream" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9588F28B2F46BC910052AF8F /* Products */;
@@ -562,6 +564,14 @@
 				minimumVersion = 1.0.0;
 			};
 		};
+		E1CDC0012F46EE000000STAR /* XCRemoteSwiftPackageReference "Starscream" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/daltoniam/Starscream.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -569,6 +579,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 9588F2B02F46BD500052AF8F /* XCRemoteSwiftPackageReference "AudioCaptureKit" */;
 			productName = AudioCaptureKit;
+		};
+		E1CDC0022F46EE000000STAR /* Starscream */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E1CDC0012F46EE000000STAR /* XCRemoteSwiftPackageReference "Starscream" */;
+			productName = Starscream;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
