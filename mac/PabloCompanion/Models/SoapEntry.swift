@@ -57,20 +57,14 @@ struct GoalNavigationResponse: Codable, Sendable {
     /// Brief explanation of why this action was chosen.
     let reasoning: String
     let confidence: Double
-    /// True when the LLM believes we've arrived at the SOAP form.
+    /// True when the LLM believes we've arrived at the note form.
     let isOnTargetPage: Bool
-    /// If on target page, the CSS selectors for the form fields.
-    let formFields: SoapFormFields?
+    /// If on target page, maps section labels to CSS selectors.
+    /// Keys are lowercase section names (e.g. "subjective", "data", "behavior").
+    /// Values are CSS selectors (e.g. ".ProseMirror[aria-label='free-text-1']").
+    let formFields: [String: String]?
     /// What to try if this action fails.
     let alternativePlan: String?
-}
-
-/// CSS selectors for the SOAP form fields, identified by the LLM.
-struct SoapFormFields: Codable, Sendable {
-    let subjective: String
-    let objective: String
-    let assessment: String
-    let plan: String
 }
 
 // MARK: - Confirmation & Input
@@ -81,27 +75,56 @@ struct SoapEntryConfirmation: Sendable {
     let appointmentMatch: String
     let ehrTargetField: String
     let soapPreview: String?
-    let formFields: SoapFormFields?
+    /// Maps section labels to CSS selectors (from the LLM).
+    let formFields: [String: String]?
 }
 
 /// Dynamic data passed to the orchestrator for a specific session.
-struct SoapEntryInput: Sendable {
+struct NoteEntryInput: Sendable {
     let sessionId: String
     let ehrSystem: String
-    let soapNoteId: String
+    let noteId: String
     let patientName: String
     /// ISO 8601 appointment time (e.g. "2026-03-23T20:00:00Z").
     let appointmentTime: String
     /// Human-readable time for the goal (e.g. "8:00 PM on March 23, 2026").
     let appointmentDisplay: String
-    /// The actual SOAP note content to enter.
-    let soapContent: SoapContent
+    /// The note type to select in the EHR template dropdown (e.g. "SOAP Note", "DAP Note").
+    let noteType: String
+    /// The note content sections, keyed by lowercase label.
+    /// e.g. ["subjective": "...", "objective": "...", "assessment": "...", "plan": "..."]
+    /// or   ["data": "...", "assessment": "...", "plan": "..."]
+    let sections: [(label: String, content: String)]
 }
 
-/// Structured SOAP note content for form field mapping.
-struct SoapContent: Sendable {
-    let subjective: String
-    let objective: String
-    let assessment: String
-    let plan: String
+/// Convenience for building SOAP note input.
+extension NoteEntryInput {
+    static func soap(
+        sessionId: String,
+        ehrSystem: String,
+        noteId: String,
+        patientName: String,
+        appointmentTime: String,
+        appointmentDisplay: String,
+        subjective: String,
+        objective: String,
+        assessment: String,
+        plan: String
+    ) -> NoteEntryInput {
+        NoteEntryInput(
+            sessionId: sessionId,
+            ehrSystem: ehrSystem,
+            noteId: noteId,
+            patientName: patientName,
+            appointmentTime: appointmentTime,
+            appointmentDisplay: appointmentDisplay,
+            noteType: "SOAP Note",
+            sections: [
+                ("subjective", subjective),
+                ("objective", objective),
+                ("assessment", assessment),
+                ("plan", plan),
+            ]
+        )
+    }
 }

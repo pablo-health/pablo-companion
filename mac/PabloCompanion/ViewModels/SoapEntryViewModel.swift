@@ -24,7 +24,7 @@ final class SoapEntryViewModel {
     // MARK: - Dependencies
 
     private var navigator: EHRNavigator?
-    private var currentInput: SoapEntryInput?
+    private var currentInput: NoteEntryInput?
     private var relaunchContinuation: CheckedContinuation<Bool, Never>?
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "SoapEntryViewModel")
 
@@ -57,7 +57,7 @@ final class SoapEntryViewModel {
     // MARK: - Entry flow
 
     /// Starts the SOAP entry flow. Navigates the EHR and pauses for confirmation.
-    func startEntry(input: SoapEntryInput) async {
+    func startEntry(input: NoteEntryInput) async {
         guard let navigator else {
             errorMessage = "Navigator not configured. Please sign in first."
             phase = .failed

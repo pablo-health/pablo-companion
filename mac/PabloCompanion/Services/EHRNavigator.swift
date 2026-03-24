@@ -44,7 +44,7 @@ final class EHRNavigator {
     /// 5. Verify patient + time via local text match (no LLM)
     /// 6. Return confirmation for therapist review
     func navigateToSoapForm(
-        input: SoapEntryInput,
+        input: NoteEntryInput,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws -> SoapEntryConfirmation {
         // 1. Connect to Chrome
@@ -55,7 +55,7 @@ final class EHRNavigator {
         // 2. Goal-based navigation loop
         let goal = "Navigate to the SOAP note form for the appointment at \(input.appointmentDisplay)"
         var previousActions: [PreviousAction] = []
-        var formFields: SoapFormFields?
+        var formFields: [String: String]?
 
         onPhaseChange(.navigating, "Looking for the appointment...")
 
@@ -117,54 +117,52 @@ final class EHRNavigator {
             patientMatch: patientMatch,
             appointmentMatch: appointmentMatch,
             ehrTargetField: "\(input.ehrSystem) → SOAP Note",
-            soapPreview: "S: \(input.soapContent.subjective.prefix(80))...",
+            soapPreview: input.sections.first.map { "\($0.label.prefix(1)): \($0.content.prefix(80))..." },
             formFields: formFields
         )
     }
 
     /// After therapist confirms, fill the SOAP fields and leave for them to review/submit.
+    /// After therapist confirms, fill the note fields and leave for them to review/submit.
     func commitEntry(
-        input: SoapEntryInput,
-        formFields: SoapFormFields?,
+        input: NoteEntryInput,
+        formFields: [String: String]?,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws {
         guard let cdp else {
             throw EHRNavigatorError.browserNotFound
         }
 
-        onPhaseChange(.entering, "Entering SOAP note...")
+        onPhaseChange(.entering, "Entering note...")
 
-        // Use LLM-identified selectors if available, otherwise fall back to position-based
-        let fields = formFields ?? SoapFormFields(
-            subjective: "textarea.expanding-textarea:nth-of-type(1)",
-            objective: "textarea.expanding-textarea:nth-of-type(2)",
-            assessment: "textarea.expanding-textarea:nth-of-type(3)",
-            plan: "textarea.expanding-textarea:nth-of-type(4)"
-        )
+        for (index, section) in input.sections.enumerated() {
+            let label = section.label
+            let content = section.content
 
-        let soapEntries: [(String, String, String)] = [
-            ("Subjective", fields.subjective, input.soapContent.subjective),
-            ("Objective", fields.objective, input.soapContent.objective),
-            ("Assessment", fields.assessment, input.soapContent.assessment),
-            ("Plan", fields.plan, input.soapContent.plan),
-        ]
+            // Try LLM-identified selector first, then fall back to position
+            let selector = formFields?[label.lowercased()]
+                ?? ".ProseMirror[aria-label='free-text-\(index + 1)']"
 
-        for (label, selector, content) in soapEntries {
-            onPhaseChange(.entering, "Filling \(label)...")
+            onPhaseChange(.entering, "Filling \(label.capitalized)...")
             let escaped = content.escapedForJS
+            let selectorEscaped = selector.escapedForJS
+
+            // Works for both ProseMirror (innerHTML) and textarea (.value)
             let js = """
                 (() => {
-                    // Try the LLM selector first
-                    let el = document.querySelector('\(selector.escapedForJS)');
-                    // Fallback: find by position among expanding textareas
+                    let el = document.querySelector('\(selectorEscaped)');
+                    // Fallback: nth textarea
                     if (!el) {
-                        const all = document.querySelectorAll('textarea.expanding-textarea');
-                        const idx = {'Subjective':0,'Objective':1,'Assessment':2,'Plan':3}['\(label)'];
-                        el = all[idx];
+                        const all = document.querySelectorAll('textarea.expanding-textarea, .ProseMirror');
+                        el = all[\(index)];
                     }
                     if (!el) return 'NOT_FOUND';
                     el.focus();
-                    el.value = '\(escaped)';
+                    if (el.contentEditable === 'true') {
+                        el.innerHTML = '<p>\(escaped)</p>';
+                    } else {
+                        el.value = '\(escaped)';
+                    }
                     el.dispatchEvent(new Event('input', {bubbles: true}));
                     el.dispatchEvent(new Event('change', {bubbles: true}));
                     return 'filled';
@@ -178,8 +176,8 @@ final class EHRNavigator {
             try await Task.sleep(for: .milliseconds(300))
         }
 
-        // Done — therapist reviews and clicks "Sign and Complete" themselves
-        onPhaseChange(.completed, "SOAP note entered. Please review and sign.")
+        // Done — therapist reviews and clicks save/sign themselves
+        onPhaseChange(.completed, "Note entered. Please review and sign.")
     }
 
     // MARK: - CDP actions

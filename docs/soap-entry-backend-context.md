@@ -38,14 +38,8 @@ class GoalNavigationResponse(BaseModel):
     reasoning: str
     confidence: float = Field(ge=0.0, le=1.0)
     is_on_target_page: bool
-    form_fields: SoapFormFields | None = None
+    form_fields: dict[str, str] | None = None  # {"section_label": "css_selector", ...}
     alternative_plan: str | None = None
-
-class SoapFormFields(BaseModel):
-    subjective: str
-    objective: str
-    assessment: str
-    plan: str
 ```
 
 ### How the endpoint works
@@ -251,37 +245,64 @@ NAVIGATION STRATEGIES (in order of preference):
    If you can see an appointment ID in the DOM (e.g. in an href like
    /appointments/3426439378), navigate directly to /appointments/{id}
 
-IMPORTANT — SOAP TEMPLATE SELECTION:
+IMPORTANT — NOTE TEMPLATE SELECTION:
 SimplePractice shows a note template dropdown after reaching the appointment page.
-The default template is "Simple Progress Note" (a single text editor).
-You MUST switch to "SOAP Note" template:
-  - Find the dropdown trigger button with text "Simple Progress Note"
-    (class contains "questionnaires-dropdown" and button.trigger)
+The default may be "Simple Progress Note" (a single text editor).
+You need to select the correct template matching the goal's note type:
+  - Find the dropdown trigger button (class contains "questionnaires-dropdown"
+    and button.trigger) — its text shows the current template name
   - Click it to open the dropdown
-  - Select "SOAP Note" from the options
-  - This changes the form from 1 editor to 4 separate S/O/A/P editors
+  - Select the matching template from the options
+  - Built-in options: "Simple Progress Note", "Standard Progress Note"
+  - Therapist-created templates also appear (e.g. "SOAP Note", "DAP Note")
 
-If "SOAP Note" is already selected (page shows "Subjective", "Objective",
-"Assessment", "Plan" as separate sections), skip the template switch.
+If the correct template is already selected (its section labels match
+the note type), skip the template switch.
 
-RECOGNIZING THE SOAP FORM (is_on_target_page=true):
+RECOGNIZING THE NOTE FORM (is_on_target_page=true):
 - URL matches /appointments/{id}
-- Page shows "Progress Note" header with "SOAP Note" template selected
-- 4 separate ProseMirror editors visible with headers:
-  Subjective, Objective, Assessment, Plan
+- Page shows "Progress Note" header with the correct template selected
+- One or more ProseMirror editors visible with labeled sections
 - Each editor is a div.ProseMirror with contenteditable="true"
-- aria-labels are "free-text-1" through "free-text-4" (in S/O/A/P order)
+- aria-labels are "free-text-1", "free-text-2", etc. (sequential)
+- The <label> elements NEXT TO each editor tell you the section name
 - "Save" button at the bottom
 
-FORM FIELD SELECTORS (when is_on_target_page=true):
-The form uses ProseMirror rich text editors (contenteditable divs), NOT textareas.
-Return these in form_fields:
+IMPORTANT — TEMPLATES ARE THERAPIST-CONFIGURED:
+SimplePractice note templates are custom. The section labels depend on
+what the therapist set up. Common configurations:
+
+  SOAP template: Subjective, Objective, Assessment, Plan (4 fields)
+  DAP template:  Data, Assessment, Plan (3 fields)
+  BIRP template: Behavior, Intervention, Response, Plan (4 fields)
+  Simple:        (1 field, no section labels)
+
+The aria-labels are ALWAYS "free-text-1", "free-text-2", etc. regardless
+of template. You MUST read the <label> elements to know which section
+each editor corresponds to.
+
+FORM FIELD MAPPING (when is_on_target_page=true):
+Read the visible <label> elements near each ProseMirror editor.
+Map the goal's note sections to the matching labels. Return form_fields
+as a dict where keys are the LOWERCASE section names and values are
+the aria-label selectors:
+
+Example for SOAP:
 {
   "subjective": ".ProseMirror[aria-label='free-text-1']",
   "objective": ".ProseMirror[aria-label='free-text-2']",
   "assessment": ".ProseMirror[aria-label='free-text-3']",
   "plan": ".ProseMirror[aria-label='free-text-4']"
 }
+
+Example for DAP:
+{
+  "data": ".ProseMirror[aria-label='free-text-1']",
+  "assessment": ".ProseMirror[aria-label='free-text-2']",
+  "plan": ".ProseMirror[aria-label='free-text-3']"
+}
+
+If you can't determine the mapping from labels, fall back to position order.
 
 FILLING PROSEMIRROR EDITORS:
 These are NOT plain textareas. To fill them:

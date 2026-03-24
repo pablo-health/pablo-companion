@@ -358,19 +358,17 @@ struct DebugSoapEntryView: View {
     private func startTestEntry() async {
         // Map sessions_health to jane_app for the backend until the enum is added
         let backendEHR = selectedEHR == "sessions_health" ? "jane_app" : selectedEHR
-        let input = SoapEntryInput(
+        let input = NoteEntryInput.soap(
             sessionId: "debug-session-001",
             ehrSystem: backendEHR,
-            soapNoteId: "debug-note-001",
+            noteId: "debug-note-001",
             patientName: "Pablo Bear",
             appointmentTime: "2026-03-23T20:00:00Z",
             appointmentDisplay: "8:00 PM on March 23, 2026",
-            soapContent: SoapContent(
-                subjective: "Patient reports feeling more optimistic this week. Sleep has improved from 5 hours to approximately 7 hours per night. Reports using the breathing exercises discussed last session before bed. Denies any suicidal ideation or self-harm urges.",
-                objective: "Affect noticeably brighter than previous sessions. Good eye contact maintained throughout. Speech rate and volume within normal limits. Engaged actively in session exercises. No signs of acute distress. Hygiene and grooming appropriate.",
-                assessment: "Continued progress toward treatment goals. PHQ-9 score improved from 14 (moderate) to 9 (mild). CBT cognitive restructuring techniques appear to be taking hold. Sleep hygiene improvements correlating with mood gains. Therapeutic alliance strong.",
-                plan: "Continue weekly individual CBT sessions. Introduce behavioral activation scheduling next session. Assign mood tracking homework between sessions. Reassess PHQ-9 in 4 weeks. Consider gradual reduction to biweekly sessions if improvement sustained over next 6 weeks."
-            )
+            subjective: "Patient reports feeling more optimistic this week. Sleep has improved from 5 hours to approximately 7 hours per night. Reports using the breathing exercises discussed last session before bed. Denies any suicidal ideation or self-harm urges.",
+            objective: "Affect noticeably brighter than previous sessions. Good eye contact maintained throughout. Speech rate and volume within normal limits. Engaged actively in session exercises. No signs of acute distress. Hygiene and grooming appropriate.",
+            assessment: "Continued progress toward treatment goals. PHQ-9 score improved from 14 (moderate) to 9 (mild). CBT cognitive restructuring techniques appear to be taking hold. Sleep hygiene improvements correlating with mood gains. Therapeutic alliance strong.",
+            plan: "Continue weekly individual CBT sessions. Introduce behavioral activation scheduling next session. Assign mood tracking homework between sessions. Reassess PHQ-9 in 4 weeks. Consider gradual reduction to biweekly sessions if improvement sustained over next 6 weeks."
         )
         await vm.startEntry(input: input)
     }
