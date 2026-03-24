@@ -29,63 +29,73 @@ final class EHRNavigator {
 
     // MARK: - Main orchestration
 
+    /// The ordered intents that get us from EHR dashboard to SOAP entry form.
+    /// When there's no cached route, the LLM works through these one at a time.
+    private static let navigationIntents: [NavigationIntent] = [
+        .findPatientList,
+        .findPatientRow,
+        .findSoapForm,
+        .identifyFormFields,
+    ]
+
     /// Runs the full SOAP entry flow. Returns confirmation data for the therapist to review.
     /// Does NOT save — caller must invoke `commitEntry()` after therapist confirms.
+    ///
+    /// Two modes:
+    /// 1. Cached route exists → replay deterministically, LLM fallback per broken step
+    /// 2. No cached route → LLM drives entire navigation, learns the route for next time
     func navigateToSoapForm(
         input: SoapEntryInput,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws -> SoapEntryConfirmation {
-        // 1. Fetch cached route
-        onPhaseChange(.fetchingRoute, "Loading navigation route for \(input.ehrSystem)...")
-        let route = try await apiClient.fetchRoute(ehrSystem: input.ehrSystem)
-
-        // 2. Find the browser window
+        // 1. Find the browser window first
         guard let browserWindow = findBrowserWindow() else {
             throw EHRNavigatorError.browserNotFound
         }
 
-        // 3. Execute cached steps
-        onPhaseChange(.navigating, "Navigating \(input.ehrSystem)...")
         let dynamicData: [String: String] = [
             "patient_name": input.patientName,
             "appointment_time": input.appointmentTime,
         ]
 
-        for (index, step) in route.steps.enumerated() {
-            let tree = try accessibilitySnapshot(for: browserWindow)
+        // 2. Try to fetch cached route (404 is fine — means we learn from scratch)
+        onPhaseChange(.fetchingRoute, "Loading navigation route for \(input.ehrSystem)...")
+        let cachedRoute = try? await apiClient.fetchRoute(ehrSystem: input.ehrSystem)
 
-            if matchesFingerprint(tree: tree, fingerprint: step.a11yFingerprint) {
-                // Deterministic execution
-                let resolvedSelector = resolveSelector(step.selector, dynamicKey: step.dynamicKey, data: dynamicData)
-                try await executeAction(step.action, selector: resolvedSelector, on: browserWindow)
-                logger.info("Step \(index + 1)/\(route.steps.count) matched — executed deterministically")
-            } else {
-                // LLM fallback — strip PHI before sending
-                logger.info("Step \(index + 1)/\(route.steps.count) did not match — calling backend LLM")
-                let strippedTree = stripPHI(from: tree, patientName: input.patientName)
-                let action = try await apiClient.getNavigationAction(
-                    request: NavigationRequest(
-                        ehrSystem: input.ehrSystem,
-                        intent: step.intent,
-                        a11ySnapshot: strippedTree,
-                        failedSelector: step.selector
-                    )
-                )
-                try await executeAction(action.action, selector: action.selector, on: browserWindow)
+        // 3. Navigate — cached replay or full LLM discovery
+        var learnedSteps: [CachedStep] = []
+        onPhaseChange(.navigating, "Navigating \(input.ehrSystem)...")
 
-                // Report the updated step so the route improves for everyone
-                if let updatedFingerprint = action.updatedFingerprint {
-                    try? await apiClient.reportRouteUpdate(
-                        ehrSystem: input.ehrSystem,
-                        stepIndex: index,
-                        newSelector: action.selector,
-                        newFingerprint: updatedFingerprint
-                    )
-                }
-            }
+        if let route = cachedRoute {
+            // Mode 1: Replay cached route, LLM fallback per step if needed
+            logger.info("Using cached route for \(input.ehrSystem) (\(route.steps.count) steps)")
+            learnedSteps = try await executeCachedRoute(
+                route: route,
+                dynamicData: dynamicData,
+                input: input,
+                browserWindow: browserWindow,
+                onPhaseChange: onPhaseChange
+            )
+        } else {
+            // Mode 2: No cached route — LLM drives everything, we record what works
+            logger.info("No cached route for \(input.ehrSystem) — learning from scratch via LLM")
+            onPhaseChange(.navigating, "Learning \(input.ehrSystem) navigation (first time)...")
+            learnedSteps = try await discoverRoute(
+                input: input,
+                browserWindow: browserWindow,
+                onPhaseChange: onPhaseChange
+            )
 
-            // Brief pause between actions — mimics human timing, avoids rate limiting
-            try await Task.sleep(for: .milliseconds(500))
+            // Save the learned route so all therapists benefit next time
+            let newRoute = CachedRoute(
+                ehrSystem: input.ehrSystem,
+                routeName: "navigate_to_soap_entry",
+                steps: learnedSteps,
+                successCount: 1,
+                lastSuccess: ISO8601DateFormatter().string(from: Date())
+            )
+            try? await apiClient.saveRoute(route: newRoute)
+            logger.info("Saved newly learned route for \(input.ehrSystem) (\(learnedSteps.count) steps)")
         }
 
         // 4. Find and verify patient
@@ -100,6 +110,132 @@ final class EHRNavigator {
             appointmentMatch: appointmentMatch,
             ehrTargetField: "\(input.ehrSystem) → Patient Notes → SOAP Note",
             soapPreview: "S: \(input.soapContent.subjective.prefix(80))..."
+        )
+    }
+
+    // MARK: - Cached route execution
+
+    /// Replays a cached route. Returns the (possibly updated) steps for re-saving.
+    private func executeCachedRoute(
+        route: CachedRoute,
+        dynamicData: [String: String],
+        input: SoapEntryInput,
+        browserWindow: AXUIElement,
+        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
+    ) async throws -> [CachedStep] {
+        var updatedSteps = route.steps
+
+        for (index, step) in route.steps.enumerated() {
+            let tree = try accessibilitySnapshot(for: browserWindow)
+
+            if matchesFingerprint(tree: tree, fingerprint: step.a11yFingerprint) {
+                // Deterministic — no LLM
+                let resolvedSelector = resolveSelector(step.selector, dynamicKey: step.dynamicKey, data: dynamicData)
+                try await executeAction(step.action, selector: resolvedSelector, on: browserWindow)
+                logger.info("Step \(index + 1)/\(route.steps.count) matched — deterministic")
+            } else {
+                // Step broke — ask LLM
+                logger.info("Step \(index + 1)/\(route.steps.count) mismatch — calling LLM")
+                onPhaseChange(.navigating, "Step \(index + 1) changed — asking AI...")
+                let action = try await llmNavigate(
+                    intent: step.intent,
+                    ehrSystem: input.ehrSystem,
+                    tree: tree,
+                    patientName: input.patientName,
+                    failedSelector: step.selector
+                )
+                try await executeAction(action.action, selector: action.selector, on: browserWindow)
+
+                // Update the step so the route improves
+                updatedSteps[index] = CachedStep(
+                    action: action.action,
+                    selector: action.selector,
+                    a11yFingerprint: action.updatedFingerprint ?? step.a11yFingerprint,
+                    intent: step.intent,
+                    dynamicKey: step.dynamicKey
+                )
+
+                if let updatedFingerprint = action.updatedFingerprint {
+                    try? await apiClient.reportRouteUpdate(
+                        ehrSystem: input.ehrSystem,
+                        stepIndex: index,
+                        newSelector: action.selector,
+                        newFingerprint: updatedFingerprint
+                    )
+                }
+            }
+
+            try await Task.sleep(for: .milliseconds(500))
+        }
+
+        return updatedSteps
+    }
+
+    // MARK: - LLM-driven route discovery
+
+    /// No cached route — LLM figures out every step from scratch.
+    /// Returns the learned steps to be saved as a new cached route.
+    private func discoverRoute(
+        input: SoapEntryInput,
+        browserWindow: AXUIElement,
+        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
+    ) async throws -> [CachedStep] {
+        var learnedSteps: [CachedStep] = []
+
+        for (index, intent) in Self.navigationIntents.enumerated() {
+            let tree = try accessibilitySnapshot(for: browserWindow)
+            onPhaseChange(.navigating, "Step \(index + 1)/\(Self.navigationIntents.count): \(intent.rawValue.replacingOccurrences(of: "_", with: " "))...")
+
+            let action = try await llmNavigate(
+                intent: intent,
+                ehrSystem: input.ehrSystem,
+                tree: tree,
+                patientName: input.patientName,
+                failedSelector: nil
+            )
+
+            try await executeAction(action.action, selector: action.selector, on: browserWindow)
+
+            // Record what worked
+            let dynamicKey: String? = switch intent {
+            case .findPatientRow: "patient_name"
+            default: nil
+            }
+
+            learnedSteps.append(CachedStep(
+                action: action.action,
+                selector: action.selector,
+                a11yFingerprint: action.updatedFingerprint ?? "",
+                intent: intent,
+                dynamicKey: dynamicKey
+            ))
+
+            logger.info("Learned step \(index + 1): \(intent.rawValue) → \(action.action.rawValue) on \(action.selector)")
+            try await Task.sleep(for: .milliseconds(500))
+        }
+
+        return learnedSteps
+    }
+
+    // MARK: - LLM call
+
+    /// Calls the backend LLM to determine the next navigation action.
+    /// PHI is stripped before sending.
+    private func llmNavigate(
+        intent: NavigationIntent,
+        ehrSystem: String,
+        tree: String,
+        patientName: String,
+        failedSelector: String?
+    ) async throws -> NavigationAction {
+        let strippedTree = stripPHI(from: tree, patientName: patientName)
+        return try await apiClient.getNavigationAction(
+            request: NavigationRequest(
+                ehrSystem: ehrSystem,
+                intent: intent,
+                a11ySnapshot: strippedTree,
+                failedSelector: failedSelector
+            )
         )
     }
 

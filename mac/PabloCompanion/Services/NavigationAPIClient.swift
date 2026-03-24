@@ -63,6 +63,18 @@ final class NavigationAPIClient {
         logger.info("Route step \(stepIndex) updated for \(ehrSystem)")
     }
 
+    /// Saves a newly learned route to the backend so all therapists benefit.
+    func saveRoute(route: CachedRoute) async throws {
+        let url = try buildURL("/api/ehr-routes/\(route.ehrSystem)")
+        var request = try await authenticatedRequest(url: url)
+        request.httpMethod = "PUT"
+        request.httpBody = try encoder.encode(route)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
+        logger.info("Saved learned route for \(route.ehrSystem) with \(route.steps.count) steps")
+    }
+
     // MARK: - LLM navigation fallback
 
     /// Asks the backend LLM to figure out the next navigation action.
