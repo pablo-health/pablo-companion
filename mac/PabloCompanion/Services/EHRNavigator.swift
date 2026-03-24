@@ -50,7 +50,7 @@ final class EHRNavigator {
     ) async throws -> SoapEntryConfirmation {
         // 1. Connect to Chrome CDP
         onPhaseChange(.navigating, "Connecting to browser...")
-        let connection = try await connectToChrome()
+        let connection = try await connectToChrome(ehrSystem: input.ehrSystem)
         self.cdp = connection
 
         let dynamicData: [String: String] = [
@@ -347,9 +347,17 @@ final class EHRNavigator {
 
     // MARK: - CDP connection
 
+    /// The EHR login URLs — where to navigate after launching Chrome.
+    private static let ehrLoginURLs: [String: String] = [
+        "simplepractice": "https://secure.simplepractice.com",
+        "therapynotes": "https://www.therapynotes.com/Account/Login",
+        "janeapp": "https://jane.app/login",
+        "sessions_health": "https://app.sessionshealth.com",
+    ]
+
     /// Connects to Chrome's remote debugging port.
     /// If Chrome isn't running with debugging enabled, asks the user to relaunch.
-    private func connectToChrome(port: Int = 9222) async throws -> CDPConnection {
+    private func connectToChrome(port: Int = 9222, ehrSystem: String? = nil) async throws -> CDPConnection {
         // Try connecting to an already-running debug port first
         if let connection = try? await attemptCDPConnection(port: port) {
             return connection
@@ -370,20 +378,35 @@ final class EHRNavigator {
         }
 
         // Wait for Chrome to fully quit
-        try await Task.sleep(for: .seconds(2))
+        for _ in 1 ... 10 {
+            try await Task.sleep(for: .milliseconds(500))
+            let stillRunning = NSWorkspace.shared.runningApplications.contains {
+                $0.bundleIdentifier == "com.google.Chrome"
+            }
+            if !stillRunning { break }
+        }
 
-        // Relaunch with remote debugging enabled
+        // Launch Chrome binary directly with the debugging flag
+        // (open --args is unreliable for passing flags to Chrome)
+        let chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = [
-            "-a", "Google Chrome",
-            "--args",
-            "--remote-debugging-port=\(port)",
-        ]
+        process.executableURL = URL(fileURLWithPath: chromePath)
+
+        var args = ["--remote-debugging-port=\(port)"]
+        // Navigate to the EHR login page on launch
+        if let ehr = ehrSystem, let loginURL = Self.ehrLoginURLs[ehr] {
+            args.append(loginURL)
+        }
+        process.arguments = args
+
+        // Detach stdout/stderr so Chrome doesn't block our process
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
         try process.run()
 
         // Wait for Chrome to start and the debug port to become available
-        for attempt in 1 ... 10 {
+        for attempt in 1 ... 15 {
             try await Task.sleep(for: .seconds(1))
             if let connection = try? await attemptCDPConnection(port: port) {
                 logger.info("CDP: Connected after relaunch (attempt \(attempt))")
