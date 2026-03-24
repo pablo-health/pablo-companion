@@ -16,26 +16,33 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
     }
 
     func connect() async throws {
-        // Chrome CDP returns ws:// URLs — URLSessionWebSocketTask handles both ws:// and wss://
         guard let url = URL(string: wsURL) else { throw EHRNavigatorError.browserNotFound }
 
+        // Build a URLRequest matching what Chrome CDP expects
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
         let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        let task = session.webSocketTask(with: url)
+        let task = session.webSocketTask(with: request)
         self.webSocket = task
         task.resume()
+
+        // Wait for the connection to establish, then start receiving
+        try await Task.sleep(for: .milliseconds(500))
         startReceiving()
 
-        // Verify the connection is alive by sending a ping
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            task.sendPing { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
+        // Verify with a simple CDP call instead of ping
+        // (Chrome CDP doesn't always respond to WebSocket pings)
+        let testID = nextRequestID()
+        let testCmd: [String: Any] = [
+            "id": testID,
+            "method": "Runtime.evaluate",
+            "params": ["expression": "'cdp_connected'", "returnByValue": true],
+        ]
+        let result = try await sendCommand(testCmd, id: testID)
+        guard result == "cdp_connected" else {
+            throw EHRNavigatorError.browserNotFound
         }
         logger.info("CDP WebSocket connected to \(self.wsURL)")
     }
