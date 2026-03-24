@@ -4,15 +4,15 @@ import Foundation
 
 /// Phase of the EHR navigation pipeline shown to the therapist.
 enum SoapEntryPhase: String, Codable, Sendable {
-    case idle
-    case connecting
-    case navigating
-    case matchingPatient
-    case awaitingConfirmation
-    case entering
-    case completed
-    case failed
-    case cancelled
+    case idle = "idle"
+    case connecting = "connecting"
+    case navigating = "navigating"
+    case matchingPatient = "matching_patient"
+    case awaitingConfirmation = "awaiting_confirmation"
+    case entering = "entering"
+    case completed = "completed"
+    case failed = "failed"
+    case cancelled = "cancelled"
 }
 
 /// What action to take on the browser.
@@ -97,20 +97,20 @@ struct NoteEntryInput: Sendable {
     let sections: [(label: String, content: String)]
 }
 
-/// Convenience for building SOAP note input.
-extension NoteEntryInput {
-    static func soap(
-        sessionId: String,
-        ehrSystem: String,
-        noteId: String,
-        patientName: String,
-        appointmentTime: String,
-        appointmentDisplay: String,
-        subjective: String,
-        objective: String,
-        assessment: String,
-        plan: String
-    ) -> NoteEntryInput {
+/// Convenience builder for SOAP note input.
+struct SOAPNoteBuilder {
+    let sessionId: String
+    let ehrSystem: String
+    let noteId: String
+    let patientName: String
+    let appointmentTime: String
+    let appointmentDisplay: String
+    let subjective: String
+    let objective: String
+    let assessment: String
+    let plan: String
+
+    func build() -> NoteEntryInput {
         NoteEntryInput(
             sessionId: sessionId,
             ehrSystem: ehrSystem,

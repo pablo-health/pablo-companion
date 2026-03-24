@@ -364,7 +364,7 @@ struct DebugSoapEntryView: View {
     }
 
     private static func makeTestInput(ehrSystem: String) -> NoteEntryInput {
-        .soap(
+        SOAPNoteBuilder(
             sessionId: "debug-session-001",
             ehrSystem: ehrSystem,
             noteId: "debug-note-001",
@@ -375,7 +375,7 @@ struct DebugSoapEntryView: View {
             objective: TestSOAP.objective,
             assessment: TestSOAP.assessment,
             plan: TestSOAP.plan
-        )
+        ).build()
     }
 
     private enum TestSOAP {
