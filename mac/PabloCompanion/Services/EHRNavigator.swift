@@ -226,7 +226,7 @@ final class EHRNavigator {
         ehrSystem: String,
         tree: String,
         patientName: String,
-        failedSelector: String?
+        failedSelector: String = ""
     ) async throws -> NavigationAction {
         let strippedTree = stripPHI(from: tree, patientName: patientName)
         return try await apiClient.getNavigationAction(
