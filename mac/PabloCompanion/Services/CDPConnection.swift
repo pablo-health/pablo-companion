@@ -97,24 +97,33 @@ final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         let continuation = pendingCallbacks.removeValue(forKey: id)
         lock.unlock()
 
-        if let result = json["result"] as? [String: Any],
-           let innerResult = result["result"] as? [String: Any],
-           let value = innerResult["value"]
-        {
-            if let strValue = value as? String {
-                continuation?.resume(returning: strValue)
-            } else if let boolValue = value as? Bool {
-                continuation?.resume(returning: boolValue ? "true" : "false")
-            } else {
-                continuation?.resume(returning: String(describing: value))
-            }
-        } else if let error = json["error"] as? [String: Any],
-                  let errorMsg = error["message"] as? String
-        {
-            continuation?.resume(throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: errorMsg))
-        } else {
+        let resolved = extractCDPValue(from: json)
+        switch resolved {
+        case let .value(str):
+            continuation?.resume(returning: str)
+        case let .error(msg):
+            continuation?.resume(throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: msg))
+        case .empty:
             continuation?.resume(returning: "")
         }
+    }
+
+    private enum CDPResult {
+        case value(String)
+        case error(String)
+        case empty
+    }
+
+    private func extractCDPValue(from json: [String: Any]) -> CDPResult {
+        let resultDict = (json["result"] as? [String: Any])?["result"] as? [String: Any]
+        if let value = resultDict?["value"] {
+            if let strValue = value as? String { return .value(strValue) }
+            if let boolValue = value as? Bool { return .value(boolValue ? "true" : "false") }
+            return .value(String(describing: value))
+        }
+        let errorMsg = (json["error"] as? [String: Any])?["message"] as? String
+        if let msg = errorMsg { return .error(msg) }
+        return .empty
     }
 }
 
