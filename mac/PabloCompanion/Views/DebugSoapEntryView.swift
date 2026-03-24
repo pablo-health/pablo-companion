@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Debug view for testing EHR SOAP note entry end-to-end.
