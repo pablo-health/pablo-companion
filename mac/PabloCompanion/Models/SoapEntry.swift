@@ -17,12 +17,12 @@ enum SoapEntryPhase: String, Codable, Sendable {
 
 /// What the orchestrator asks the backend to do (constrained intent — not a free-form prompt).
 enum NavigationIntent: String, Codable, Sendable {
-    case findPatientList
-    case findPatientRow
-    case findSoapForm
-    case findSaveButton
-    case identifyFormFields
-    case recoverFromUnexpected
+    case findPatientList = "find_patient_list"
+    case findPatientRow = "find_patient_row"
+    case findSoapForm = "find_soap_form"
+    case findSaveButton = "find_save_button"
+    case identifyFormFields = "identify_form_fields"
+    case recoverFromUnexpected = "recover_from_unexpected"
 }
 
 /// A single step in a cached navigation route.
