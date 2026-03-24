@@ -270,6 +270,21 @@ final class EHRNavigator {
             throw EHRNavigatorError.chromeRelaunchDeclined
         }
 
+        try await killAllChromeProcesses()
+        try launchChromeWithDebugging(port: port, ehrSystem: ehrSystem)
+
+        for attempt in 1 ... 15 {
+            try await Task.sleep(for: .seconds(1))
+            if let connection = try? await attemptCDPConnection(port: port) {
+                logger.info("CDP: Connected after relaunch (attempt \(attempt))")
+                return connection
+            }
+        }
+
+        throw EHRNavigatorError.browserNotFound
+    }
+
+    private func killAllChromeProcesses() async throws {
         let killProcess = Process()
         killProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
         killProcess.arguments = ["-9", "-f", "Google Chrome"]
@@ -289,11 +304,13 @@ final class EHRNavigator {
             check.waitUntilExit()
             if check.terminationStatus != 0 { break }
         }
+    }
 
+    private func launchChromeWithDebugging(port: Int, ehrSystem: String?) throws {
         let chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        let profileDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Pablo/ChromeDebugProfile")
-            .path
+        let profileDir = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Pablo/ChromeDebugProfile").path
         try? FileManager.default.createDirectory(atPath: profileDir, withIntermediateDirectories: true)
 
         let process = Process()
@@ -311,16 +328,6 @@ final class EHRNavigator {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
-
-        for attempt in 1 ... 15 {
-            try await Task.sleep(for: .seconds(1))
-            if let connection = try? await attemptCDPConnection(port: port) {
-                logger.info("CDP: Connected after relaunch (attempt \(attempt))")
-                return connection
-            }
-        }
-
-        throw EHRNavigatorError.browserNotFound
     }
 
     private func attemptCDPConnection(port: Int) async throws -> CDPConnection {

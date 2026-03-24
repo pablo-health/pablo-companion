@@ -425,7 +425,6 @@ struct DebugSoapEntryView: View {
         return cdp
     }
 
-    // swiftlint:disable line_length
     private static let domSnapshotJS = """
         (() => {
             const els = [];
@@ -449,7 +448,6 @@ struct DebugSoapEntryView: View {
             return els.join('\\n');
         })()
         """
-    // swiftlint:enable line_length
 }
 
 #Preview {
