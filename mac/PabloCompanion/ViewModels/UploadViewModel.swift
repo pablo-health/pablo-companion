@@ -16,6 +16,7 @@ final class UploadViewModel {
     }
 
     var isBackendReachable = false
+    var lastHealthStatus: HealthStatus?
     var uploadProgress: [UUID: Double] = [:]
     var uploadingRecordingIDs: Set<UUID> = []
     var errorMessage: String?
@@ -35,8 +36,18 @@ final class UploadViewModel {
 
     func checkBackendHealth() async {
         do {
-            isBackendReachable = try await apiClient.healthCheck()
-            logger.info("Backend health check: \(self.isBackendReachable ? "OK" : "FAILED")")
+            let status = try await apiClient.healthCheck()
+            lastHealthStatus = status
+            isBackendReachable = true
+            if status.clientUpdateRequired {
+                logger.warning("Client update required (min: \(status.minClientVersion))")
+            }
+            if status.serverUpdateRequired {
+                let sv = status.serverVersion
+                let msv = status.minServerVersion
+                logger.warning("Server update required (server: \(sv), min: \(msv))")
+            }
+            logger.info("Backend health check: OK (server \(status.serverVersion))")
         } catch {
             isBackendReachable = false
             logger.warning("Backend unreachable: \(error.localizedDescription)")

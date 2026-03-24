@@ -6,11 +6,18 @@ use reqwest::Client;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::models::{
-    BaaStatus, CreatePatientRequest, CreateSessionRequest, Patient, PatientListResponse, Session,
-    SessionListResponse, SessionStatus, TranscriptUploadResponse, UpdateSessionRequest,
-    UploadResponse, UserPreferences, UserProfile,
+    BaaStatus, CreatePatientRequest, CreateSessionRequest, HealthStatus, Patient,
+    PatientListResponse, Session, SessionListResponse, SessionStatus, TranscriptUploadResponse,
+    UpdateSessionRequest, UploadResponse, UserPreferences, UserProfile,
 };
 use crate::PabloError;
+
+/// Client version, sourced from Cargo.toml at compile time.
+const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Minimum server version this client requires. Bump when the client
+/// depends on a backend feature that older servers don't have.
+const MIN_SERVER_VERSION: &str = "1.0.0";
 
 /// Client-type header value sent with every request so the backend
 /// can distinguish companion traffic from web traffic.
@@ -20,6 +27,14 @@ const CLIENT_TYPE_HEADER: &str = "pablo-companion-macos/1.0";
 const CLIENT_TYPE_HEADER: &str = "pablo-companion-windows/1.0";
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const CLIENT_TYPE_HEADER: &str = "pablo-companion-unknown/1.0";
+
+/// Platform identifier for the X-Client-Platform header.
+#[cfg(target_os = "macos")]
+const CLIENT_PLATFORM: &str = "macos";
+#[cfg(target_os = "windows")]
+const CLIENT_PLATFORM: &str = "windows";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const CLIENT_PLATFORM: &str = "unknown";
 
 /// Shared HTTP helper for authenticated Pablo API requests.
 ///
@@ -72,6 +87,8 @@ impl ApiClient {
         self.client
             .get(format!("{}{}", self.base_url, path))
             .header("X-Client-Type", CLIENT_TYPE_HEADER)
+            .header("X-Client-Version", CLIENT_VERSION)
+            .header("X-Client-Platform", CLIENT_PLATFORM)
     }
 
     // ── private helper ──────────────────────────────────────────────────────
@@ -86,6 +103,8 @@ impl ApiClient {
             .request(method, format!("{}{}", self.base_url, path))
             .header("Authorization", format!("Bearer {}", token.expose_secret()))
             .header("X-Client-Type", CLIENT_TYPE_HEADER)
+            .header("X-Client-Version", CLIENT_VERSION)
+            .header("X-Client-Platform", CLIENT_PLATFORM)
     }
 }
 
@@ -110,6 +129,20 @@ pub(crate) async fn handle_error_response(response: reqwest::Response) -> PabloE
         409 => {
             let body = response.text().await.unwrap_or_default();
             PabloError::ConflictState { message: body }
+        }
+        426 => {
+            let body = response.text().await.unwrap_or_default();
+            // Try to extract the human-readable message from the error JSON.
+            let message = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| {
+                    v.get("detail")
+                        .and_then(|d| d.get("error"))
+                        .and_then(|e| e.get("message"))
+                        .and_then(|m| m.as_str().map(String::from))
+                })
+                .unwrap_or_else(|| "App update required.".to_string());
+            PabloError::UpdateRequired { message }
         }
         _ => {
             let body = response.text().await.unwrap_or_default();
@@ -154,8 +187,23 @@ fn sanitize_json(input: &str) -> String {
 
 // ── Group A: Ported from Swift APIClient (108.3) ────────────────────────────
 
-/// Check that the Pablo backend is reachable. Unauthenticated.
-pub async fn health_check(base_url: String) -> Result<(), PabloError> {
+/// Parse a semver string (e.g. "1.2.3") into a comparable tuple.
+/// Missing parts default to 0: "1.2" → (1, 2, 0), "1" → (1, 0, 0).
+fn parse_semver(version: &str) -> (u32, u32, u32) {
+    let parts: Vec<u32> = version
+        .trim()
+        .split('.')
+        .filter_map(|p| p.parse().ok())
+        .collect();
+    (
+        parts.first().copied().unwrap_or(0),
+        parts.get(1).copied().unwrap_or(0),
+        parts.get(2).copied().unwrap_or(0),
+    )
+}
+
+/// Check that the Pablo backend is reachable and return version compatibility info.
+pub async fn health_check(base_url: String) -> Result<HealthStatus, PabloError> {
     Compat::new(async move {
         let client = ApiClient::new(base_url);
 
@@ -173,7 +221,46 @@ pub async fn health_check(base_url: String) -> Result<(), PabloError> {
             return Err(handle_error_response(response).await);
         }
 
-        Ok(())
+        let body: serde_json::Value =
+            response
+                .json()
+                .await
+                .map_err(|e| PabloError::JsonParse {
+                    message: e.to_string(),
+                })?;
+
+        // Extract server_version (optional — older backends may not return it).
+        let server_version = body
+            .get("server_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        // Extract the minimum client version for our platform.
+        let min_client_version = body
+            .get("min_client_versions")
+            .and_then(|m| m.get(CLIENT_PLATFORM))
+            .and_then(|v| v.as_str())
+            .unwrap_or("0.0.0")
+            .to_string();
+
+        // Compare versions.
+        let client_update_required =
+            parse_semver(CLIENT_VERSION) < parse_semver(&min_client_version);
+
+        let server_update_required = if server_version.is_empty() {
+            false // Can't check — assume OK.
+        } else {
+            parse_semver(&server_version) < parse_semver(MIN_SERVER_VERSION)
+        };
+
+        Ok(HealthStatus {
+            server_version,
+            client_update_required,
+            server_update_required,
+            min_client_version,
+            min_server_version: MIN_SERVER_VERSION.to_string(),
+        })
     })
     .await
 }
@@ -958,6 +1045,59 @@ mod tests {
         assert_eq!(req.url().as_str(), "https://api.pablo.health/api/health");
         assert_eq!(req.method(), reqwest::Method::GET);
         assert!(req.headers().get("Authorization").is_none());
+    }
+
+    #[test]
+    fn public_request_sends_version_headers() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let req = client.get_public("/api/health").build().unwrap();
+        assert_eq!(
+            req.headers().get("X-Client-Version").unwrap(),
+            CLIENT_VERSION
+        );
+        assert_eq!(
+            req.headers().get("X-Client-Platform").unwrap(),
+            CLIENT_PLATFORM
+        );
+    }
+
+    #[test]
+    fn authenticated_request_sends_version_headers() {
+        let client = ApiClient::new("https://api.pablo.health".to_string());
+        let token = SecretString::from("tok");
+        let req = client.get("/api/sessions", &token).build().unwrap();
+        assert_eq!(
+            req.headers().get("X-Client-Version").unwrap(),
+            CLIENT_VERSION
+        );
+        assert_eq!(
+            req.headers().get("X-Client-Platform").unwrap(),
+            CLIENT_PLATFORM
+        );
+    }
+
+    #[test]
+    fn parse_semver_full() {
+        assert_eq!(parse_semver("1.2.3"), (1, 2, 3));
+    }
+
+    #[test]
+    fn parse_semver_partial() {
+        assert_eq!(parse_semver("1.2"), (1, 2, 0));
+        assert_eq!(parse_semver("1"), (1, 0, 0));
+    }
+
+    #[test]
+    fn parse_semver_comparison() {
+        assert!(parse_semver("1.0.0") < parse_semver("2.0.0"));
+        assert!(parse_semver("1.9.9") < parse_semver("2.0.0"));
+        assert!(!(parse_semver("1.0.0") < parse_semver("1.0.0")));
+        assert!(parse_semver("0.9.0") < parse_semver("1.0.0"));
+    }
+
+    #[test]
+    fn client_version_is_1_0_0() {
+        assert_eq!(CLIENT_VERSION, "1.0.0");
     }
 
     #[test]

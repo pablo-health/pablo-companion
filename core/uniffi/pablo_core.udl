@@ -26,7 +26,7 @@ namespace pablo_core {
     // Group A: ported from Swift (108.3)
 
     [Async, Throws=PabloError]
-    void health_check(string base_url);
+    HealthStatus health_check(string base_url);
 
     [Async, Throws=PabloError]
     PatientListResponse fetch_patients(
@@ -191,6 +191,7 @@ interface PabloError {
     Forbidden();
     NotFound(string resource);
     ConflictState(string message);
+    UpdateRequired(string message);
 };
 
 // Options for rendering to Google Meet format.
@@ -247,6 +248,17 @@ dictionary TranscriptResult {
     string session_id;
     SessionMode session_mode;
     sequence<TranscriptSegment> segments;
+};
+
+// ── Health / version types ────────────────────────────────────────────────────
+
+// Version compatibility status returned by health_check.
+dictionary HealthStatus {
+    string server_version;
+    boolean client_update_required;
+    boolean server_update_required;
+    string min_client_version;
+    string min_server_version;
 };
 
 // ── Domain types for Pablo API client ────────────────────────────────────────

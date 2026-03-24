@@ -57,6 +57,8 @@ pub enum PabloError {
     NotFound { resource: String },
     #[error("Conflict: {message}")]
     ConflictState { message: String },
+    #[error("Update required: {message}")]
+    UpdateRequired { message: String },
 }
 
 // ── Public types exposed via UniFFI ──────────────────────────────────────────

@@ -14,8 +14,9 @@ final class NavigationAPIClient {
     private let encoder: JSONEncoder
 
     init(baseURL: String, getToken: @escaping @Sendable () async throws -> String) {
-        self.baseURL = baseURL
+        self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.getToken = getToken
+        logger.info("NavigationAPIClient baseURL: \(baseURL)")
 
         self.decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -33,13 +34,53 @@ final class NavigationAPIClient {
     /// The backend constructs the LLM prompt internally — the client cannot send arbitrary prompts.
     func navigate(request: GoalNavigationRequest) async throws -> GoalNavigationResponse {
         let url = try buildURL("/api/ehr-navigate")
+        logger.info("EHR navigate → \(url.absoluteString)")
         var httpRequest = try await authenticatedRequest(url: url)
         httpRequest.httpMethod = "POST"
-        httpRequest.httpBody = try encoder.encode(request)
+        let requestBody = try encoder.encode(request)
+        httpRequest.httpBody = requestBody
+
+        // Log outgoing request (DOM truncated for readability)
+        if let json = try? JSONSerialization.jsonObject(with: requestBody) as? [String: Any] {
+            let dom = (json["dom_snapshot"] as? String) ?? ""
+            logger.info("""
+            ➡️ REQUEST to \(url.absoluteString)
+              ehr_system: \(json["ehr_system"] as? String ?? "?")
+              goal: \(json["goal"] as? String ?? "?")
+              current_url: \(json["current_url"] as? String ?? "?")
+              dom_snapshot: \(dom.prefix(200))… (\(dom.count) chars)
+              previous_actions: \(json["previous_actions"] as? [[String: Any]] ?? [])
+              failed_action: \(json["failed_action"] as? String ?? "nil")
+            """)
+        }
 
         let (data, response) = try await URLSession.shared.data(for: httpRequest)
+
+        // Log response
+        if let httpResp = response as? HTTPURLResponse {
+            let body = String(data: data.prefix(1000), encoding: .utf8) ?? "<binary>"
+            if httpResp.statusCode == 200 {
+                logger.info("⬅️ RESPONSE 200:\n\(body)")
+            } else {
+                logger.error("⬅️ RESPONSE \(httpResp.statusCode):\n\(body)")
+            }
+        }
+
         try validateResponse(response)
-        return try decoder.decode(GoalNavigationResponse.self, from: data)
+        let decoded = try decoder.decode(GoalNavigationResponse.self, from: data)
+
+        logger.info("""
+        ⬅️ PARSED RESPONSE:
+          action: \(decoded.action.rawValue)
+          selector: \(decoded.selector)
+          reasoning: \(decoded.reasoning)
+          confidence: \(decoded.confidence)
+          isOnTargetPage: \(decoded.isOnTargetPage)
+          formFields: \(decoded.formFields?.description ?? "nil")
+          alternativePlan: \(decoded.alternativePlan ?? "nil")
+        """)
+
+        return decoded
     }
 
     // MARK: - Helpers
@@ -57,6 +98,8 @@ final class NavigationAPIClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+        request.setValue(AppConstants.appVersion, forHTTPHeaderField: "X-Client-Version")
+        request.setValue("macos", forHTTPHeaderField: "X-Client-Platform")
         return request
     }
 
@@ -71,6 +114,8 @@ final class NavigationAPIClient {
             throw NavigationAPIError.notAuthenticated
         case 422:
             throw NavigationAPIError.validationError
+        case 426:
+            throw NavigationAPIError.updateRequired
         case 429:
             throw NavigationAPIError.rateLimited
         case 502:
@@ -88,6 +133,7 @@ enum NavigationAPIError: LocalizedError {
     case invalidResponse
     case notAuthenticated
     case validationError
+    case updateRequired
     case rateLimited
     case llmUnavailable
     case serverError(code: Int)
@@ -102,6 +148,8 @@ enum NavigationAPIError: LocalizedError {
             "Not authenticated. Please sign in."
         case .validationError:
             "Request validation failed. Check the request format."
+        case .updateRequired:
+            "This app version is no longer supported. Please update to continue."
         case .rateLimited:
             "Too many navigation requests. Please try again later."
         case .llmUnavailable:
