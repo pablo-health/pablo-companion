@@ -357,6 +357,24 @@ final class EHRNavigator {
     }
 
     private func attemptCDPConnection(port: Int) async throws -> CDPConnection {
+        // Retry up to 3 times — target IDs can change while the page is loading
+        for attempt in 1 ... 3 {
+            let wsURL = try await fetchPageTargetURL(port: port)
+            do {
+                let connection = CDPConnection(wsURL: wsURL)
+                try await connection.connect()
+                return connection
+            } catch {
+                logger.info("CDP connect attempt \(attempt) failed: \(error.localizedDescription)")
+                if attempt < 3 {
+                    try await Task.sleep(for: .seconds(1))
+                }
+            }
+        }
+        throw EHRNavigatorError.browserNotFound
+    }
+
+    private func fetchPageTargetURL(port: Int) async throws -> String {
         guard let listURL = URL(string: "http://127.0.0.1:\(port)/json") else {
             throw EHRNavigatorError.browserNotFound
         }
@@ -364,7 +382,6 @@ final class EHRNavigator {
         guard let targets = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw EHRNavigatorError.browserNotFound
         }
-        // Prefer a non-chrome:// page target
         let pageTarget = targets.first(where: {
             ($0["type"] as? String) == "page" && !(($0["url"] as? String)?.hasPrefix("chrome://") ?? true)
         }) ?? targets.first(where: { ($0["type"] as? String) == "page" })
@@ -372,12 +389,8 @@ final class EHRNavigator {
         guard let target = pageTarget, let wsURL = target["webSocketDebuggerUrl"] as? String else {
             throw EHRNavigatorError.browserNotFound
         }
-        // Chrome reports ws://localhost but may only listen on IPv4.
-        // Force 127.0.0.1 to avoid IPv6 resolution failures.
-        let fixedURL = wsURL.replacingOccurrences(of: "ws://localhost:", with: "ws://127.0.0.1:")
-        let connection = CDPConnection(wsURL: fixedURL)
-        try await connection.connect()
-        return connection
+        // Force IPv4 — Chrome may only listen on 127.0.0.1, not ::1
+        return wsURL.replacingOccurrences(of: "ws://localhost:", with: "ws://127.0.0.1:")
     }
 
     // MARK: - Matching (deterministic, no LLM)
