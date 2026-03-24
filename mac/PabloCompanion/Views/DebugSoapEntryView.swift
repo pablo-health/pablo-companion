@@ -14,12 +14,16 @@ struct DebugSoapEntryView: View {
     @State private var a11yTreePreview = ""
     @State private var showA11yTree = false
     @State private var selectedEHR = "simplepractice"
+    @State private var configError: String?
 
     private let ehrSystems = ["simplepractice", "therapynotes", "janeapp"]
 
     var body: some View {
         VStack(spacing: 20) {
             header
+            if let configError {
+                errorCard(configError)
+            }
             ehrPicker
             sessionCard
             phaseIndicator
@@ -33,6 +37,7 @@ struct DebugSoapEntryView: View {
         }
         .padding(24)
         .frame(minWidth: 440, maxWidth: 520)
+        .task { configureFromKeychain() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") { dismiss() }
@@ -300,6 +305,37 @@ struct DebugSoapEntryView: View {
         }
         .padding(20)
         .frame(minWidth: 500, minHeight: 400)
+    }
+
+    // MARK: - Configuration
+
+    /// Wires up the ViewModel using credentials already stored in Keychain.
+    /// This mirrors what ContentView does at startup — reads the auth server URL,
+    /// fetches the backend config, and uses TokenRefresher for a valid token.
+    private func configureFromKeychain() {
+        guard let authServerURL = KeychainManager.getToken(forKey: .authServerURL) else {
+            configError = "No auth server URL in Keychain. Please sign in from the main app first."
+            return
+        }
+
+        // Discover the backend API URL from the auth server config
+        Task {
+            do {
+                let config = try await fetchServerConfig(authServerURL: authServerURL)
+                let baseURL = config.apiUrl
+
+                vm.configure(baseURL: baseURL) {
+                    // Use TokenRefresher to get a valid token (same as the main app)
+                    guard let idToken = KeychainManager.getToken(forKey: .idToken) else {
+                        throw NavigationAPIError.notAuthenticated
+                    }
+                    return idToken
+                }
+                configError = nil
+            } catch {
+                configError = "Failed to discover backend: \(error.localizedDescription)"
+            }
+        }
     }
 
     // MARK: - Actions
