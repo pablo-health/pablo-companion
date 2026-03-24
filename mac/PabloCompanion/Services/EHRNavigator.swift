@@ -371,28 +371,47 @@ final class EHRNavigator {
             throw EHRNavigatorError.chromeRelaunchDeclined
         }
 
-        // Quit Chrome gracefully
-        for app in NSWorkspace.shared.runningApplications
-            where app.bundleIdentifier == "com.google.Chrome" {
-            app.terminate()
-        }
+        // Kill all Chrome processes (terminate() leaves helpers alive,
+        // which prevents the new instance from binding the debug port)
+        let killProcess = Process()
+        killProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        killProcess.arguments = ["-9", "-f", "Google Chrome"]
+        killProcess.standardOutput = FileHandle.nullDevice
+        killProcess.standardError = FileHandle.nullDevice
+        try? killProcess.run()
+        killProcess.waitUntilExit()
 
-        // Wait for Chrome to fully quit
+        // Wait for all Chrome processes to fully exit
         for _ in 1 ... 10 {
             try await Task.sleep(for: .milliseconds(500))
-            let stillRunning = NSWorkspace.shared.runningApplications.contains {
-                $0.bundleIdentifier == "com.google.Chrome"
-            }
-            if !stillRunning { break }
+            let checkProcess = Process()
+            checkProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+            checkProcess.arguments = ["-f", "Google Chrome"]
+            checkProcess.standardOutput = FileHandle.nullDevice
+            checkProcess.standardError = FileHandle.nullDevice
+            try? checkProcess.run()
+            checkProcess.waitUntilExit()
+            if checkProcess.terminationStatus != 0 { break } // No processes found
         }
 
-        // Launch Chrome binary directly with the debugging flag
-        // (open --args is unreliable for passing flags to Chrome)
+        // Launch Chrome binary directly with the debugging flag.
+        // Uses a dedicated user-data-dir because Chrome's default profile
+        // silently ignores --remote-debugging-port when the profile is locked.
+        // The dedicated profile persists across launches so the therapist
+        // only needs to log into their EHR once.
         let chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        let profileDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Pablo/ChromeDebugProfile")
+            .path
+        try? FileManager.default.createDirectory(atPath: profileDir, withIntermediateDirectories: true)
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: chromePath)
 
-        var args = ["--remote-debugging-port=\(port)"]
+        var args = [
+            "--remote-debugging-port=\(port)",
+            "--user-data-dir=\(profileDir)",
+        ]
         // Navigate to the EHR login page on launch
         if let ehr = ehrSystem, let loginURL = Self.ehrLoginURLs[ehr] {
             args.append(loginURL)
