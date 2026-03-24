@@ -411,6 +411,8 @@ final class EHRNavigator {
         var args = [
             "--remote-debugging-port=\(port)",
             "--user-data-dir=\(profileDir)",
+            "--no-default-browser-check",
+            "--no-first-run",
         ]
         // Navigate to the EHR login page on launch
         if let ehr = ehrSystem, let loginURL = Self.ehrLoginURLs[ehr] {
