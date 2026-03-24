@@ -356,9 +356,11 @@ struct DebugSoapEntryView: View {
     // MARK: - Actions
 
     private func startTestEntry() async {
+        // Map sessions_health to jane_app for the backend until the enum is added
+        let backendEHR = selectedEHR == "sessions_health" ? "jane_app" : selectedEHR
         let input = SoapEntryInput(
             sessionId: "debug-session-001",
-            ehrSystem: selectedEHR,
+            ehrSystem: backendEHR,
             soapNoteId: "debug-note-001",
             patientName: "Pablo Bear",
             appointmentTime: "2026-03-23T20:00:00Z",
