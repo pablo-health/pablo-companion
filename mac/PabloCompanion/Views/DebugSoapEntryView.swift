@@ -47,7 +47,7 @@ struct DebugSoapEntryView: View {
         VStack(spacing: 4) {
             Text("Debug: EHR SOAP Entry")
                 .font(.custom("Fraunces", size: 18).weight(.semibold))
-                .foregroundStyle(Color.pabloDeepBrown)
+                .foregroundStyle(Color.pabloBrownDeep)
             Text("Test navigation with Pablo Bear's session")
                 .font(.custom("DMSans-Regular", size: 13))
                 .foregroundStyle(.secondary)
@@ -72,7 +72,7 @@ struct DebugSoapEntryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Test Session", systemImage: "stethoscope")
                 .font(.custom("DMSans-Medium", size: 14))
-                .foregroundStyle(Color.pabloDeepBrown)
+                .foregroundStyle(Color.pabloBrownDeep)
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -110,7 +110,7 @@ struct DebugSoapEntryView: View {
                 .frame(width: 14)
             Text(text)
                 .font(.custom("DMSans-Regular", size: 12))
-                .foregroundStyle(Color.pabloDeepBrown)
+                .foregroundStyle(Color.pabloBrownDeep)
                 .lineLimit(2)
         }
     }
@@ -123,7 +123,7 @@ struct DebugSoapEntryView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(phaseLabel)
                     .font(.custom("DMSans-Medium", size: 14))
-                    .foregroundStyle(Color.pabloDeepBrown)
+                    .foregroundStyle(Color.pabloBrownDeep)
                 if !vm.statusMessage.isEmpty {
                     Text(vm.statusMessage)
                         .font(.custom("DMSans-Regular", size: 12))
@@ -170,7 +170,7 @@ struct DebugSoapEntryView: View {
                 .foregroundStyle(Color.pabloSage)
         case .failed:
             Image(systemName: "xmark.circle.fill")
-                .foregroundStyle(Color.pabloTerracotta)
+                .foregroundStyle(Color.pabloError)
         case .cancelled:
             Image(systemName: "minus.circle.fill")
                 .foregroundStyle(.secondary)
@@ -180,7 +180,7 @@ struct DebugSoapEntryView: View {
     private var phaseBackground: Color {
         switch vm.phase {
         case .completed: Color.pabloSage.opacity(0.1)
-        case .failed: Color.pabloTerracotta.opacity(0.1)
+        case .failed: Color.pabloError.opacity(0.1)
         case .awaitingConfirmation: Color.pabloHoney.opacity(0.1)
         default: Color.pabloCream.opacity(0.5)
         }
@@ -265,14 +265,14 @@ struct DebugSoapEntryView: View {
     private func errorCard(_ message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Color.pabloTerracotta)
+                .foregroundStyle(Color.pabloError)
                 .accessibilityHidden(true)
             Text(message)
                 .font(.custom("DMSans-Regular", size: 13))
-                .foregroundStyle(Color.pabloTerracotta)
+                .foregroundStyle(Color.pabloError)
         }
         .padding(12)
-        .background(Color.pabloTerracotta.opacity(0.08))
+        .background(Color.pabloError.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
