@@ -183,6 +183,8 @@ final class EHRNavigator {
     // MARK: - CDP actions
 
     private func executeAction(_ action: StepAction, selector: String, cdp: CDPConnection) async throws {
+        try SelectorValidator.validate(selector)
+
         switch action {
         case .click:
             let js = """
@@ -217,35 +219,47 @@ final class EHRNavigator {
         }
     }
 
-    // MARK: - DOM snapshot
+    // MARK: - DOM snapshot (HIPAA-safe)
 
-    /// Gets a simplified DOM snapshot for the LLM. PHI is stripped.
+    /// Gets a navigation-only DOM snapshot for the LLM.
+    ///
+    /// Security: only sends structural/interactive elements to the LLM.
+    /// Text content is included ONLY for navigation elements (links, buttons,
+    /// tabs, headings). All other text is replaced with `[content]`.
+    /// PHI (patient names, phone, email, DOB, diagnosis codes) is stripped.
     private func getDOMSnapshot(cdp: CDPConnection, patientName: String) async throws -> String {
         let js = """
         (() => {
+            const navTags = new Set(['A','BUTTON','NAV','H1','H2','H3','H4','H5','H6','LABEL','TH']);
+            const navRoles = new Set(['button','link','tab','menuitem','option','heading','navigation']);
             const elements = [];
             const walk = (el, depth) => {
                 if (depth > 6) return;
                 const tag = el.tagName?.toLowerCase() || '';
                 const role = el.getAttribute?.('role') || '';
-                const text = (el.innerText || '').substring(0, 100);
                 const href = el.getAttribute?.('href') || '';
                 const type = el.getAttribute?.('type') || '';
-                const placeholder = el.getAttribute?.('placeholder') || '';
                 const ariaLabel = el.getAttribute?.('aria-label') || '';
-                const isInteractive = ['A','BUTTON','INPUT','SELECT','TEXTAREA'].includes(el.tagName)
-                    || role === 'button' || role === 'link' || role === 'tab';
-                if (isInteractive || (text.length > 0 && text.length < 200)) {
-                    const indent = '  '.repeat(depth);
-                    let desc = `${indent}<${tag}`;
-                    if (role) desc += ` role="${role}"`;
-                    if (href) desc += ` href="${href}"`;
-                    if (type) desc += ` type="${type}"`;
-                    if (placeholder) desc += ` placeholder="${placeholder}"`;
-                    if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
-                    desc += `>${text.substring(0, 80).replace(/\\n/g, ' ')}`;
-                    elements.push(desc);
+                const placeholder = el.getAttribute?.('placeholder') || '';
+                const isNav = navTags.has(el.tagName) || navRoles.has(role);
+                const isInteractive = ['INPUT','SELECT','TEXTAREA'].includes(el.tagName);
+                if (!isNav && !isInteractive && !el.children?.length) return;
+                const indent = '  '.repeat(depth);
+                let desc = `${indent}<${tag}`;
+                if (role) desc += ` role="${role}"`;
+                if (href) desc += ` href="${href}"`;
+                if (type) desc += ` type="${type}"`;
+                if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
+                if (placeholder) desc += ` placeholder="${placeholder}"`;
+                if (isNav) {
+                    const text = (el.innerText || '').substring(0, 40).replace(/\\n/g, ' ');
+                    desc += `>${text}`;
+                } else if (isInteractive) {
+                    desc += `>[field]`;
+                } else {
+                    desc += `>`;
                 }
+                elements.push(desc);
                 for (const child of (el.children || [])) walk(child, depth + 1);
             };
             walk(document.body, 0);
@@ -253,7 +267,7 @@ final class EHRNavigator {
         })()
         """
         let rawSnapshot = try await cdp.evaluateJS(js)
-        return stripPHI(from: rawSnapshot, patientName: patientName)
+        return PHISanitizer.strip(from: rawSnapshot, patientName: patientName)
     }
 
     // MARK: - CDP connection
@@ -377,12 +391,34 @@ final class EHRNavigator {
         throw EHRNavigatorError.appointmentNotFound(time: time)
     }
 
-    private func stripPHI(from text: String, patientName: String) -> String {
-        var stripped = text.replacingOccurrences(of: patientName, with: "[PATIENT]")
-        for part in patientName.split(separator: " ") where part.count > 2 {
-            stripped = stripped.replacingOccurrences(of: String(part), with: "[NAME]")
+    // MARK: - CDP lifecycle
+
+    /// Disconnects CDP and optionally kills the debug Chrome profile.
+    func disconnect(killChrome: Bool = false) {
+        cdp = nil
+        if killChrome {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+            process.arguments = ["-f", "Pablo/ChromeDebugProfile"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+            logger.info("Killed debug Chrome profile")
         }
-        return stripped
+        logger.info("CDP disconnected")
+    }
+
+    /// Clears cookies from the debug Chrome profile directory.
+    func clearDebugProfileCookies() {
+        let profileDir = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Pablo/ChromeDebugProfile")
+        let cookieFiles = ["Cookies", "Cookies-journal"]
+        for file in cookieFiles {
+            let path = profileDir.appendingPathComponent("Default/\(file)")
+            try? FileManager.default.removeItem(at: path)
+        }
+        logger.info("Cleared debug Chrome profile cookies")
     }
 }
 

@@ -84,7 +84,7 @@ final class SoapEntryViewModel {
         }
     }
 
-    /// Therapist confirmed — fill the SOAP fields.
+    /// Therapist confirmed — fill the SOAP fields, then disconnect CDP.
     func confirmEntry() async {
         guard let navigator, let input = currentInput else { return }
 
@@ -98,21 +98,25 @@ final class SoapEntryViewModel {
             }
 
             phase = .completed
-            statusMessage = "SOAP note entered. Please review and click 'Sign and Complete'."
+            statusMessage = "Note entered. Please review and click 'Sign and Complete'."
             logger.info("SOAP entry completed for session \(input.sessionId)")
         } catch {
             logger.error("SOAP entry commit failed: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
             phase = .failed
         }
+
+        // Disconnect CDP — don't leave the debug port open longer than needed
+        navigator.disconnect()
     }
 
-    /// Therapist cancelled — abort without saving.
+    /// Therapist cancelled — abort without saving, disconnect CDP.
     func cancelEntry() {
         phase = .cancelled
         statusMessage = "Entry cancelled."
         confirmation = nil
         currentInput = nil
+        navigator?.disconnect()
     }
 
     /// Reset to idle for the next session.
@@ -122,5 +126,11 @@ final class SoapEntryViewModel {
         confirmation = nil
         errorMessage = nil
         currentInput = nil
+    }
+
+    /// Call on app quit to clean up the debug Chrome profile cookies.
+    func cleanup() {
+        navigator?.disconnect(killChrome: true)
+        navigator?.clearDebugProfileCookies()
     }
 }
