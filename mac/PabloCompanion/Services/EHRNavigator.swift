@@ -150,17 +150,17 @@ final class EHRNavigator {
                 updatedSteps[index] = CachedStep(
                     action: action.action,
                     selector: action.selector,
-                    a11yFingerprint: action.updatedFingerprint ?? step.a11yFingerprint,
+                    a11yFingerprint: action.updatedFingerprint.isEmpty ? step.a11yFingerprint : action.updatedFingerprint,
                     intent: step.intent,
                     dynamicKey: step.dynamicKey
                 )
 
-                if let updatedFingerprint = action.updatedFingerprint {
+                if !action.updatedFingerprint.isEmpty {
                     try? await apiClient.reportRouteUpdate(
                         ehrSystem: input.ehrSystem,
                         stepIndex: index,
                         newSelector: action.selector,
-                        newFingerprint: updatedFingerprint
+                        newFingerprint: action.updatedFingerprint
                     )
                 }
             }
@@ -191,7 +191,7 @@ final class EHRNavigator {
                 ehrSystem: input.ehrSystem,
                 tree: tree,
                 patientName: input.patientName,
-                failedSelector: nil
+                failedSelector: ""
             )
 
             try await executeAction(action.action, selector: action.selector, on: browserWindow)
@@ -205,7 +205,7 @@ final class EHRNavigator {
             learnedSteps.append(CachedStep(
                 action: action.action,
                 selector: action.selector,
-                a11yFingerprint: action.updatedFingerprint ?? "",
+                a11yFingerprint: action.updatedFingerprint,
                 intent: intent,
                 dynamicKey: dynamicKey
             ))

@@ -58,7 +58,8 @@ struct NavigationRequest: Codable, Sendable {
     let ehrSystem: String
     let intent: NavigationIntent
     let a11ySnapshot: String
-    let failedSelector: String?
+    /// Previous selector that failed. Empty string for first-time discovery.
+    let failedSelector: String
 }
 
 /// Response from the backend with the LLM-determined next action.
@@ -66,7 +67,7 @@ struct NavigationAction: Codable, Sendable {
     let selector: String
     let action: StepAction
     let confidence: Double
-    let updatedFingerprint: String?
+    let updatedFingerprint: String
 }
 
 /// What the therapist sees before confirming EHR entry.
