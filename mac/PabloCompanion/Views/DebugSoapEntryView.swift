@@ -165,7 +165,7 @@ struct DebugSoapEntryView: View {
     private var phaseLabel: String {
         switch vm.phase {
         case .idle: "Ready"
-        case .fetchingRoute: "Fetching route..."
+        case .connecting: "Connecting to browser..."
         case .navigating: "Navigating EHR..."
         case .matchingPatient: "Finding patient..."
         case .awaitingConfirmation: "Awaiting confirmation"
@@ -182,7 +182,7 @@ struct DebugSoapEntryView: View {
         case .idle:
             Image(systemName: "circle.dashed")
                 .foregroundStyle(.secondary)
-        case .fetchingRoute, .navigating, .matchingPatient, .entering:
+        case .connecting, .navigating, .matchingPatient, .entering:
             ProgressView()
                 .controlSize(.small)
         case .awaitingConfirmation:
