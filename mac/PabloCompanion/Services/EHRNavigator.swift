@@ -47,23 +47,41 @@ final class EHRNavigator {
         input: NoteEntryInput,
         onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
     ) async throws -> SoapEntryConfirmation {
-        // 1. Connect to Chrome
         onPhaseChange(.connecting, "Connecting to browser...")
         let connection = try await connectToChrome(ehrSystem: input.ehrSystem)
         self.cdp = connection
 
-        // 2. Goal-based navigation loop
-        let goal = "Navigate to the SOAP note form for the appointment at \(input.appointmentDisplay)"
-        var previousActions: [PreviousAction] = []
-        var formFields: [String: String]?
-
         onPhaseChange(.navigating, "Looking for the appointment...")
+        let formFields = try await runNavigationLoop(input: input, cdp: connection, onPhaseChange: onPhaseChange)
+
+        onPhaseChange(.matchingPatient, "Verifying patient...")
+        let pageText = try await connection.evaluateJS("document.body.innerText")
+        let patientMatch = try findPatientMatch(in: pageText, name: input.patientName)
+        let appointmentMatch = try findAppointmentMatch(in: pageText, time: input.appointmentTime)
+
+        return SoapEntryConfirmation(
+            patientMatch: patientMatch,
+            appointmentMatch: appointmentMatch,
+            ehrTargetField: "\(input.ehrSystem) → \(input.noteType)",
+            soapPreview: input.sections.first.map { "\($0.label.prefix(1)): \($0.content.prefix(80))..." },
+            formFields: formFields
+        )
+    }
+
+    // MARK: - Navigation loop
+
+    private func runNavigationLoop(
+        input: NoteEntryInput,
+        cdp: CDPConnection,
+        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
+    ) async throws -> [String: String]? {
+        let goal = "Navigate to the \(input.noteType) form for the appointment at \(input.appointmentDisplay)"
+        var previousActions: [PreviousAction] = []
 
         for step in 1 ... maxSteps {
-            let currentURL = try await connection.evaluateJS("window.location.href")
-            let domSnapshot = try await getDOMSnapshot(cdp: connection, patientName: input.patientName)
+            let currentURL = try await cdp.evaluateJS("window.location.href")
+            let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
 
-            // Ask the LLM what to do next
             let response = try await apiClient.navigate(
                 request: GoalNavigationRequest(
                     ehrSystem: input.ehrSystem,
@@ -75,51 +93,33 @@ final class EHRNavigator {
                 )
             )
 
-            logger.info("Step \(step): \(response.action.rawValue) → \(response.selector) (\(response.reasoning))")
+            logger.info("Step \(step): \(response.action.rawValue) → \(response.selector)")
             onPhaseChange(.navigating, "Step \(step): \(response.reasoning)")
 
-            // Are we on the target page?
             if response.isOnTargetPage {
-                formFields = response.formFields
                 logger.info("On target page after \(step) step(s)")
-                break
+                return response.formFields
             }
 
-            // Execute the action
-            do {
-                try await executeAction(response.action, selector: response.selector, cdp: connection)
-                previousActions.append(PreviousAction(
-                    action: response.action.rawValue,
-                    target: response.selector,
-                    result: "success"
-                ))
-            } catch {
-                logger.warning("Step \(step) failed: \(error.localizedDescription)")
-                previousActions.append(PreviousAction(
-                    action: response.action.rawValue,
-                    target: response.selector,
-                    result: "failed: \(error.localizedDescription)"
-                ))
-                // Don't throw — let the LLM see the failure and try an alternative
-            }
-
-            // Wait for page to settle
+            let result = await executeStepSafely(response: response, cdp: cdp)
+            previousActions.append(result)
             try await Task.sleep(for: .milliseconds(800))
         }
+        return nil
+    }
 
-        // 3. Verify patient + time via local text match (no LLM)
-        onPhaseChange(.matchingPatient, "Verifying patient...")
-        let pageText = try await connection.evaluateJS("document.body.innerText")
-        let patientMatch = try findPatientMatch(in: pageText, name: input.patientName)
-        let appointmentMatch = try findAppointmentMatch(in: pageText, time: input.appointmentTime)
-
-        return SoapEntryConfirmation(
-            patientMatch: patientMatch,
-            appointmentMatch: appointmentMatch,
-            ehrTargetField: "\(input.ehrSystem) → SOAP Note",
-            soapPreview: input.sections.first.map { "\($0.label.prefix(1)): \($0.content.prefix(80))..." },
-            formFields: formFields
-        )
+    private func executeStepSafely(response: GoalNavigationResponse, cdp: CDPConnection) async -> PreviousAction {
+        do {
+            try await executeAction(response.action, selector: response.selector, cdp: cdp)
+            return PreviousAction(action: response.action.rawValue, target: response.selector, result: "success")
+        } catch {
+            logger.warning("Step failed: \(error.localizedDescription)")
+            return PreviousAction(
+                action: response.action.rawValue,
+                target: response.selector,
+                result: "failed: \(error.localizedDescription)"
+            )
+        }
     }
 
     /// After therapist confirms, fill the SOAP fields and leave for them to review/submit.
@@ -349,8 +349,8 @@ final class EHRNavigator {
     private func findPatientMatch(in pageText: String, name: String) throws -> String {
         if pageText.localizedCaseInsensitiveContains(name) { return name }
         let parts = name.split(separator: " ")
-        if parts.count >= 2 {
-            let reversed = "\(parts.last!), \(parts.first!)"
+        if let last = parts.last, let first = parts.first, parts.count >= 2 {
+            let reversed = "\(last), \(first)"
             if pageText.localizedCaseInsensitiveContains(reversed) { return String(reversed) }
         }
         throw EHRNavigatorError.patientNotFound(name: name)
@@ -375,117 +375,6 @@ final class EHRNavigator {
             stripped = stripped.replacingOccurrences(of: String(part), with: "[NAME]")
         }
         return stripped
-    }
-}
-
-// MARK: - CDP WebSocket Connection
-
-final class CDPConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
-    private let wsURL: String
-    private var webSocket: URLSessionWebSocketTask?
-    private var nextID = 1
-    private var pendingCallbacks: [Int: CheckedContinuation<String, Error>] = [:]
-    private let lock = NSLock()
-    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "CDPConnection")
-
-    init(wsURL: String) {
-        self.wsURL = wsURL
-    }
-
-    func connect() async throws {
-        guard let url = URL(string: wsURL) else { throw EHRNavigatorError.browserNotFound }
-        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-        let ws = session.webSocketTask(with: url)
-        self.webSocket = ws
-        ws.resume()
-        startReceiving()
-        try await Task.sleep(for: .milliseconds(200))
-    }
-
-    func evaluateJS(_ expression: String) async throws -> String {
-        let id = nextRequestID()
-        let command: [String: Any] = [
-            "id": id,
-            "method": "Runtime.evaluate",
-            "params": ["expression": expression, "returnByValue": true],
-        ]
-        return try await sendCommand(command, id: id)
-    }
-
-    private func nextRequestID() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        let id = nextID
-        nextID += 1
-        return id
-    }
-
-    private func sendCommand(_ command: [String: Any], id: Int) async throws -> String {
-        guard let ws = webSocket else { throw EHRNavigatorError.browserNotFound }
-        let data = try JSONSerialization.data(withJSONObject: command)
-        let message = URLSessionWebSocketTask.Message.data(data)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            pendingCallbacks[id] = continuation
-            lock.unlock()
-
-            ws.send(message) { [weak self] error in
-                if let error {
-                    self?.lock.lock()
-                    let cb = self?.pendingCallbacks.removeValue(forKey: id)
-                    self?.lock.unlock()
-                    cb?.resume(throwing: error)
-                }
-            }
-        }
-    }
-
-    private func startReceiving() {
-        webSocket?.receive { [weak self] result in
-            switch result {
-            case let .success(message): self?.handleMessage(message); self?.startReceiving()
-            case let .failure(error): self?.logger.error("CDP WebSocket error: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
-        let data: Data
-        switch message {
-        case let .string(text): data = Data(text.utf8)
-        case let .data(d): data = d
-        @unknown default: return
-        }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = json["id"] as? Int else { return }
-
-        lock.lock()
-        let continuation = pendingCallbacks.removeValue(forKey: id)
-        lock.unlock()
-
-        if let result = json["result"] as? [String: Any],
-           let innerResult = result["result"] as? [String: Any],
-           let value = innerResult["value"] {
-            if let s = value as? String { continuation?.resume(returning: s) }
-            else if let b = value as? Bool { continuation?.resume(returning: b ? "true" : "false") }
-            else { continuation?.resume(returning: String(describing: value)) }
-        } else if let error = json["error"] as? [String: Any],
-                  let msg = error["message"] as? String {
-            continuation?.resume(throwing: EHRNavigatorError.actionFailed(action: "CDP", selector: msg))
-        } else {
-            continuation?.resume(returning: "")
-        }
-    }
-}
-
-// MARK: - String helper
-
-extension String {
-    var escapedForJS: String {
-        self.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
-            .replacingOccurrences(of: "\n", with: "\\n")
     }
 }
 

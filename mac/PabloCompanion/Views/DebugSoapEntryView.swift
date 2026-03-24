@@ -41,7 +41,10 @@ struct DebugSoapEntryView: View {
             Button("Relaunch") { vm.respondToChromeRelaunch(approved: true) }
             Button("Cancel", role: .cancel) { vm.respondToChromeRelaunch(approved: false) }
         } message: {
-            Text("Chrome needs to be relaunched with debugging enabled so Pablo can control the browser. Your tabs will be restored.")
+            Text(
+                "Chrome needs to be relaunched with debugging enabled "
+                    + "so Pablo can control the browser. Your tabs will be restored."
+            )
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -356,70 +359,97 @@ struct DebugSoapEntryView: View {
     // MARK: - Actions
 
     private func startTestEntry() async {
-        // Map sessions_health to jane_app for the backend until the enum is added
         let backendEHR = selectedEHR == "sessions_health" ? "jane_app" : selectedEHR
-        let input = NoteEntryInput.soap(
+        await vm.startEntry(input: Self.makeTestInput(ehrSystem: backendEHR))
+    }
+
+    private static func makeTestInput(ehrSystem: String) -> NoteEntryInput {
+        .soap(
             sessionId: "debug-session-001",
-            ehrSystem: backendEHR,
+            ehrSystem: ehrSystem,
             noteId: "debug-note-001",
             patientName: "Pablo Bear",
             appointmentTime: "2026-03-23T20:00:00Z",
             appointmentDisplay: "8:00 PM on March 23, 2026",
-            subjective: "Patient reports feeling more optimistic this week. Sleep has improved from 5 hours to approximately 7 hours per night. Reports using the breathing exercises discussed last session before bed. Denies any suicidal ideation or self-harm urges.",
-            objective: "Affect noticeably brighter than previous sessions. Good eye contact maintained throughout. Speech rate and volume within normal limits. Engaged actively in session exercises. No signs of acute distress. Hygiene and grooming appropriate.",
-            assessment: "Continued progress toward treatment goals. PHQ-9 score improved from 14 (moderate) to 9 (mild). CBT cognitive restructuring techniques appear to be taking hold. Sleep hygiene improvements correlating with mood gains. Therapeutic alliance strong.",
-            plan: "Continue weekly individual CBT sessions. Introduce behavioral activation scheduling next session. Assign mood tracking homework between sessions. Reassess PHQ-9 in 4 weeks. Consider gradual reduction to biweekly sessions if improvement sustained over next 6 weeks."
+            subjective: TestSOAP.subjective,
+            objective: TestSOAP.objective,
+            assessment: TestSOAP.assessment,
+            plan: TestSOAP.plan
         )
-        await vm.startEntry(input: input)
+    }
+
+    private enum TestSOAP {
+        static let subjective = """
+            Patient reports feeling more optimistic this week. Sleep improved \
+            from 5 to ~7 hrs/night. Using breathing exercises before bed. \
+            Denies suicidal ideation or self-harm urges.
+            """
+        static let objective = """
+            Affect brighter than previous sessions. Good eye contact. Speech \
+            rate/volume within normal limits. Engaged in session exercises. \
+            No acute distress. Hygiene and grooming appropriate.
+            """
+        static let assessment = """
+            Continued progress toward goals. PHQ-9 improved from 14 (moderate) \
+            to 9 (mild). CBT restructuring taking hold. Sleep hygiene correlating \
+            with mood gains. Therapeutic alliance strong.
+            """
+        static let plan = """
+            Continue weekly CBT. Introduce behavioral activation next session. \
+            Assign mood tracking homework. Reassess PHQ-9 in 4 weeks. Consider \
+            biweekly if improvement sustained 6 weeks.
+            """
     }
 
     private func readA11yTree() async {
-        // Read DOM snapshot via CDP — shows what the navigator/LLM sees
         do {
-            guard let listURL = URL(string: "http://localhost:9222/json") else {
-                a11yTreePreview = "Invalid CDP URL"
-                return
-            }
-            let (data, _) = try await URLSession.shared.data(from: listURL)
-            guard let targets = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-                  let pageTarget = targets.first(where: { ($0["type"] as? String) == "page" }),
-                  let wsURL = pageTarget["webSocketDebuggerUrl"] as? String else {
-                a11yTreePreview = "No page target found. Is Chrome running with --remote-debugging-port=9222?"
-                return
-            }
-
-            let cdp = CDPConnection(wsURL: wsURL)
-            try await cdp.connect()
-
-            // Get a simplified DOM snapshot (same as what the LLM sees)
-            let js = """
-                (() => {
-                    const elements = [];
-                    const walk = (el, depth) => {
-                        if (depth > 6) return;
-                        const tag = el.tagName?.toLowerCase() || '';
-                        const text = (el.innerText || '').substring(0, 100);
-                        const href = el.getAttribute?.('href') || '';
-                        const role = el.getAttribute?.('role') || '';
-                        const ariaLabel = el.getAttribute?.('aria-label') || '';
-                        const indent = '  '.repeat(depth);
-                        let desc = `${indent}<${tag}`;
-                        if (role) desc += ` role="${role}"`;
-                        if (href) desc += ` href="${href}"`;
-                        if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
-                        desc += `> ${text.substring(0, 80).replace(/\\n/g, ' ')}`;
-                        elements.push(desc);
-                        for (const child of (el.children || [])) walk(child, depth + 1);
-                    };
-                    walk(document.body, 0);
-                    return elements.join('\\n');
-                })()
-                """
-            a11yTreePreview = try await cdp.evaluateJS(js)
+            let cdp = try await connectDebugCDP()
+            a11yTreePreview = try await cdp.evaluateJS(Self.domSnapshotJS)
         } catch {
             a11yTreePreview = "Error: \(error.localizedDescription)"
         }
     }
+
+    private func connectDebugCDP() async throws -> CDPConnection {
+        guard let listURL = URL(string: "http://localhost:9222/json") else {
+            throw EHRNavigatorError.browserNotFound
+        }
+        let (data, _) = try await URLSession.shared.data(from: listURL)
+        guard let targets = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let page = targets.first(where: { ($0["type"] as? String) == "page" }),
+              let wsURL = page["webSocketDebuggerUrl"] as? String else {
+            throw EHRNavigatorError.browserNotFound
+        }
+        let cdp = CDPConnection(wsURL: wsURL)
+        try await cdp.connect()
+        return cdp
+    }
+
+    // swiftlint:disable line_length
+    private static let domSnapshotJS = """
+        (() => {
+            const els = [];
+            const walk = (el, d) => {
+                if (d > 6) return;
+                const tag = el.tagName?.toLowerCase() || '';
+                const text = (el.innerText || '').substring(0, 100);
+                const href = el.getAttribute?.('href') || '';
+                const role = el.getAttribute?.('role') || '';
+                const ariaLabel = el.getAttribute?.('aria-label') || '';
+                const indent = '  '.repeat(d);
+                let desc = `${indent}<${tag}`;
+                if (role) desc += ` role="${role}"`;
+                if (href) desc += ` href="${href}"`;
+                if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
+                desc += `> ${text.substring(0, 80).replace(/\\n/g, ' ')}`;
+                els.push(desc);
+                for (const child of (el.children || [])) walk(child, d + 1);
+            };
+            walk(document.body, 0);
+            return els.join('\\n');
+        })()
+        """
+    // swiftlint:enable line_length
 }
 
 #Preview {

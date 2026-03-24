@@ -36,10 +36,7 @@ pub async fn start_soap_entry(
         let token = SecretString::from(token);
 
         let response = client
-            .post(
-                &format!("/api/sessions/{session_id}/enter-soap"),
-                &token,
-            )
+            .post(&format!("/api/sessions/{session_id}/enter-soap"), &token)
             .json(&request)
             .send()
             .await
