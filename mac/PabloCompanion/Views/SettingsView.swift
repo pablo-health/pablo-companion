@@ -181,6 +181,7 @@ struct SettingsView: View {
 
     ///    #if DEBUG
     @State private var showDebugRecordingView = false
+    @State private var showDebugSoapEntryView = false
     //  #endif
 
     private var audioFormatSection: some View {
@@ -310,6 +311,14 @@ struct SettingsView: View {
                 DebugRecordingView()
             }
             //           #endif
+
+            Button("Open Debug SOAP Entry View") {
+                showDebugSoapEntryView = true
+            }
+            .buttonStyle(.bordered)
+            .sheet(isPresented: $showDebugSoapEntryView) {
+                DebugSoapEntryView()
+            }
         }
     }
 
