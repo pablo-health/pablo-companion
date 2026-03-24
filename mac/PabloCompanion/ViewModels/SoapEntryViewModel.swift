@@ -20,12 +20,16 @@ final class SoapEntryViewModel {
     var errorMessage: String?
     /// Set to true when Chrome needs to be relaunched — the view shows a confirmation alert.
     var showChromeRelaunchAlert = false
+    /// Set to true when the EHR login page is detected.
+    var showEHRLoginPrompt = false
+    var ehrLoginSystem = ""
 
     // MARK: - Dependencies
 
     private var navigator: EHRNavigator?
     private var currentInput: NoteEntryInput?
     private var relaunchContinuation: CheckedContinuation<Bool, Never>?
+    private var loginContinuation: CheckedContinuation<Bool, Never>?
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "SoapEntryViewModel")
 
     // MARK: - Setup
@@ -36,6 +40,9 @@ final class SoapEntryViewModel {
         let nav = EHRNavigator(apiClient: apiClient)
         nav.onChromeRelaunchNeeded = { [weak self] in
             await self?.requestChromeRelaunch() ?? false
+        }
+        nav.onEHRLoginRequired = { [weak self] ehrSystem in
+            await self?.requestEHRLogin(ehrSystem: ehrSystem) ?? false
         }
         self.navigator = nav
     }
@@ -52,6 +59,21 @@ final class SoapEntryViewModel {
         relaunchContinuation?.resume(returning: approved)
         relaunchContinuation = nil
         showChromeRelaunchAlert = false
+    }
+
+    private func requestEHRLogin(ehrSystem: String) async -> Bool {
+        ehrLoginSystem = ehrSystem
+        showEHRLoginPrompt = true
+        return await withCheckedContinuation { continuation in
+            loginContinuation = continuation
+        }
+    }
+
+    /// Called by the view when the therapist says they've signed in.
+    func respondToEHRLogin(signedIn: Bool) {
+        loginContinuation?.resume(returning: signedIn)
+        loginContinuation = nil
+        showEHRLoginPrompt = false
     }
 
     // MARK: - Entry flow

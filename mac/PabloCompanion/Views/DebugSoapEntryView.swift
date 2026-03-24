@@ -46,6 +46,15 @@ struct DebugSoapEntryView: View {
                     + "so Pablo can control the browser. Your tabs will be restored."
             )
         }
+        .alert("Sign in to your EHR", isPresented: $vm.showEHRLoginPrompt) {
+            Button("I've signed in") { vm.respondToEHRLogin(signedIn: true) }
+            Button("Cancel", role: .cancel) { vm.respondToEHRLogin(signedIn: false) }
+        } message: {
+            Text(
+                "Please sign in to \(vm.ehrLoginSystem) in the Chrome window. "
+                    + "Tap 'I've signed in' when you're on the dashboard."
+            )
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") { dismiss() }

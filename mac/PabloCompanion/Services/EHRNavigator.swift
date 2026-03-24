@@ -70,6 +70,10 @@ final class EHRNavigator {
 
     // MARK: - Navigation loop
 
+    /// Called when the EHR login page is detected. The UI should prompt the
+    /// therapist to sign in and return `true` once they have.
+    var onEHRLoginRequired: ((_ ehrSystem: String) async -> Bool)?
+
     private func runNavigationLoop(
         input: NoteEntryInput,
         cdp: CDPConnection,
@@ -77,6 +81,13 @@ final class EHRNavigator {
     ) async throws -> [String: String]? {
         let goal = "Navigate to the \(input.noteType) form for the appointment at \(input.appointmentDisplay)"
         var previousActions: [PreviousAction] = []
+
+        try await EHRLoginDetector.waitForLogin(
+            cdp: cdp,
+            ehrSystem: input.ehrSystem,
+            onPhaseChange: onPhaseChange,
+            onLoginRequired: onEHRLoginRequired
+        )
 
         for step in 1 ... maxSteps {
             let currentURL = try await cdp.evaluateJS("window.location.href")
@@ -122,7 +133,6 @@ final class EHRNavigator {
         }
     }
 
-    /// After therapist confirms, fill the SOAP fields and leave for them to review/submit.
     /// After therapist confirms, fill the note fields and leave for them to review/submit.
     func commitEntry(
         input: NoteEntryInput,
