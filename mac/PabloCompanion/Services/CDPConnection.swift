@@ -30,7 +30,8 @@ final class CDPConnection: @unchecked Sendable {
     func connect() async throws {
         guard let url = URL(string: wsURL),
               let host = url.host,
-              let port = url.port else {
+              let port = url.port
+        else {
             throw EHRNavigatorError.browserNotFound
         }
 
@@ -253,7 +254,9 @@ final class CDPConnection: @unchecked Sendable {
                 return
             }
             var length = 0
-            for byte in data { length = (length << 8) | Int(byte) }
+            for byte in data {
+                length = (length << 8) | Int(byte)
+            }
             self.readPayload(conn: conn, length: length, masked: masked, opcode: opcode)
         }
     }
@@ -274,7 +277,9 @@ final class CDPConnection: @unchecked Sendable {
             var payload = data
             if masked {
                 // Server frames shouldn't be masked per RFC, but handle anyway
-                guard data.count >= 4 else { self.readFrameHeader(); return }
+                guard data.count >= 4 else { self.readFrameHeader()
+                    return
+                }
                 let key = Array(data.prefix(4))
                 payload = Data(data.dropFirst(4).enumerated().map {
                     $0.element ^ key[$0.offset % 4]

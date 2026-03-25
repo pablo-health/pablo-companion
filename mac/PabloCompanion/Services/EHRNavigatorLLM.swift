@@ -98,7 +98,7 @@ extension EHRNavigator {
 
     private func buildGoal(input: NoteEntryInput) -> String {
         "Navigate to the \(input.noteType) form "
-        + "for the appointment at \(input.appointmentDisplay)"
+            + "for the appointment at \(input.appointmentDisplay)"
     }
 
     private struct NavStepContext {
