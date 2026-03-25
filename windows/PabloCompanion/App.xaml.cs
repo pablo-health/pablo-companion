@@ -92,6 +92,7 @@ public partial class App : Application
         services.AddSingleton<Services.SessionTranscriptionPipeline>();
         services.AddSingleton<Services.PendingTranscriptionStore>();
         services.AddSingleton<Services.PlaybackService>();
+        services.AddSingleton<Services.InactivityMonitor>();
 
         services.AddSingleton<ViewModels.AuthViewModel>();
         services.AddSingleton<ViewModels.SessionViewModel>();

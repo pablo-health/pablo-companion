@@ -70,6 +70,16 @@ struct ContentView: View {
                 await transcriptionVM.retryPendingUploads()
             }
         }
+        .task {
+            // HIPAA inactivity timeout — lock after 15 minutes of no user input
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { break }
+                if InactivityMonitor.systemIdleSeconds() >= InactivityMonitor.timeoutSeconds {
+                    authVM.signOut()
+                }
+            }
+        }
         .sheet(item: $viewingTranscript) { item in
             TranscriptViewerView(transcript: item.text, recordingDate: item.recordingDate)
         }

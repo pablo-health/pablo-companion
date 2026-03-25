@@ -32,6 +32,7 @@ public partial class AuthViewModel : ObservableObject
     private readonly CredentialManager _credentials;
     private readonly TokenRefresher _tokenRefresher;
     private readonly APIClient _apiClient;
+    private readonly InactivityMonitor _inactivityMonitor;
     private System.Threading.Timer? _refreshTimer;
     private static readonly HttpClient s_httpClient = new();
 
@@ -47,11 +48,19 @@ public partial class AuthViewModel : ObservableObject
     [ObservableProperty]
     public partial string ServerUrl { get; set; } = "";
 
-    public AuthViewModel(CredentialManager credentials, TokenRefresher tokenRefresher, APIClient apiClient)
+    public AuthViewModel(CredentialManager credentials, TokenRefresher tokenRefresher, APIClient apiClient, InactivityMonitor inactivityMonitor)
     {
         _credentials = credentials;
         _tokenRefresher = tokenRefresher;
         _apiClient = apiClient;
+        _inactivityMonitor = inactivityMonitor;
+        _inactivityMonitor.OnTimeout += OnInactivityTimeout;
+    }
+
+    private void OnInactivityTimeout()
+    {
+        // HIPAA: lock the app after 15 minutes of inactivity
+        App.UiDispatcherQueue?.TryEnqueue(SignOut);
     }
 
     /// <summary>
