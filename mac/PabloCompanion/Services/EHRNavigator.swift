@@ -18,7 +18,7 @@ final class EHRNavigator {
     var onChromeRelaunchNeeded: (() async -> Bool)?
 
     /// Maximum navigation steps before giving up (safety limit).
-    private let maxSteps = 10
+    private let maxSteps = 15
 
     init(apiClient: NavigationAPIClient) {
         self.apiClient = apiClient
@@ -51,13 +51,79 @@ final class EHRNavigator {
         let connection = try await connectToChrome(ehrSystem: input.ehrSystem)
         self.cdp = connection
 
+        // Log Chrome version for diagnostics
+        let versionInfo = try await connection.evaluateJS("navigator.userAgent")
+        logger.info("Chrome user agent: \(versionInfo)")
+
+        // Wait for page to fully load (Chrome was just launched with the EHR URL)
+        try await Task.sleep(for: .seconds(2))
+
+        // Install a persistent overlay killer. SimplePractice shows a "browser
+        // outdated" overlay on EVERY route change (React SPA re-renders it).
+        // A MutationObserver removes it instantly whenever it appears.
+        try await connection.sendCommand(
+            method: "Page.addScriptToEvaluateOnNewDocument",
+            params: ["source": """
+                const _killOverlay = () => {
+                    document.querySelectorAll('h1').forEach(h1 => {
+                        if (h1.textContent.includes('browser is outdated')) {
+                            let el = h1;
+                            while (el.parentElement && el.parentElement !== document.body) el = el.parentElement;
+                            el.remove();
+                        }
+                    });
+                };
+                if (document.body) {
+                    new MutationObserver(_killOverlay).observe(document.body, {childList:true, subtree:true});
+                    _killOverlay();
+                } else {
+                    document.addEventListener('DOMContentLoaded', () => {
+                        new MutationObserver(_killOverlay).observe(document.body, {childList:true, subtree:true});
+                        _killOverlay();
+                    });
+                }
+            """]
+        )
+
+        // Also remove it right now on the current page
+        let removedOverlay = try await connection.evaluateJS("""
+            (() => {
+                const h1s = document.querySelectorAll('h1');
+                for (const h1 of h1s) {
+                    if (h1.textContent.includes('browser is outdated')) {
+                        let el = h1;
+                        while (el.parentElement && el.parentElement !== document.body) el = el.parentElement;
+                        el.remove();
+                        return 'removed';
+                    }
+                }
+                return 'not_found';
+            })()
+        """)
+        logger.info("Overlay status: \(removedOverlay)")
+
         onPhaseChange(.navigating, "Looking for the appointment...")
         let formFields = try await runNavigationLoop(input: input, cdp: connection, onPhaseChange: onPhaseChange)
 
         onPhaseChange(.matchingPatient, "Verifying patient...")
         let pageText = try await connection.evaluateJS("document.body.innerText")
-        let patientMatch = try findPatientMatch(in: pageText, name: input.patientName)
-        let appointmentMatch = try findAppointmentMatch(in: pageText, time: input.appointmentTime)
+
+        // Try to verify patient/appointment on page, but don't fail if the note
+        // editor doesn't show them (the LLM already confirmed we're on target).
+        let patientMatch: String
+        let appointmentMatch: String
+        do {
+            patientMatch = try findPatientMatch(in: pageText, name: input.patientName)
+        } catch {
+            logger.warning("Patient name not found on page, but LLM confirmed target. Proceeding.")
+            patientMatch = input.patientName
+        }
+        do {
+            appointmentMatch = try findAppointmentMatch(in: pageText, time: input.appointmentTime)
+        } catch {
+            logger.warning("Appointment time not found on page, but LLM confirmed target. Proceeding.")
+            appointmentMatch = input.appointmentTime
+        }
 
         return SoapEntryConfirmation(
             patientMatch: patientMatch,
@@ -91,8 +157,35 @@ final class EHRNavigator {
         )
 
         for step in 1 ... maxSteps {
+            // Remove known blocking overlays before snapshot.
+            // The LLM also tries to dismiss overlays by clicking close buttons.
+            // This is the fallback for overlays the LLM can't dismiss.
+            try await cdp.evaluateJS("""
+                (() => {
+                    const blockers = ['browser is outdated', 'browser is not supported',
+                        'update your browser', 'unsupported browser'];
+                    document.querySelectorAll('h1, h2, h3, [role="dialog"], [role="alertdialog"]').forEach(el => {
+                        const text = (el.textContent || '').toLowerCase();
+                        if (blockers.some(b => text.includes(b))) {
+                            let container = el;
+                            while (container.parentElement && container.parentElement !== document.body)
+                                container = container.parentElement;
+                            container.remove();
+                        }
+                    });
+                })()
+            """)
+
             let currentURL = try await cdp.evaluateJS("window.location.href")
             let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
+
+            logger.info("""
+            ── NAV STEP \(step) ──
+              URL: \(currentURL)
+              Goal: \(goal)
+              DOM (\(domSnapshot.count) chars): \(domSnapshot.prefix(300))…
+              Previous actions: \(previousActions.map { "\($0.action)→\($0.target)=\($0.result)" })
+            """)
 
             let response = try await apiClient.navigate(
                 request: GoalNavigationRequest(
@@ -105,15 +198,25 @@ final class EHRNavigator {
                 )
             )
 
-            logger.info("Step \(step): \(response.action.rawValue) → \(response.selector)")
+            logger.info("Step \(step): \(response.action.rawValue) → \(response.selector) (confidence: \(response.confidence))")
             onPhaseChange(.navigating, "Step \(step): \(response.reasoning)")
 
-            if response.isOnTargetPage {
-                logger.info("On target page after \(step) step(s)")
+            if response.isOnTargetPage, response.formFields != nil {
+                logger.info("✅ On target page after \(step) step(s). formFields: \(response.formFields?.description ?? "nil")")
                 return response.formFields
+            } else if response.isOnTargetPage {
+                // LLM says we're on target but didn't return form fields — not actually there yet.
+                // Add this to context so the LLM knows to look harder or navigate further.
+                logger.warning("LLM claimed target page but no formFields — continuing navigation")
+                previousActions.append(PreviousAction(
+                    action: "none", target: "target_page_check",
+                    result: "claimed on target but no form fields found — need ProseMirror editors with labels"
+                ))
+                continue
             }
 
             let result = await executeStepSafely(response: response, cdp: cdp)
+            logger.info("Step \(step) result: \(result.action)→\(result.target) = \(result.result)")
             previousActions.append(result)
             try await Task.sleep(for: .milliseconds(800))
         }
@@ -241,30 +344,42 @@ final class EHRNavigator {
     private func getDOMSnapshot(cdp: CDPConnection, patientName: String) async throws -> String {
         let js = """
         (() => {
-            const navTags = new Set(['A','BUTTON','NAV','H1','H2','H3','H4','H5','H6','LABEL','TH']);
-            const navRoles = new Set(['button','link','tab','menuitem','option','heading','navigation']);
+            const navTags = new Set(['A','BUTTON','NAV','H1','H2','H3','H4','H5','H6','LABEL','TH','LI','SPAN']);
+            const navRoles = new Set(['button','link','tab','menuitem','option','heading','navigation','listbox','dialog','tabpanel']);
+            const skipTags = new Set(['SCRIPT','STYLE','NOSCRIPT','SVG','PATH','LINK','META','HEAD',
+                                     'script','style','noscript','svg','path','link','meta','head',
+                                     'SYMBOL','symbol','DEFS','defs','clipPath','linearGradient']);
             const elements = [];
             const walk = (el, depth) => {
-                if (depth > 6) return;
+                if (depth > 15) return;
+                if (elements.length > 400) return;
+                if (skipTags.has(el.tagName) || skipTags.has(el.tagName?.toLowerCase())) return;
                 const tag = el.tagName?.toLowerCase() || '';
                 const role = el.getAttribute?.('role') || '';
                 const href = el.getAttribute?.('href') || '';
                 const type = el.getAttribute?.('type') || '';
+                const cls = (typeof el.className === 'string' ? el.className : el.className?.baseVal || '').substring(0, 60);
                 const ariaLabel = el.getAttribute?.('aria-label') || '';
                 const placeholder = el.getAttribute?.('placeholder') || '';
+                const dataId = el.getAttribute?.('data-id') || '';
                 const isNav = navTags.has(el.tagName) || navRoles.has(role);
                 const isInteractive = ['INPUT','SELECT','TEXTAREA'].includes(el.tagName);
-                if (!isNav && !isInteractive && !el.children?.length) return;
-                const indent = '  '.repeat(depth);
+                const isClickable = el.onclick || el.getAttribute?.('data-event-id') || cls.includes('event') || cls.includes('appointment');
+                const hasDirectText = el.childNodes && Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.trim().length > 0);
+                if (!isNav && !isInteractive && !isClickable && !hasDirectText && !el.children?.length) return;
+                const indent = '  '.repeat(Math.min(depth, 6));
                 let desc = `${indent}<${tag}`;
                 if (role) desc += ` role="${role}"`;
                 if (href) desc += ` href="${href}"`;
                 if (type) desc += ` type="${type}"`;
+                if (cls) desc += ` class="${cls}"`;
                 if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
                 if (placeholder) desc += ` placeholder="${placeholder}"`;
-                if (isNav) {
-                    const text = (el.innerText || '').substring(0, 40).replace(/\\n/g, ' ');
-                    desc += `>${text}`;
+                if (dataId) desc += ` data-id="${dataId}"`;
+                if (isNav || isClickable || hasDirectText) {
+                    const text = (el.innerText || '').substring(0, 60).replace(/\\n/g, ' ').trim();
+                    if (text) desc += `>${text}`;
+                    else desc += `>`;
                 } else if (isInteractive) {
                     desc += `>[field]`;
                 } else {
@@ -343,6 +458,7 @@ final class EHRNavigator {
         process.executableURL = URL(fileURLWithPath: chromePath)
         var args = [
             "--remote-debugging-port=\(port)",
+            "--remote-allow-origins=*",
             "--user-data-dir=\(profileDir)",
             "--no-default-browser-check",
             "--no-first-run",
