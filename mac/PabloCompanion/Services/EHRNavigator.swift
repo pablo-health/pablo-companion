@@ -103,7 +103,16 @@ final class EHRNavigator {
         logger.info("Overlay status: \(removedOverlay)")
 
         onPhaseChange(.navigating, "Looking for the appointment...")
-        let formFields = try await runNavigationLoop(input: input, cdp: connection, onPhaseChange: onPhaseChange)
+        let formFields: [String: String]?
+        if input.ehrSystem == "simplepractice" {
+            formFields = try await navigateSimplePracticeDeterministic(
+                input: input, cdp: connection, onPhaseChange: onPhaseChange
+            )
+        } else {
+            formFields = try await runNavigationLoop(
+                input: input, cdp: connection, onPhaseChange: onPhaseChange
+            )
+        }
 
         onPhaseChange(.matchingPatient, "Verifying patient...")
         let pageText = try await connection.evaluateJS("document.body.innerText")
@@ -134,7 +143,230 @@ final class EHRNavigator {
         )
     }
 
-    // MARK: - Navigation loop
+    // MARK: - SimplePractice deterministic navigation
+
+    /// Navigates SimplePractice using known UI patterns — no LLM needed.
+    ///
+    /// Flow: calendar date → click event → Add/View Note → Edit → check template → form fields
+    private func navigateSimplePracticeDeterministic(
+        input: NoteEntryInput,
+        cdp: CDPConnection,
+        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
+    ) async throws -> [String: String]? {
+        let loginCallback = onEHRLoginRequired
+        try await EHRLoginDetector.waitForLogin(
+            cdp: cdp, ehrSystem: input.ehrSystem,
+            onPhaseChange: onPhaseChange, onLoginRequired: loginCallback
+        )
+
+        // 1. Extract date from ISO timestamp and navigate directly
+        let dateString = String(input.appointmentTime.prefix(10)) // "2026-03-23"
+        onPhaseChange(.navigating, "Opening calendar for \(dateString)...")
+        _ = try await cdp.evaluateJS(
+            "window.location.href = '/calendar/appointments?currentDate=\(dateString)'"
+        )
+        try await Task.sleep(for: .seconds(2))
+        logger.info("Navigated to calendar date \(dateString)")
+
+        // 2. Remove overlays
+        try await removeBlockingOverlays(cdp: cdp)
+
+        // 3. Format the appointment time for text matching (e.g. "8:00 PM")
+        let displayTime = extractDisplayTime(from: input.appointmentTime)
+        onPhaseChange(.navigating, "Finding \(displayTime) appointment...")
+
+        // 4. Click the calendar event matching the time
+        let clickResult = try await cdp.evaluateJS("""
+            (() => {
+                // Try to find event by time text
+                const events = document.querySelectorAll('.fc-event');
+                for (const ev of events) {
+                    const text = ev.innerText || ev.textContent || '';
+                    if (text.includes('\(displayTime.escapedForJS)')) {
+                        ev.click();
+                        return 'clicked_by_time';
+                    }
+                }
+                // Fallback: click first event on the page
+                if (events.length > 0) {
+                    events[0].click();
+                    return 'clicked_first';
+                }
+                return 'no_events';
+            })()
+        """)
+        logger.info("Calendar event click: \(clickResult)")
+        if clickResult == "no_events" {
+            throw EHRNavigatorError.elementNotFound(selector: "calendar event for \(displayTime)")
+        }
+        try await Task.sleep(for: .seconds(1))
+
+        // 5. Click "Add Note" or "View Note" in the flyout
+        onPhaseChange(.navigating, "Opening note...")
+        let noteButtonResult = try await cdp.evaluateJS("""
+            (() => {
+                const all = document.querySelectorAll('a, button, [role="button"]');
+                for (const el of all) {
+                    const text = (el.innerText || '').trim();
+                    if (text === 'Add Note' || text === 'View Note') {
+                        el.click();
+                        return 'clicked_' + text.toLowerCase().replace(' ', '_');
+                    }
+                }
+                return 'not_found';
+            })()
+        """)
+        logger.info("Note button: \(noteButtonResult)")
+        if noteButtonResult == "not_found" {
+            throw EHRNavigatorError.elementNotFound(selector: "Add Note / View Note button")
+        }
+        try await Task.sleep(for: .seconds(2))
+
+        // 6. Check if we're in read-only mode (Edit button visible)
+        let editResult = try await cdp.evaluateJS("""
+            (() => {
+                const all = document.querySelectorAll('a, button, [role="button"]');
+                for (const el of all) {
+                    const text = (el.innerText || '').trim();
+                    if (text === 'Edit') {
+                        el.click();
+                        return 'clicked_edit';
+                    }
+                }
+                return 'already_editing';
+            })()
+        """)
+        logger.info("Edit mode: \(editResult)")
+        if editResult == "clicked_edit" {
+            try await Task.sleep(for: .seconds(2))
+        }
+
+        // 7. Remove overlays again (SPA re-renders them)
+        try await removeBlockingOverlays(cdp: cdp)
+
+        // 8. Check/switch note template
+        onPhaseChange(.navigating, "Checking note template...")
+        let templateResult = try await cdp.evaluateJS("""
+            (() => {
+                // Check current template name
+                const trigger = document.querySelector('.questionnaires-dropdown .ember-basic-dropdown-trigger');
+                if (!trigger) return 'no_dropdown';
+                const currentTemplate = (trigger.innerText || '').trim();
+                if (currentTemplate.toLowerCase().includes('\(input.noteType.lowercased().escapedForJS)')) {
+                    return 'correct_template';
+                }
+                // Need to switch — open dropdown and select
+                trigger.click();
+                return 'opened_dropdown:' + currentTemplate;
+            })()
+        """)
+        logger.info("Template check: \(templateResult)")
+
+        if templateResult.hasPrefix("opened_dropdown") {
+            try await Task.sleep(for: .milliseconds(500))
+            // Select the right template from the dropdown
+            let selectResult = try await cdp.evaluateJS("""
+                (() => {
+                    const items = document.querySelectorAll(
+                        '.ember-basic-dropdown-content li, ' +
+                        '.ember-basic-dropdown-content a, ' +
+                        '[class*="dropdown"] li, [class*="dropdown"] a'
+                    );
+                    for (const item of items) {
+                        const text = (item.innerText || '').trim();
+                        if (text.toLowerCase().includes('\(input.noteType.lowercased().escapedForJS)')) {
+                            item.click();
+                            return 'selected_' + text;
+                        }
+                    }
+                    // Fallback: click by text content anywhere
+                    const all = document.querySelectorAll('*');
+                    for (const el of all) {
+                        if (el.children.length === 0) {
+                            const text = (el.innerText || '').trim();
+                            if (text.toLowerCase() === '\(input.noteType.lowercased().escapedForJS)') {
+                                el.click();
+                                return 'selected_fallback_' + text;
+                            }
+                        }
+                    }
+                    return 'template_not_found';
+                })()
+            """)
+            logger.info("Template select: \(selectResult)")
+            try await Task.sleep(for: .seconds(1))
+        }
+
+        // 9. Detect form fields
+        onPhaseChange(.navigating, "Locating form fields...")
+        let fieldsJSON = try await cdp.evaluateJS("""
+            (() => {
+                const editors = document.querySelectorAll('.ProseMirror[aria-label]');
+                if (editors.length === 0) return 'no_editors';
+                const fields = {};
+                editors.forEach((ed, i) => {
+                    const label = ed.getAttribute('aria-label') || ('free-text-' + (i + 1));
+                    // Try to find the section label above this editor
+                    let labelEl = ed.previousElementSibling;
+                    if (!labelEl) labelEl = ed.parentElement?.previousElementSibling;
+                    const sectionName = (labelEl?.innerText || '').trim().toLowerCase();
+                    const selector = ".ProseMirror[aria-label='" + label + "']";
+                    if (sectionName) {
+                        fields[sectionName] = selector;
+                    } else {
+                        fields['field_' + (i + 1)] = selector;
+                    }
+                });
+                return JSON.stringify(fields);
+            })()
+        """)
+        logger.info("Form fields: \(fieldsJSON)")
+
+        if fieldsJSON == "no_editors" {
+            logger.warning("No ProseMirror editors found — may not be on edit page")
+            return nil
+        }
+
+        // Parse the JSON fields
+        guard let data = fieldsJSON.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            logger.warning("Could not parse form fields JSON: \(fieldsJSON)")
+            return nil
+        }
+
+        logger.info("✅ SimplePractice deterministic nav complete. Fields: \(parsed)")
+        return parsed
+    }
+
+    /// Removes known blocking overlays from the page.
+    private func removeBlockingOverlays(cdp: CDPConnection) async throws {
+        try await cdp.evaluateJS("""
+            (() => {
+                const blockers = ['browser is outdated', 'browser is not supported',
+                    'update your browser', 'unsupported browser'];
+                document.querySelectorAll('h1, h2, h3, [role="dialog"], [role="alertdialog"]').forEach(el => {
+                    const text = (el.textContent || '').toLowerCase();
+                    if (blockers.some(b => text.includes(b))) {
+                        let container = el;
+                        while (container.parentElement && container.parentElement !== document.body)
+                            container = container.parentElement;
+                        container.remove();
+                    }
+                });
+            })()
+        """)
+    }
+
+    /// Extracts display time (e.g. "8:00 PM") from ISO timestamp.
+    private func extractDisplayTime(from isoTime: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: isoTime) else { return "" }
+        let display = DateFormatter()
+        display.dateFormat = "h:mm a"
+        return display.string(from: date)
+    }
+
+    // MARK: - LLM navigation loop (experimental)
 
     /// Called when the EHR login page is detected. The UI should prompt the
     /// therapist to sign in and return `true` once they have.

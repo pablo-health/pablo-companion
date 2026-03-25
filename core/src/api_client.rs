@@ -221,13 +221,9 @@ pub async fn health_check(base_url: String) -> Result<HealthStatus, PabloError> 
             return Err(handle_error_response(response).await);
         }
 
-        let body: serde_json::Value =
-            response
-                .json()
-                .await
-                .map_err(|e| PabloError::JsonParse {
-                    message: e.to_string(),
-                })?;
+        let body: serde_json::Value = response.json().await.map_err(|e| PabloError::JsonParse {
+            message: e.to_string(),
+        })?;
 
         // Extract server_version (optional — older backends may not return it).
         let server_version = body
