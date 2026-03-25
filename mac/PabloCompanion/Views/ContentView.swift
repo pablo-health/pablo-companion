@@ -12,16 +12,22 @@ struct ContentView: View {
     @State private var detailSession: Session?
     @State private var activeSessionId: String?
     @State private var selectedTab = 0
+    @State private var versionBlock: UpdateRequiredView.Reason?
 
     var body: some View {
         Group {
-            switch authVM.authState {
-            case .unauthenticated, .authenticating, .tokenExpired:
-                LoginView(authViewModel: authVM)
+            if let reason = versionBlock {
+                UpdateRequiredView(reason: reason)
                     .frame(minWidth: 500, minHeight: 600)
+            } else {
+                switch authVM.authState {
+                case .unauthenticated, .authenticating, .tokenExpired:
+                    LoginView(authViewModel: authVM)
+                        .frame(minWidth: 500, minHeight: 600)
 
-            case .authenticated:
-                authenticatedContent
+                case .authenticated:
+                    authenticatedContent
+                }
             }
         }
         .background(Color.pabloCream)
@@ -107,6 +113,7 @@ struct ContentView: View {
         await patientVM.loadPatients()
         await recordingVM.loadAudioSources()
         await uploadVM.checkBackendHealth()
+        checkVersionCompatibility()
 
         transcriptionVM.backendURL = uploadVM.backendURL
         transcriptionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
@@ -122,6 +129,21 @@ struct ContentView: View {
 
         ModelManager.shared.onModelDownloaded = { [transcriptionVM] preset in
             Task { await transcriptionVM.processAwaitingModelRecordings(downloadedPreset: preset) }
+        }
+    }
+
+    private func checkVersionCompatibility() {
+        guard let status = uploadVM.lastHealthStatus else { return }
+        if status.clientUpdateRequired {
+            versionBlock = .clientUpdate(
+                currentVersion: AppConstants.appVersion,
+                minVersion: status.minClientVersion
+            )
+        } else if status.serverUpdateRequired {
+            versionBlock = .serverUpdate(
+                serverVersion: status.serverVersion,
+                minRequired: status.minServerVersion
+            )
         }
     }
 

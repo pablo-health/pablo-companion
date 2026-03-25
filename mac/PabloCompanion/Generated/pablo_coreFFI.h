@@ -248,6 +248,16 @@ typedef void (*UniffiForeignFutureCompleteVoid)(uint64_t, UniffiForeignFutureRes
 uint64_t uniffi_pablo_core_fn_func_accept_baa(RustBuffer base_url, RustBuffer token
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CANCEL_SOAP_ENTRY
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CANCEL_SOAP_ENTRY
+uint64_t uniffi_pablo_core_fn_func_cancel_soap_entry(RustBuffer base_url, RustBuffer token, RustBuffer session_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CONFIRM_SOAP_ENTRY
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CONFIRM_SOAP_ENTRY
+uint64_t uniffi_pablo_core_fn_func_confirm_soap_entry(RustBuffer base_url, RustBuffer token, RustBuffer session_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CORE_VERSION
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_CORE_VERSION
 RustBuffer uniffi_pablo_core_fn_func_core_version(RustCallStatus *_Nonnull out_status
@@ -309,6 +319,11 @@ uint64_t uniffi_pablo_core_fn_func_finalize_session(RustBuffer base_url, RustBuf
 uint64_t uniffi_pablo_core_fn_func_health_check(RustBuffer base_url
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_POLL_SOAP_ENTRY_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_POLL_SOAP_ENTRY_STATUS
+uint64_t uniffi_pablo_core_fn_func_poll_soap_entry_status(RustBuffer base_url, RustBuffer token, RustBuffer session_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_PREPROCESS_PCM
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_PREPROCESS_PCM
 uint64_t uniffi_pablo_core_fn_func_preprocess_pcm(RustBuffer path, uint8_t channels, uint32_t sample_rate
@@ -322,6 +337,11 @@ RustBuffer uniffi_pablo_core_fn_func_render_google_meet(RustBuffer transcript, R
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_SAVE_PREFERENCES
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_SAVE_PREFERENCES
 uint64_t uniffi_pablo_core_fn_func_save_preferences(RustBuffer base_url, RustBuffer token, RustBuffer preferences
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_START_SOAP_ENTRY
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_START_SOAP_ENTRY
+uint64_t uniffi_pablo_core_fn_func_start_soap_entry(RustBuffer base_url, RustBuffer token, RustBuffer session_id, RustBuffer request
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_FN_FUNC_TRANSCRIBE_AUDIO
@@ -620,6 +640,18 @@ uint16_t uniffi_pablo_core_checksum_func_accept_baa(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CANCEL_SOAP_ENTRY
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CANCEL_SOAP_ENTRY
+uint16_t uniffi_pablo_core_checksum_func_cancel_soap_entry(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CONFIRM_SOAP_ENTRY
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CONFIRM_SOAP_ENTRY
+uint16_t uniffi_pablo_core_checksum_func_confirm_soap_entry(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CORE_VERSION
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_CORE_VERSION
 uint16_t uniffi_pablo_core_checksum_func_core_version(void
@@ -692,6 +724,12 @@ uint16_t uniffi_pablo_core_checksum_func_health_check(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_POLL_SOAP_ENTRY_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_POLL_SOAP_ENTRY_STATUS
+uint16_t uniffi_pablo_core_checksum_func_poll_soap_entry_status(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_PREPROCESS_PCM
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_PREPROCESS_PCM
 uint16_t uniffi_pablo_core_checksum_func_preprocess_pcm(void
@@ -707,6 +745,12 @@ uint16_t uniffi_pablo_core_checksum_func_render_google_meet(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_SAVE_PREFERENCES
 #define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_SAVE_PREFERENCES
 uint16_t uniffi_pablo_core_checksum_func_save_preferences(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_START_SOAP_ENTRY
+#define UNIFFI_FFIDEF_UNIFFI_PABLO_CORE_CHECKSUM_FUNC_START_SOAP_ENTRY
+uint16_t uniffi_pablo_core_checksum_func_start_soap_entry(void
     
 );
 #endif

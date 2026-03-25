@@ -15,6 +15,7 @@ pub mod google_meet_renderer;
 pub mod models;
 #[cfg(feature = "transcription")]
 pub mod session_pipeline;
+pub mod soap_entry;
 #[cfg(feature = "transcription")]
 pub mod whisper_transcriber;
 
@@ -56,6 +57,8 @@ pub enum PabloError {
     NotFound { resource: String },
     #[error("Conflict: {message}")]
     ConflictState { message: String },
+    #[error("Update required: {message}")]
+    UpdateRequired { message: String },
 }
 
 // ── Public types exposed via UniFFI ──────────────────────────────────────────
@@ -212,6 +215,45 @@ pub async fn transcribe_audio(
     Err(PabloError::WhisperInit {
         message: "Transcription not available on this platform".to_string(),
     })
+}
+
+// ── SOAP Entry orchestration ─────────────────────────────────────────────────
+
+/// Start SOAP note entry into the therapist's EHR via the backend.
+pub async fn start_soap_entry(
+    base_url: String,
+    token: String,
+    session_id: String,
+    request: models::SoapEntryRequest,
+) -> Result<models::SoapEntryStatus, PabloError> {
+    soap_entry::start_soap_entry(base_url, token, session_id, request).await
+}
+
+/// Poll the current status of a SOAP entry job.
+pub async fn poll_soap_entry_status(
+    base_url: String,
+    token: String,
+    session_id: String,
+) -> Result<models::SoapEntryStatus, PabloError> {
+    soap_entry::poll_soap_entry_status(base_url, token, session_id).await
+}
+
+/// Confirm that the backend should commit the SOAP note into the EHR.
+pub async fn confirm_soap_entry(
+    base_url: String,
+    token: String,
+    session_id: String,
+) -> Result<models::SoapEntryStatus, PabloError> {
+    soap_entry::confirm_soap_entry(base_url, token, session_id).await
+}
+
+/// Cancel an in-progress SOAP entry job.
+pub async fn cancel_soap_entry(
+    base_url: String,
+    token: String,
+    session_id: String,
+) -> Result<models::SoapEntryStatus, PabloError> {
+    soap_entry::cancel_soap_entry(base_url, token, session_id).await
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
