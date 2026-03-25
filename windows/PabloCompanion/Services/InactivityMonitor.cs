@@ -1,10 +1,13 @@
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 namespace PabloCompanion.Services;
 
 /// <summary>
 /// Monitors system-wide user input idle time for HIPAA-compliant session timeout.
-/// Polls Win32 GetLastInputInfo every 60 seconds; fires OnTimeout after 15 minutes.
+/// Two triggers:
+/// 1. Idle timeout — polls GetLastInputInfo every 60s, fires after 15 minutes
+/// 2. Screen lock — fires immediately via SessionSwitch event
 /// </summary>
 public sealed class InactivityMonitor : IDisposable
 {
@@ -12,6 +15,7 @@ public sealed class InactivityMonitor : IDisposable
     private readonly System.Threading.Timer _timer;
 
     public event Action? OnTimeout;
+    public event Action? OnScreenLocked;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct LASTINPUTINFO
@@ -27,6 +31,16 @@ public sealed class InactivityMonitor : IDisposable
     {
         _timer = new System.Threading.Timer(
             CheckIdle, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+    }
+
+    private void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason == SessionSwitchReason.SessionLock)
+        {
+            OnScreenLocked?.Invoke();
+        }
     }
 
     private void CheckIdle(object? state)
@@ -41,5 +55,9 @@ public sealed class InactivityMonitor : IDisposable
         }
     }
 
-    public void Dispose() => _timer.Dispose();
+    public void Dispose()
+    {
+        _timer.Dispose();
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
+    }
 }

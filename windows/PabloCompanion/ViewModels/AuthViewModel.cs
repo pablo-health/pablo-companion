@@ -57,12 +57,19 @@ public partial class AuthViewModel : ObservableObject
         _apiClient = apiClient;
         _inactivityMonitor = inactivityMonitor;
         _inactivityMonitor.OnTimeout += OnInactivityTimeout;
+        _inactivityMonitor.OnScreenLocked += OnInactivityTimeout;
     }
 
     private void OnInactivityTimeout()
     {
-        // HIPAA: lock the app after 15 minutes of inactivity
-        App.UiDispatcherQueue?.TryEnqueue(SignOut);
+        // HIPAA: lock the app after 15 minutes of inactivity.
+        // Skip if a session is actively recording (therapist is talking, not at keyboard).
+        App.UiDispatcherQueue?.TryEnqueue(() =>
+        {
+            var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
+            if (recordingVm.ActiveSessionId != null) return;
+            SignOut();
+        });
     }
 
     /// <summary>
