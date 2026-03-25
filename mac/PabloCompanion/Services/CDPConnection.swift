@@ -34,14 +34,28 @@ final class CDPConnection: @unchecked Sendable {
             throw EHRNavigatorError.browserNotFound
         }
 
+        let conn = try await openTCPConnection(host: host, port: port)
+        self.connection = conn
+
+        try await performWebSocketUpgrade(
+            conn: conn, host: host, port: port, path: url.path
+        )
+
+        readFrameHeader()
+
+        let result = try await evaluateJS("'cdp_ok'")
+        guard result == "cdp_ok" else {
+            throw EHRNavigatorError.browserNotFound
+        }
+        logger.info("CDP connected to \(self.wsURL)")
+    }
+
+    private func openTCPConnection(host: String, port: Int) async throws -> NWConnection {
         let conn = NWConnection(
             host: .init(host),
             port: .init(integerLiteral: UInt16(port)),
             using: .tcp
         )
-        self.connection = conn
-
-        // TCP connect
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             self.lock.lock()
             self.connectContinuation = cont
@@ -51,37 +65,43 @@ final class CDPConnection: @unchecked Sendable {
                 guard let self else { return }
                 switch state {
                 case .ready:
-                    self.lock.lock()
-                    let c = self.connectContinuation
-                    self.connectContinuation = nil
-                    self.lock.unlock()
-                    c?.resume()
+                    self.resumeConnect()
                 case let .failed(error):
                     self.logger.error("CDP TCP failed: \(error)")
-                    self.lock.lock()
-                    let c = self.connectContinuation
-                    self.connectContinuation = nil
-                    self.lock.unlock()
-                    c?.resume(throwing: error)
+                    self.resumeConnect(throwing: error)
                 case .cancelled:
-                    self.lock.lock()
-                    let c = self.connectContinuation
-                    self.connectContinuation = nil
-                    self.lock.unlock()
-                    c?.resume(throwing: EHRNavigatorError.browserNotFound)
+                    self.resumeConnect(
+                        throwing: EHRNavigatorError.browserNotFound
+                    )
                 default:
                     break
                 }
             }
             conn.start(queue: self.queue)
         }
+        return conn
+    }
 
-        // WebSocket upgrade — manual HTTP request so we can log the response
-        let path = url.path.isEmpty ? "/" : url.path
+    private func resumeConnect(throwing error: Error? = nil) {
+        lock.lock()
+        let continuation = connectContinuation
+        connectContinuation = nil
+        lock.unlock()
+        if let error {
+            continuation?.resume(throwing: error)
+        } else {
+            continuation?.resume()
+        }
+    }
+
+    private func performWebSocketUpgrade(
+        conn: NWConnection, host: String, port: Int, path: String
+    ) async throws {
+        let wsPath = path.isEmpty ? "/" : path
         let key = Data((0 ..< 16).map { _ in UInt8.random(in: 0 ... 255) })
             .base64EncodedString()
         let request = [
-            "GET \(path) HTTP/1.1",
+            "GET \(wsPath) HTTP/1.1",
             "Host: \(host):\(port)",
             "Upgrade: websocket",
             "Connection: Upgrade",
@@ -103,16 +123,6 @@ final class CDPConnection: @unchecked Sendable {
                 selector: String(response.prefix(200))
             )
         }
-
-        // Start frame receive loop
-        readFrameHeader()
-
-        // Verify with a test CDP call
-        let result = try await evaluateJS("'cdp_ok'")
-        guard result == "cdp_ok" else {
-            throw EHRNavigatorError.browserNotFound
-        }
-        logger.info("CDP connected to \(self.wsURL)")
     }
 
     /// Sends an arbitrary CDP command (e.g. "Emulation.setUserAgentOverride").
@@ -317,8 +327,11 @@ final class CDPConnection: @unchecked Sendable {
         guard let conn = connection else { throw EHRNavigatorError.browserNotFound }
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             conn.send(content: data, completion: .contentProcessed { error in
-                if let error { cont.resume(throwing: error) }
-                else { cont.resume() }
+                if let error {
+                    cont.resume(throwing: error)
+                } else {
+                    cont.resume()
+                }
             })
         }
     }
@@ -331,12 +344,15 @@ final class CDPConnection: @unchecked Sendable {
         while true {
             let chunk: Data = try await withCheckedThrowingContinuation { cont in
                 conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, error in
-                    if let data { cont.resume(returning: data) }
-                    else { cont.resume(throwing: error ?? EHRNavigatorError.browserNotFound) }
+                    if let data {
+                        cont.resume(returning: data)
+                    } else {
+                        cont.resume(throwing: error ?? EHRNavigatorError.browserNotFound)
+                    }
                 }
             }
             buffer.append(chunk)
-            if buffer.range(of: separator) != nil {
+            if buffer.contains(separator) {
                 return String(data: buffer, encoding: .utf8) ?? "<binary response>"
             }
             if buffer.count > 8192 { break }

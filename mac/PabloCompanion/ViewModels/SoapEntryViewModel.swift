@@ -91,10 +91,15 @@ final class SoapEntryViewModel {
         phase = .connecting
 
         do {
-            let result = try await navigator.navigateToSoapForm(input: input) { [weak self] newPhase, message in
-                self?.phase = newPhase
-                self?.statusMessage = message
+            let onPhase: @Sendable (SoapEntryPhase, String) -> Void = { [weak self] newPhase, message in
+                Task { @MainActor in
+                    self?.phase = newPhase
+                    self?.statusMessage = message
+                }
             }
+            let result = try await navigator.navigateToSoapForm(
+                input: input, onPhaseChange: onPhase
+            )
 
             confirmation = result
             phase = .awaitingConfirmation

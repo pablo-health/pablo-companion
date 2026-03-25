@@ -9,8 +9,8 @@ import os
 /// says we're on the target page. PHI is stripped before every LLM call.
 @MainActor
 final class EHRNavigator {
-    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "EHRNavigator")
-    private let apiClient: NavigationAPIClient
+    let logger = Logger(subsystem: AppConstants.appBundleID, category: "EHRNavigator")
+    let apiClient: NavigationAPIClient
     private var cdp: CDPConnection?
 
     /// Called when Chrome needs to be relaunched with debugging enabled.
@@ -18,7 +18,7 @@ final class EHRNavigator {
     var onChromeRelaunchNeeded: (() async -> Bool)?
 
     /// Maximum navigation steps before giving up (safety limit).
-    private let maxSteps = 15
+    let maxSteps = 15
 
     init(apiClient: NavigationAPIClient) {
         self.apiClient = apiClient
@@ -45,92 +45,116 @@ final class EHRNavigator {
     /// 6. Return confirmation for therapist review
     func navigateToSoapForm(
         input: NoteEntryInput,
-        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
+        onPhaseChange: @escaping @Sendable (SoapEntryPhase, String) -> Void
     ) async throws -> SoapEntryConfirmation {
         onPhaseChange(.connecting, "Connecting to browser...")
-        let connection = try await connectToChrome(ehrSystem: input.ehrSystem)
+        let connection = try await setupCDPConnection(
+            ehrSystem: input.ehrSystem
+        )
+
+        onPhaseChange(.navigating, "Looking for the appointment...")
+        let formFields = try await navigateToForm(
+            input: input, cdp: connection, onPhaseChange: onPhaseChange
+        )
+
+        onPhaseChange(.matchingPatient, "Verifying patient...")
+        return try await verifyAndConfirm(
+            input: input, cdp: connection, formFields: formFields
+        )
+    }
+
+    private func setupCDPConnection(
+        ehrSystem: String
+    ) async throws -> CDPConnection {
+        let connection = try await connectToChrome(ehrSystem: ehrSystem)
         self.cdp = connection
 
-        // Log Chrome version for diagnostics
-        let versionInfo = try await connection.evaluateJS("navigator.userAgent")
-        logger.info("Chrome user agent: \(versionInfo)")
+        let userAgent = try await connection.evaluateJS(
+            "navigator.userAgent"
+        )
+        logger.info("Chrome user agent: \(userAgent)")
 
-        // Wait for page to fully load (Chrome was just launched with the EHR URL)
         try await Task.sleep(for: .seconds(2))
+        try await installOverlayKiller(cdp: connection)
+        try await SimplePracticeNavigator.removeBlockingOverlays(
+            cdp: connection
+        )
+        return connection
+    }
 
-        // Install a persistent overlay killer. SimplePractice shows a "browser
-        // outdated" overlay on EVERY route change (React SPA re-renders it).
-        // A MutationObserver removes it instantly whenever it appears.
-        try await connection.sendCommand(
+    private func installOverlayKiller(cdp: CDPConnection) async throws {
+        try await cdp.sendCommand(
             method: "Page.addScriptToEvaluateOnNewDocument",
             params: ["source": """
-                const _killOverlay = () => {
+                const _ko = () => {
                     document.querySelectorAll('h1').forEach(h1 => {
                         if (h1.textContent.includes('browser is outdated')) {
                             let el = h1;
-                            while (el.parentElement && el.parentElement !== document.body) el = el.parentElement;
+                            while (el.parentElement
+                                && el.parentElement !== document.body)
+                                el = el.parentElement;
                             el.remove();
                         }
                     });
                 };
                 if (document.body) {
-                    new MutationObserver(_killOverlay).observe(document.body, {childList:true, subtree:true});
-                    _killOverlay();
+                    new MutationObserver(_ko).observe(
+                        document.body, {childList:true, subtree:true}
+                    );
+                    _ko();
                 } else {
                     document.addEventListener('DOMContentLoaded', () => {
-                        new MutationObserver(_killOverlay).observe(document.body, {childList:true, subtree:true});
-                        _killOverlay();
+                        new MutationObserver(_ko).observe(
+                            document.body, {childList:true, subtree:true}
+                        );
+                        _ko();
                     });
                 }
             """]
         )
+    }
 
-        // Also remove it right now on the current page
-        let removedOverlay = try await connection.evaluateJS("""
-            (() => {
-                const h1s = document.querySelectorAll('h1');
-                for (const h1 of h1s) {
-                    if (h1.textContent.includes('browser is outdated')) {
-                        let el = h1;
-                        while (el.parentElement && el.parentElement !== document.body) el = el.parentElement;
-                        el.remove();
-                        return 'removed';
-                    }
-                }
-                return 'not_found';
-            })()
-        """)
-        logger.info("Overlay status: \(removedOverlay)")
-
-        onPhaseChange(.navigating, "Looking for the appointment...")
-        let formFields: [String: String]?
+    private func navigateToForm(
+        input: NoteEntryInput,
+        cdp: CDPConnection,
+        onPhaseChange: @escaping @Sendable (SoapEntryPhase, String) -> Void
+    ) async throws -> [String: String]? {
         if input.ehrSystem == "simplepractice" {
-            formFields = try await navigateSimplePracticeDeterministic(
-                input: input, cdp: connection, onPhaseChange: onPhaseChange
-            )
-        } else {
-            formFields = try await runNavigationLoop(
-                input: input, cdp: connection, onPhaseChange: onPhaseChange
+            return try await SimplePracticeNavigator.navigate(
+                input: input, cdp: cdp, onPhaseChange: onPhaseChange
             )
         }
+        return try await runNavigationLoop(
+            input: input, cdp: cdp, onPhaseChange: onPhaseChange
+        )
+    }
 
-        onPhaseChange(.matchingPatient, "Verifying patient...")
-        let pageText = try await connection.evaluateJS("document.body.innerText")
+    private func verifyAndConfirm(
+        input: NoteEntryInput,
+        cdp: CDPConnection,
+        formFields: [String: String]?
+    ) async throws -> SoapEntryConfirmation {
+        let pageText = try await cdp.evaluateJS(
+            "document.body.innerText"
+        )
 
-        // Try to verify patient/appointment on page, but don't fail if the note
-        // editor doesn't show them (the LLM already confirmed we're on target).
         let patientMatch: String
-        let appointmentMatch: String
         do {
-            patientMatch = try findPatientMatch(in: pageText, name: input.patientName)
+            patientMatch = try findPatientMatch(
+                in: pageText, name: input.patientName
+            )
         } catch {
-            logger.warning("Patient name not found on page, but LLM confirmed target. Proceeding.")
+            logger.warning("Patient not found on page. Proceeding.")
             patientMatch = input.patientName
         }
+
+        let appointmentMatch: String
         do {
-            appointmentMatch = try findAppointmentMatch(in: pageText, time: input.appointmentTime)
+            appointmentMatch = try findAppointmentMatch(
+                in: pageText, time: input.appointmentTime
+            )
         } catch {
-            logger.warning("Appointment time not found on page, but LLM confirmed target. Proceeding.")
+            logger.warning("Time not found on page. Proceeding.")
             appointmentMatch = input.appointmentTime
         }
 
@@ -138,336 +162,16 @@ final class EHRNavigator {
             patientMatch: patientMatch,
             appointmentMatch: appointmentMatch,
             ehrTargetField: "\(input.ehrSystem) → \(input.noteType)",
-            soapPreview: input.sections.first.map { "\($0.label.prefix(1)): \($0.content.prefix(80))..." },
+            soapPreview: input.sections.first.map {
+                "\($0.label.prefix(1)): \($0.content.prefix(80))..."
+            },
             formFields: formFields
         )
     }
 
-    // MARK: - SimplePractice deterministic navigation
-
-    /// Navigates SimplePractice using known UI patterns — no LLM needed.
-    ///
-    /// Flow: calendar date → click event → Add/View Note → Edit → check template → form fields
-    private func navigateSimplePracticeDeterministic(
-        input: NoteEntryInput,
-        cdp: CDPConnection,
-        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
-    ) async throws -> [String: String]? {
-        let loginCallback = onEHRLoginRequired
-        try await EHRLoginDetector.waitForLogin(
-            cdp: cdp, ehrSystem: input.ehrSystem,
-            onPhaseChange: onPhaseChange, onLoginRequired: loginCallback
-        )
-
-        // 1. Extract date from ISO timestamp and navigate directly
-        let dateString = String(input.appointmentTime.prefix(10)) // "2026-03-23"
-        onPhaseChange(.navigating, "Opening calendar for \(dateString)...")
-        _ = try await cdp.evaluateJS(
-            "window.location.href = '/calendar/appointments?currentDate=\(dateString)'"
-        )
-        try await Task.sleep(for: .seconds(2))
-        logger.info("Navigated to calendar date \(dateString)")
-
-        // 2. Remove overlays
-        try await removeBlockingOverlays(cdp: cdp)
-
-        // 3. Format the appointment time for text matching (e.g. "8:00 PM")
-        let displayTime = extractDisplayTime(from: input.appointmentTime)
-        onPhaseChange(.navigating, "Finding \(displayTime) appointment...")
-
-        // 4. Click the calendar event matching the time
-        let clickResult = try await cdp.evaluateJS("""
-            (() => {
-                // Try to find event by time text
-                const events = document.querySelectorAll('.fc-event');
-                for (const ev of events) {
-                    const text = ev.innerText || ev.textContent || '';
-                    if (text.includes('\(displayTime.escapedForJS)')) {
-                        ev.click();
-                        return 'clicked_by_time';
-                    }
-                }
-                // Fallback: click first event on the page
-                if (events.length > 0) {
-                    events[0].click();
-                    return 'clicked_first';
-                }
-                return 'no_events';
-            })()
-        """)
-        logger.info("Calendar event click: \(clickResult)")
-        if clickResult == "no_events" {
-            throw EHRNavigatorError.elementNotFound(selector: "calendar event for \(displayTime)")
-        }
-        try await Task.sleep(for: .seconds(1))
-
-        // 5. Click "Add Note" or "View Note" in the flyout
-        onPhaseChange(.navigating, "Opening note...")
-        let noteButtonResult = try await cdp.evaluateJS("""
-            (() => {
-                const all = document.querySelectorAll('a, button, [role="button"]');
-                for (const el of all) {
-                    const text = (el.innerText || '').trim();
-                    if (text === 'Add Note' || text === 'View Note') {
-                        el.click();
-                        return 'clicked_' + text.toLowerCase().replace(' ', '_');
-                    }
-                }
-                return 'not_found';
-            })()
-        """)
-        logger.info("Note button: \(noteButtonResult)")
-        if noteButtonResult == "not_found" {
-            throw EHRNavigatorError.elementNotFound(selector: "Add Note / View Note button")
-        }
-        try await Task.sleep(for: .seconds(2))
-
-        // 6. Check if we're in read-only mode (Edit button visible)
-        let editResult = try await cdp.evaluateJS("""
-            (() => {
-                const all = document.querySelectorAll('a, button, [role="button"]');
-                for (const el of all) {
-                    const text = (el.innerText || '').trim();
-                    if (text === 'Edit') {
-                        el.click();
-                        return 'clicked_edit';
-                    }
-                }
-                return 'already_editing';
-            })()
-        """)
-        logger.info("Edit mode: \(editResult)")
-        if editResult == "clicked_edit" {
-            try await Task.sleep(for: .seconds(2))
-        }
-
-        // 7. Remove overlays again (SPA re-renders them)
-        try await removeBlockingOverlays(cdp: cdp)
-
-        // 8. Check/switch note template
-        onPhaseChange(.navigating, "Checking note template...")
-        let templateResult = try await cdp.evaluateJS("""
-            (() => {
-                // Check current template name
-                const trigger = document.querySelector('.questionnaires-dropdown .ember-basic-dropdown-trigger');
-                if (!trigger) return 'no_dropdown';
-                const currentTemplate = (trigger.innerText || '').trim();
-                if (currentTemplate.toLowerCase().includes('\(input.noteType.lowercased().escapedForJS)')) {
-                    return 'correct_template';
-                }
-                // Need to switch — open dropdown and select
-                trigger.click();
-                return 'opened_dropdown:' + currentTemplate;
-            })()
-        """)
-        logger.info("Template check: \(templateResult)")
-
-        if templateResult.hasPrefix("opened_dropdown") {
-            try await Task.sleep(for: .milliseconds(500))
-            // Select the right template from the dropdown
-            let selectResult = try await cdp.evaluateJS("""
-                (() => {
-                    const items = document.querySelectorAll(
-                        '.ember-basic-dropdown-content li, ' +
-                        '.ember-basic-dropdown-content a, ' +
-                        '[class*="dropdown"] li, [class*="dropdown"] a'
-                    );
-                    for (const item of items) {
-                        const text = (item.innerText || '').trim();
-                        if (text.toLowerCase().includes('\(input.noteType.lowercased().escapedForJS)')) {
-                            item.click();
-                            return 'selected_' + text;
-                        }
-                    }
-                    // Fallback: click by text content anywhere
-                    const all = document.querySelectorAll('*');
-                    for (const el of all) {
-                        if (el.children.length === 0) {
-                            const text = (el.innerText || '').trim();
-                            if (text.toLowerCase() === '\(input.noteType.lowercased().escapedForJS)') {
-                                el.click();
-                                return 'selected_fallback_' + text;
-                            }
-                        }
-                    }
-                    return 'template_not_found';
-                })()
-            """)
-            logger.info("Template select: \(selectResult)")
-            try await Task.sleep(for: .seconds(1))
-        }
-
-        // 9. Detect form fields
-        onPhaseChange(.navigating, "Locating form fields...")
-        let fieldsJSON = try await cdp.evaluateJS("""
-            (() => {
-                const editors = document.querySelectorAll('.ProseMirror[aria-label]');
-                if (editors.length === 0) return 'no_editors';
-                const fields = {};
-                editors.forEach((ed, i) => {
-                    const label = ed.getAttribute('aria-label') || ('free-text-' + (i + 1));
-                    // Try to find the section label above this editor
-                    let labelEl = ed.previousElementSibling;
-                    if (!labelEl) labelEl = ed.parentElement?.previousElementSibling;
-                    const sectionName = (labelEl?.innerText || '').trim().toLowerCase();
-                    const selector = ".ProseMirror[aria-label='" + label + "']";
-                    if (sectionName) {
-                        fields[sectionName] = selector;
-                    } else {
-                        fields['field_' + (i + 1)] = selector;
-                    }
-                });
-                return JSON.stringify(fields);
-            })()
-        """)
-        logger.info("Form fields: \(fieldsJSON)")
-
-        if fieldsJSON == "no_editors" {
-            logger.warning("No ProseMirror editors found — may not be on edit page")
-            return nil
-        }
-
-        // Parse the JSON fields
-        guard let data = fieldsJSON.data(using: .utf8),
-              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
-            logger.warning("Could not parse form fields JSON: \(fieldsJSON)")
-            return nil
-        }
-
-        logger.info("✅ SimplePractice deterministic nav complete. Fields: \(parsed)")
-        return parsed
-    }
-
-    /// Removes known blocking overlays from the page.
-    private func removeBlockingOverlays(cdp: CDPConnection) async throws {
-        try await cdp.evaluateJS("""
-            (() => {
-                const blockers = ['browser is outdated', 'browser is not supported',
-                    'update your browser', 'unsupported browser'];
-                document.querySelectorAll('h1, h2, h3, [role="dialog"], [role="alertdialog"]').forEach(el => {
-                    const text = (el.textContent || '').toLowerCase();
-                    if (blockers.some(b => text.includes(b))) {
-                        let container = el;
-                        while (container.parentElement && container.parentElement !== document.body)
-                            container = container.parentElement;
-                        container.remove();
-                    }
-                });
-            })()
-        """)
-    }
-
-    /// Extracts display time (e.g. "8:00 PM") from ISO timestamp.
-    private func extractDisplayTime(from isoTime: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        guard let date = formatter.date(from: isoTime) else { return "" }
-        let display = DateFormatter()
-        display.dateFormat = "h:mm a"
-        return display.string(from: date)
-    }
-
-    // MARK: - LLM navigation loop (experimental)
-
     /// Called when the EHR login page is detected. The UI should prompt the
     /// therapist to sign in and return `true` once they have.
     var onEHRLoginRequired: ((_ ehrSystem: String) async -> Bool)?
-
-    private func runNavigationLoop(
-        input: NoteEntryInput,
-        cdp: CDPConnection,
-        onPhaseChange: @escaping (SoapEntryPhase, String) -> Void
-    ) async throws -> [String: String]? {
-        let goal = "Navigate to the \(input.noteType) form for the appointment at \(input.appointmentDisplay)"
-        var previousActions: [PreviousAction] = []
-
-        let loginCallback = onEHRLoginRequired
-        try await EHRLoginDetector.waitForLogin(
-            cdp: cdp,
-            ehrSystem: input.ehrSystem,
-            onPhaseChange: onPhaseChange,
-            onLoginRequired: loginCallback
-        )
-
-        for step in 1 ... maxSteps {
-            // Remove known blocking overlays before snapshot.
-            // The LLM also tries to dismiss overlays by clicking close buttons.
-            // This is the fallback for overlays the LLM can't dismiss.
-            try await cdp.evaluateJS("""
-                (() => {
-                    const blockers = ['browser is outdated', 'browser is not supported',
-                        'update your browser', 'unsupported browser'];
-                    document.querySelectorAll('h1, h2, h3, [role="dialog"], [role="alertdialog"]').forEach(el => {
-                        const text = (el.textContent || '').toLowerCase();
-                        if (blockers.some(b => text.includes(b))) {
-                            let container = el;
-                            while (container.parentElement && container.parentElement !== document.body)
-                                container = container.parentElement;
-                            container.remove();
-                        }
-                    });
-                })()
-            """)
-
-            let currentURL = try await cdp.evaluateJS("window.location.href")
-            let domSnapshot = try await getDOMSnapshot(cdp: cdp, patientName: input.patientName)
-
-            logger.info("""
-            ── NAV STEP \(step) ──
-              URL: \(currentURL)
-              Goal: \(goal)
-              DOM (\(domSnapshot.count) chars): \(domSnapshot.prefix(300))…
-              Previous actions: \(previousActions.map { "\($0.action)→\($0.target)=\($0.result)" })
-            """)
-
-            let response = try await apiClient.navigate(
-                request: GoalNavigationRequest(
-                    ehrSystem: input.ehrSystem,
-                    goal: goal,
-                    currentUrl: currentURL,
-                    domSnapshot: domSnapshot,
-                    previousActions: previousActions,
-                    failedAction: nil
-                )
-            )
-
-            logger.info("Step \(step): \(response.action.rawValue) → \(response.selector) (confidence: \(response.confidence))")
-            onPhaseChange(.navigating, "Step \(step): \(response.reasoning)")
-
-            if response.isOnTargetPage, response.formFields != nil {
-                logger.info("✅ On target page after \(step) step(s). formFields: \(response.formFields?.description ?? "nil")")
-                return response.formFields
-            } else if response.isOnTargetPage {
-                // LLM says we're on target but didn't return form fields — not actually there yet.
-                // Add this to context so the LLM knows to look harder or navigate further.
-                logger.warning("LLM claimed target page but no formFields — continuing navigation")
-                previousActions.append(PreviousAction(
-                    action: "none", target: "target_page_check",
-                    result: "claimed on target but no form fields found — need ProseMirror editors with labels"
-                ))
-                continue
-            }
-
-            let result = await executeStepSafely(response: response, cdp: cdp)
-            logger.info("Step \(step) result: \(result.action)→\(result.target) = \(result.result)")
-            previousActions.append(result)
-            try await Task.sleep(for: .milliseconds(800))
-        }
-        return nil
-    }
-
-    private func executeStepSafely(response: GoalNavigationResponse, cdp: CDPConnection) async -> PreviousAction {
-        do {
-            try await executeAction(response.action, selector: response.selector, cdp: cdp)
-            return PreviousAction(action: response.action.rawValue, target: response.selector, result: "success")
-        } catch {
-            logger.warning("Step failed: \(error.localizedDescription)")
-            return PreviousAction(
-                action: response.action.rawValue,
-                target: response.selector,
-                result: "failed: \(error.localizedDescription)"
-            )
-        }
-    }
 
     /// After therapist confirms, fill the note fields and leave for them to review/submit.
     func commitEntry(
@@ -524,108 +228,6 @@ final class EHRNavigator {
 
         // Done — therapist reviews and clicks save/sign themselves
         onPhaseChange(.completed, "Note entered. Please review and sign.")
-    }
-
-    // MARK: - CDP actions
-
-    private func executeAction(_ action: StepAction, selector: String, cdp: CDPConnection) async throws {
-        try SelectorValidator.validate(selector)
-
-        switch action {
-        case .click:
-            let js = """
-            (() => {
-                const el = document.querySelector('\(selector.escapedForJS)');
-                if (el) { el.click(); return 'clicked'; }
-                // Fallback: find by text content
-                const all = document.querySelectorAll('a, button, [role="button"]');
-                for (const e of all) {
-                    if (e.innerText.trim() === '\(selector.escapedForJS)') { e.click(); return 'clicked-by-text'; }
-                }
-                return 'not_found';
-            })()
-            """
-            let result = try await cdp.evaluateJS(js)
-            if result == "not_found" {
-                throw EHRNavigatorError.elementNotFound(selector: selector)
-            }
-
-        case .navigate:
-            let target = selector.hasPrefix("http") ? selector : selector
-            _ = try await cdp.evaluateJS("window.location.href = '\(target.escapedForJS)'")
-
-        case .fill:
-            break // Handled in commitEntry
-
-        case .wait:
-            try await Task.sleep(for: .seconds(1))
-
-        case .none:
-            break
-        }
-    }
-
-    // MARK: - DOM snapshot (HIPAA-safe)
-
-    /// Gets a navigation-only DOM snapshot for the LLM.
-    ///
-    /// Security: only sends structural/interactive elements to the LLM.
-    /// Text content is included ONLY for navigation elements (links, buttons,
-    /// tabs, headings). All other text is replaced with `[content]`.
-    /// PHI (patient names, phone, email, DOB, diagnosis codes) is stripped.
-    private func getDOMSnapshot(cdp: CDPConnection, patientName: String) async throws -> String {
-        let js = """
-        (() => {
-            const navTags = new Set(['A','BUTTON','NAV','H1','H2','H3','H4','H5','H6','LABEL','TH','LI','SPAN']);
-            const navRoles = new Set(['button','link','tab','menuitem','option','heading','navigation','listbox','dialog','tabpanel']);
-            const skipTags = new Set(['SCRIPT','STYLE','NOSCRIPT','SVG','PATH','LINK','META','HEAD',
-                                     'script','style','noscript','svg','path','link','meta','head',
-                                     'SYMBOL','symbol','DEFS','defs','clipPath','linearGradient']);
-            const elements = [];
-            const walk = (el, depth) => {
-                if (depth > 15) return;
-                if (elements.length > 400) return;
-                if (skipTags.has(el.tagName) || skipTags.has(el.tagName?.toLowerCase())) return;
-                const tag = el.tagName?.toLowerCase() || '';
-                const role = el.getAttribute?.('role') || '';
-                const href = el.getAttribute?.('href') || '';
-                const type = el.getAttribute?.('type') || '';
-                const cls = (typeof el.className === 'string' ? el.className : el.className?.baseVal || '').substring(0, 60);
-                const ariaLabel = el.getAttribute?.('aria-label') || '';
-                const placeholder = el.getAttribute?.('placeholder') || '';
-                const dataId = el.getAttribute?.('data-id') || '';
-                const isNav = navTags.has(el.tagName) || navRoles.has(role);
-                const isInteractive = ['INPUT','SELECT','TEXTAREA'].includes(el.tagName);
-                const isClickable = el.onclick || el.getAttribute?.('data-event-id') || cls.includes('event') || cls.includes('appointment');
-                const hasDirectText = el.childNodes && Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.trim().length > 0);
-                if (!isNav && !isInteractive && !isClickable && !hasDirectText && !el.children?.length) return;
-                const indent = '  '.repeat(Math.min(depth, 6));
-                let desc = `${indent}<${tag}`;
-                if (role) desc += ` role="${role}"`;
-                if (href) desc += ` href="${href}"`;
-                if (type) desc += ` type="${type}"`;
-                if (cls) desc += ` class="${cls}"`;
-                if (ariaLabel) desc += ` aria-label="${ariaLabel}"`;
-                if (placeholder) desc += ` placeholder="${placeholder}"`;
-                if (dataId) desc += ` data-id="${dataId}"`;
-                if (isNav || isClickable || hasDirectText) {
-                    const text = (el.innerText || '').substring(0, 60).replace(/\\n/g, ' ').trim();
-                    if (text) desc += `>${text}`;
-                    else desc += `>`;
-                } else if (isInteractive) {
-                    desc += `>[field]`;
-                } else {
-                    desc += `>`;
-                }
-                elements.push(desc);
-                for (const child of (el.children || [])) walk(child, depth + 1);
-            };
-            walk(document.body, 0);
-            return elements.join('\\n');
-        })()
-        """
-        let rawSnapshot = try await cdp.evaluateJS(js)
-        return PHISanitizer.strip(from: rawSnapshot, patientName: patientName)
     }
 
     // MARK: - CDP connection
