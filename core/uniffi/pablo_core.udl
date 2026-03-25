@@ -433,18 +433,6 @@ dictionary UploadResponse {
 
 // ── SOAP Entry types ────────────────────────────────────────────────────────
 
-// Phase of the EHR entry pipeline.
-enum SoapEntryPhase {
-    "Queued",
-    "Navigating",
-    "MatchingPatient",
-    "AwaitingConfirmation",
-    "Entering",
-    "Completed",
-    "Failed",
-    "Cancelled",
-};
-
 // Request to start SOAP note entry into an EHR.
 dictionary SoapEntryRequest {
     string ehr_system;
@@ -456,7 +444,7 @@ dictionary SoapEntryRequest {
 // Current status of a SOAP entry job.
 dictionary SoapEntryStatus {
     string job_id;
-    SoapEntryPhase phase;
+    string phase;
     string message;
     string? patient_match;
     string? appointment_match;
@@ -464,10 +452,3 @@ dictionary SoapEntryStatus {
     string? error;
 };
 
-// Preview data for therapist confirmation before committing.
-dictionary SoapEntryConfirmation {
-    string patient_match;
-    string appointment_match;
-    string ehr_target_field;
-    string? soap_preview;
-};

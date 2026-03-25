@@ -252,8 +252,8 @@ pub struct SoapEntryRequest {
 pub struct SoapEntryStatus {
     /// Backend-assigned job ID for this entry attempt.
     pub job_id: String,
-    /// Current phase of the pipeline.
-    pub phase: SoapEntryPhase,
+    /// Current phase of the pipeline (e.g. "navigating", "awaiting_confirmation").
+    pub phase: String,
     /// Human-readable status message for the therapist.
     pub message: String,
     /// Patient name as matched in the EHR (for confirmation display).

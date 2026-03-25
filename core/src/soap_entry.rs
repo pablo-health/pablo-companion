@@ -210,7 +210,7 @@ mod tests {
         }"#;
         let status: SoapEntryStatus = serde_json::from_str(json).unwrap();
         assert_eq!(status.job_id, "job-123");
-        assert_eq!(status.phase, SoapEntryPhase::AwaitingConfirmation);
+        assert_eq!(status.phase, "awaiting_confirmation");
         assert_eq!(status.patient_match.as_deref(), Some("Jane Smith"));
         assert!(status.error.is_none());
     }

@@ -1368,68 +1368,6 @@ public func FfiConverterTypeSessionListResponse_lower(_ value: SessionListRespon
 }
 
 
-public struct SoapEntryConfirmation: Equatable, Hashable {
-    public var patientMatch: String
-    public var appointmentMatch: String
-    public var ehrTargetField: String
-    public var soapPreview: String?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(patientMatch: String, appointmentMatch: String, ehrTargetField: String, soapPreview: String?) {
-        self.patientMatch = patientMatch
-        self.appointmentMatch = appointmentMatch
-        self.ehrTargetField = ehrTargetField
-        self.soapPreview = soapPreview
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SoapEntryConfirmation: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSoapEntryConfirmation: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SoapEntryConfirmation {
-        return
-            try SoapEntryConfirmation(
-                patientMatch: FfiConverterString.read(from: &buf), 
-                appointmentMatch: FfiConverterString.read(from: &buf), 
-                ehrTargetField: FfiConverterString.read(from: &buf), 
-                soapPreview: FfiConverterOptionString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SoapEntryConfirmation, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.patientMatch, into: &buf)
-        FfiConverterString.write(value.appointmentMatch, into: &buf)
-        FfiConverterString.write(value.ehrTargetField, into: &buf)
-        FfiConverterOptionString.write(value.soapPreview, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSoapEntryConfirmation_lift(_ buf: RustBuffer) throws -> SoapEntryConfirmation {
-    return try FfiConverterTypeSoapEntryConfirmation.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSoapEntryConfirmation_lower(_ value: SoapEntryConfirmation) -> RustBuffer {
-    return FfiConverterTypeSoapEntryConfirmation.lower(value)
-}
-
-
 public struct SoapEntryRequest: Equatable, Hashable {
     public var ehrSystem: String
     public var soapNoteId: String
@@ -1494,7 +1432,7 @@ public func FfiConverterTypeSoapEntryRequest_lower(_ value: SoapEntryRequest) ->
 
 public struct SoapEntryStatus: Equatable, Hashable {
     public var jobId: String
-    public var phase: SoapEntryPhase
+    public var phase: String
     public var message: String
     public var patientMatch: String?
     public var appointmentMatch: String?
@@ -1503,7 +1441,7 @@ public struct SoapEntryStatus: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(jobId: String, phase: SoapEntryPhase, message: String, patientMatch: String?, appointmentMatch: String?, ehrTargetField: String?, error: String?) {
+    public init(jobId: String, phase: String, message: String, patientMatch: String?, appointmentMatch: String?, ehrTargetField: String?, error: String?) {
         self.jobId = jobId
         self.phase = phase
         self.message = message
@@ -1530,7 +1468,7 @@ public struct FfiConverterTypeSoapEntryStatus: FfiConverterRustBuffer {
         return
             try SoapEntryStatus(
                 jobId: FfiConverterString.read(from: &buf), 
-                phase: FfiConverterTypeSoapEntryPhase.read(from: &buf), 
+                phase: FfiConverterString.read(from: &buf), 
                 message: FfiConverterString.read(from: &buf), 
                 patientMatch: FfiConverterOptionString.read(from: &buf), 
                 appointmentMatch: FfiConverterOptionString.read(from: &buf), 
@@ -1541,7 +1479,7 @@ public struct FfiConverterTypeSoapEntryStatus: FfiConverterRustBuffer {
 
     public static func write(_ value: SoapEntryStatus, into buf: inout [UInt8]) {
         FfiConverterString.write(value.jobId, into: &buf)
-        FfiConverterTypeSoapEntryPhase.write(value.phase, into: &buf)
+        FfiConverterString.write(value.phase, into: &buf)
         FfiConverterString.write(value.message, into: &buf)
         FfiConverterOptionString.write(value.patientMatch, into: &buf)
         FfiConverterOptionString.write(value.appointmentMatch, into: &buf)
@@ -2626,115 +2564,6 @@ public func FfiConverterTypeSessionType_lift(_ buf: RustBuffer) throws -> Sessio
 #endif
 public func FfiConverterTypeSessionType_lower(_ value: SessionType) -> RustBuffer {
     return FfiConverterTypeSessionType.lower(value)
-}
-
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-
-public enum SoapEntryPhase: Equatable, Hashable {
-    
-    case queued
-    case navigating
-    case matchingPatient
-    case awaitingConfirmation
-    case entering
-    case completed
-    case failed
-    case cancelled
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension SoapEntryPhase: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSoapEntryPhase: FfiConverterRustBuffer {
-    typealias SwiftType = SoapEntryPhase
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SoapEntryPhase {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .queued
-        
-        case 2: return .navigating
-        
-        case 3: return .matchingPatient
-        
-        case 4: return .awaitingConfirmation
-        
-        case 5: return .entering
-        
-        case 6: return .completed
-        
-        case 7: return .failed
-        
-        case 8: return .cancelled
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: SoapEntryPhase, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .queued:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .navigating:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .matchingPatient:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .awaitingConfirmation:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .entering:
-            writeInt(&buf, Int32(5))
-        
-        
-        case .completed:
-            writeInt(&buf, Int32(6))
-        
-        
-        case .failed:
-            writeInt(&buf, Int32(7))
-        
-        
-        case .cancelled:
-            writeInt(&buf, Int32(8))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSoapEntryPhase_lift(_ buf: RustBuffer) throws -> SoapEntryPhase {
-    return try FfiConverterTypeSoapEntryPhase.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSoapEntryPhase_lower(_ value: SoapEntryPhase) -> RustBuffer {
-    return FfiConverterTypeSoapEntryPhase.lower(value)
 }
 
 
