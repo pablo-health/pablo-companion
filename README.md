@@ -1,5 +1,7 @@
 # Pablo Companion
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/pablo-health/pablo-companion/badge)](https://scorecard.dev/viewer/?uri=github.com/pablo-health/pablo-companion)
+
 Desktop companion app for therapists — macOS and Windows.
 
 Sits on the desktop during the workday: therapists see today's sessions, click **Start Session**, and Pablo automatically starts recording and launches their video call (Zoom, Teams, or Google Meet). Sessions sync with the Pablo backend for SOAP note generation.
