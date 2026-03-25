@@ -192,6 +192,91 @@ pub struct UploadResponse {
     pub status: String,
 }
 
+// ── Health / version types ────────────────────────────────────────────────
+
+/// Result of a health check, including version compatibility info.
+#[derive(Debug, Clone)]
+pub struct HealthStatus {
+    /// Server version string (e.g. "1.0.0"), empty if server didn't report it.
+    pub server_version: String,
+    /// True if this client version is below the server's minimum for our platform.
+    pub client_update_required: bool,
+    /// True if the server version is below this client's minimum server requirement.
+    pub server_update_required: bool,
+    /// The minimum client version the server requires (for our platform).
+    pub min_client_version: String,
+    /// The minimum server version this client requires.
+    pub min_server_version: String,
+}
+
+// ── SOAP Entry types ────────────────────────────────────────────────────
+
+/// Which phase of the EHR entry pipeline the backend is currently in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SoapEntryPhase {
+    /// Job accepted, waiting for a Playwright slot.
+    Queued,
+    /// Navigating the EHR (login → dashboard → patient list).
+    Navigating,
+    /// Searching for the patient and verifying appointment match.
+    MatchingPatient,
+    /// Patient found — waiting for therapist to confirm before saving.
+    AwaitingConfirmation,
+    /// Therapist confirmed — entering SOAP note into the EHR fields.
+    Entering,
+    /// Note saved successfully in the EHR.
+    Completed,
+    /// Something went wrong (see `error` field for details).
+    Failed,
+    /// Therapist cancelled before save.
+    Cancelled,
+}
+
+/// Request body to kick off SOAP note entry into an EHR.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoapEntryRequest {
+    /// Which EHR system (e.g. "simplepractice", "therapynotes", "janeapp").
+    pub ehr_system: String,
+    /// The Pablo SOAP note ID to enter.
+    pub soap_note_id: String,
+    /// Patient display name — used for verification in the EHR.
+    pub patient_name: String,
+    /// Expected appointment time (ISO 8601) — used for verification.
+    pub appointment_time: String,
+}
+
+/// Current status of a SOAP entry job, returned by both the trigger and poll
+/// endpoints. The native UI renders this as a progress indicator.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoapEntryStatus {
+    /// Backend-assigned job ID for this entry attempt.
+    pub job_id: String,
+    /// Current phase of the pipeline (e.g. "navigating", "awaiting_confirmation").
+    pub phase: String,
+    /// Human-readable status message for the therapist.
+    pub message: String,
+    /// Patient name as matched in the EHR (for confirmation display).
+    pub patient_match: Option<String>,
+    /// Appointment time as matched in the EHR (for confirmation display).
+    pub appointment_match: Option<String>,
+    /// Where in the EHR the note will be saved (for confirmation display).
+    pub ehr_target_field: Option<String>,
+    /// Error details if phase is `Failed`.
+    pub error: Option<String>,
+}
+
+/// Preview data shown to the therapist before they confirm the entry.
+/// Extracted from `SoapEntryStatus` when phase is `awaiting_confirmation`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoapEntryConfirmation {
+    pub patient_match: String,
+    pub appointment_match: String,
+    pub ehr_target_field: String,
+    /// Optional preview of the SOAP note content that will be entered.
+    pub soap_preview: Option<String>,
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

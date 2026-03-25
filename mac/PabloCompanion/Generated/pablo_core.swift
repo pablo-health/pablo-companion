@@ -846,6 +846,72 @@ public func FfiConverterTypeGoogleMeetOptions_lower(_ value: GoogleMeetOptions) 
 }
 
 
+public struct HealthStatus: Equatable, Hashable {
+    public var serverVersion: String
+    public var clientUpdateRequired: Bool
+    public var serverUpdateRequired: Bool
+    public var minClientVersion: String
+    public var minServerVersion: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(serverVersion: String, clientUpdateRequired: Bool, serverUpdateRequired: Bool, minClientVersion: String, minServerVersion: String) {
+        self.serverVersion = serverVersion
+        self.clientUpdateRequired = clientUpdateRequired
+        self.serverUpdateRequired = serverUpdateRequired
+        self.minClientVersion = minClientVersion
+        self.minServerVersion = minServerVersion
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HealthStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHealthStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HealthStatus {
+        return
+            try HealthStatus(
+                serverVersion: FfiConverterString.read(from: &buf), 
+                clientUpdateRequired: FfiConverterBool.read(from: &buf), 
+                serverUpdateRequired: FfiConverterBool.read(from: &buf), 
+                minClientVersion: FfiConverterString.read(from: &buf), 
+                minServerVersion: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HealthStatus, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.serverVersion, into: &buf)
+        FfiConverterBool.write(value.clientUpdateRequired, into: &buf)
+        FfiConverterBool.write(value.serverUpdateRequired, into: &buf)
+        FfiConverterString.write(value.minClientVersion, into: &buf)
+        FfiConverterString.write(value.minServerVersion, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHealthStatus_lift(_ buf: RustBuffer) throws -> HealthStatus {
+    return try FfiConverterTypeHealthStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHealthStatus_lower(_ value: HealthStatus) -> RustBuffer {
+    return FfiConverterTypeHealthStatus.lower(value)
+}
+
+
 public struct Patient: Equatable, Hashable {
     public var id: String
     public var userId: String
@@ -1302,6 +1368,142 @@ public func FfiConverterTypeSessionListResponse_lower(_ value: SessionListRespon
 }
 
 
+public struct SoapEntryRequest: Equatable, Hashable {
+    public var ehrSystem: String
+    public var soapNoteId: String
+    public var patientName: String
+    public var appointmentTime: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(ehrSystem: String, soapNoteId: String, patientName: String, appointmentTime: String) {
+        self.ehrSystem = ehrSystem
+        self.soapNoteId = soapNoteId
+        self.patientName = patientName
+        self.appointmentTime = appointmentTime
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SoapEntryRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSoapEntryRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SoapEntryRequest {
+        return
+            try SoapEntryRequest(
+                ehrSystem: FfiConverterString.read(from: &buf), 
+                soapNoteId: FfiConverterString.read(from: &buf), 
+                patientName: FfiConverterString.read(from: &buf), 
+                appointmentTime: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SoapEntryRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.ehrSystem, into: &buf)
+        FfiConverterString.write(value.soapNoteId, into: &buf)
+        FfiConverterString.write(value.patientName, into: &buf)
+        FfiConverterString.write(value.appointmentTime, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSoapEntryRequest_lift(_ buf: RustBuffer) throws -> SoapEntryRequest {
+    return try FfiConverterTypeSoapEntryRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSoapEntryRequest_lower(_ value: SoapEntryRequest) -> RustBuffer {
+    return FfiConverterTypeSoapEntryRequest.lower(value)
+}
+
+
+public struct SoapEntryStatus: Equatable, Hashable {
+    public var jobId: String
+    public var phase: String
+    public var message: String
+    public var patientMatch: String?
+    public var appointmentMatch: String?
+    public var ehrTargetField: String?
+    public var error: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(jobId: String, phase: String, message: String, patientMatch: String?, appointmentMatch: String?, ehrTargetField: String?, error: String?) {
+        self.jobId = jobId
+        self.phase = phase
+        self.message = message
+        self.patientMatch = patientMatch
+        self.appointmentMatch = appointmentMatch
+        self.ehrTargetField = ehrTargetField
+        self.error = error
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SoapEntryStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSoapEntryStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SoapEntryStatus {
+        return
+            try SoapEntryStatus(
+                jobId: FfiConverterString.read(from: &buf), 
+                phase: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf), 
+                patientMatch: FfiConverterOptionString.read(from: &buf), 
+                appointmentMatch: FfiConverterOptionString.read(from: &buf), 
+                ehrTargetField: FfiConverterOptionString.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SoapEntryStatus, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.jobId, into: &buf)
+        FfiConverterString.write(value.phase, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterOptionString.write(value.patientMatch, into: &buf)
+        FfiConverterOptionString.write(value.appointmentMatch, into: &buf)
+        FfiConverterOptionString.write(value.ehrTargetField, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSoapEntryStatus_lift(_ buf: RustBuffer) throws -> SoapEntryStatus {
+    return try FfiConverterTypeSoapEntryStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSoapEntryStatus_lower(_ value: SoapEntryStatus) -> RustBuffer {
+    return FfiConverterTypeSoapEntryStatus.lower(value)
+}
+
+
 public struct TranscriptResult: Equatable, Hashable {
     public var sessionId: String
     public var sessionMode: SessionMode
@@ -1515,11 +1717,11 @@ public struct FfiConverterTypeTranscriptionConfig: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TranscriptionConfig {
         return
             try TranscriptionConfig(
-                modelPath: FfiConverterString.read(from: &buf),
-                micChannels: FfiConverterUInt8.read(from: &buf),
-                micSampleRate: FfiConverterUInt32.read(from: &buf),
-                systemChannels: FfiConverterUInt8.read(from: &buf),
-                systemSampleRate: FfiConverterUInt32.read(from: &buf),
+                modelPath: FfiConverterString.read(from: &buf), 
+                micChannels: FfiConverterUInt8.read(from: &buf), 
+                micSampleRate: FfiConverterUInt32.read(from: &buf), 
+                systemChannels: FfiConverterUInt8.read(from: &buf), 
+                systemSampleRate: FfiConverterUInt32.read(from: &buf), 
                 swapSpeakers: FfiConverterBool.read(from: &buf)
         )
     }
@@ -1830,6 +2032,8 @@ public enum PabloError: Swift.Error, Equatable, Hashable, Foundation.LocalizedEr
     )
     case ConflictState(message: String
     )
+    case UpdateRequired(message: String
+    )
 
     
 
@@ -1881,6 +2085,9 @@ public struct FfiConverterTypePabloError: FfiConverterRustBuffer {
             resource: try FfiConverterString.read(from: &buf)
             )
         case 9: return .ConflictState(
+            message: try FfiConverterString.read(from: &buf)
+            )
+        case 10: return .UpdateRequired(
             message: try FfiConverterString.read(from: &buf)
             )
 
@@ -1936,6 +2143,11 @@ public struct FfiConverterTypePabloError: FfiConverterRustBuffer {
         
         case let .ConflictState(message):
             writeInt(&buf, Int32(9))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .UpdateRequired(message):
+            writeInt(&buf, Int32(10))
             FfiConverterString.write(message, into: &buf)
             
         }
@@ -2854,6 +3066,34 @@ public func acceptBaa(baseUrl: String, token: String)async throws  -> BaaStatus 
             errorHandler: FfiConverterTypePabloError_lift
         )
 }
+public func cancelSoapEntry(baseUrl: String, token: String, sessionId: String)async throws  -> SoapEntryStatus  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_cancel_soap_entry(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSoapEntryStatus_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func confirmSoapEntry(baseUrl: String, token: String, sessionId: String)async throws  -> SoapEntryStatus  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_confirm_soap_entry(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSoapEntryStatus_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
 public func coreVersion() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_pablo_core_fn_func_core_version($0
@@ -3000,17 +3240,31 @@ public func finalizeSession(baseUrl: String, token: String, sessionId: String, q
             errorHandler: FfiConverterTypePabloError_lift
         )
 }
-public func healthCheck(baseUrl: String)async throws   {
+public func healthCheck(baseUrl: String)async throws  -> HealthStatus  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_pablo_core_fn_func_health_check(FfiConverterString.lower(baseUrl)
                 )
             },
-            pollFunc: ffi_pablo_core_rust_future_poll_void,
-            completeFunc: ffi_pablo_core_rust_future_complete_void,
-            freeFunc: ffi_pablo_core_rust_future_free_void,
-            liftFunc: { $0 },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeHealthStatus_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func pollSoapEntryStatus(baseUrl: String, token: String, sessionId: String)async throws  -> SoapEntryStatus  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_poll_soap_entry_status(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSoapEntryStatus_lift,
             errorHandler: FfiConverterTypePabloError_lift
         )
 }
@@ -3047,6 +3301,20 @@ public func savePreferences(baseUrl: String, token: String, preferences: UserPre
             completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeUserPreferences_lift,
+            errorHandler: FfiConverterTypePabloError_lift
+        )
+}
+public func startSoapEntry(baseUrl: String, token: String, sessionId: String, request: SoapEntryRequest)async throws  -> SoapEntryStatus  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_pablo_core_fn_func_start_soap_entry(FfiConverterString.lower(baseUrl),FfiConverterString.lower(token),FfiConverterString.lower(sessionId),FfiConverterTypeSoapEntryRequest_lower(request)
+                )
+            },
+            pollFunc: ffi_pablo_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_pablo_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_pablo_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSoapEntryStatus_lift,
             errorHandler: FfiConverterTypePabloError_lift
         )
 }
@@ -3153,6 +3421,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_pablo_core_checksum_func_accept_baa() != 46417) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_pablo_core_checksum_func_cancel_soap_entry() != 56201) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_confirm_soap_entry() != 31056) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_pablo_core_checksum_func_core_version() != 16817) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3186,7 +3460,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_pablo_core_checksum_func_finalize_session() != 27401) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_pablo_core_checksum_func_health_check() != 27002) {
+    if (uniffi_pablo_core_checksum_func_health_check() != 18731) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_poll_soap_entry_status() != 45334) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_pablo_core_checksum_func_preprocess_pcm() != 9691) {
@@ -3196,6 +3473,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_pablo_core_checksum_func_save_preferences() != 46305) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_pablo_core_checksum_func_start_soap_entry() != 2592) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_pablo_core_checksum_func_transcribe_audio() != 50848) {

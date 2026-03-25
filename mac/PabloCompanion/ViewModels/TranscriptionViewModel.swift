@@ -1,6 +1,15 @@
 import Foundation
 import os
 
+// MARK: - DecryptedPCMPaths
+
+/// Resolved paths after decrypting encrypted PCM sidecars for transcription.
+private struct DecryptedPCMPaths {
+    let micPath: String
+    let systemPath: String?
+    let tempFiles: [URL]
+}
+
 // MARK: - TranscriptionState
 
 enum TranscriptionState: Sendable {
@@ -136,14 +145,14 @@ final class TranscriptionViewModel {
 
         do {
             // Decrypt encrypted PCM sidecars to temp files before feeding to Whisper.
-            let (resolvedMicPath, resolvedSystemPath, tempFiles) = try decryptPCMIfNeeded(recording)
-            defer { tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+            let pcm = try decryptPCMIfNeeded(recording)
+            defer { pcm.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
 
             let config = try buildTranscriptionConfig(sampleRate: recording.sampleRate, using: presetOverride)
             let result = try await transcribeSession1on1(
                 sessionId: backendSessionId,
-                micPath: resolvedMicPath,
-                systemPath: resolvedSystemPath,
+                micPath: pcm.micPath,
+                systemPath: pcm.systemPath,
                 config: config
             )
             let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: recording))
@@ -235,6 +244,58 @@ final class TranscriptionViewModel {
         }
     }
 
+    /// Transcribes multiple recording segments and uploads the combined transcript.
+    /// Used when a session has multiple recordings due to audio source changes.
+    func transcribeSegments(_ recordings: [LocalRecording], sessionId: String) async {
+        guard autoTranscribe else { return }
+        let viable = recordings.filter { $0.micPCMFileURL != nil }
+        guard !viable.isEmpty else { return }
+
+        if viable.count == 1 {
+            await transcribe(viable[0], sessionId: sessionId)
+            return
+        }
+
+        for rec in viable {
+            states[rec.id] = .running
+        }
+        logger.info("Transcribing \(viable.count) segments for session")
+
+        var transcriptParts: [String] = []
+        var failed = false
+
+        for rec in viable {
+            do {
+                let pcm = try decryptPCMIfNeeded(rec)
+                defer { pcm.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+
+                let config = try buildTranscriptionConfig(sampleRate: rec.sampleRate)
+                let result = try await transcribeSession1on1(
+                    sessionId: sessionId,
+                    micPath: pcm.micPath,
+                    systemPath: pcm.systemPath,
+                    config: config
+                )
+                let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: rec))
+                transcriptParts.append(text)
+                states[rec.id] = .done(transcript: text)
+            } catch is ModelError {
+                states[rec.id] = .awaitingModel
+                awaitingModelRecordings.append((recording: rec, sessionId: sessionId))
+                failed = true
+            } catch {
+                states[rec.id] = .failed(message: error.localizedDescription)
+                logger.error("Segment transcription failed: \(error.localizedDescription)")
+                failed = true
+            }
+        }
+
+        guard !failed, !transcriptParts.isEmpty else { return }
+
+        let combined = transcriptParts.joined(separator: "\n\n")
+        await uploadOrQueue(recording: viable[viable.count - 1], sessionId: sessionId, text: combined)
+    }
+
     /// Process recordings that were deferred because the Whisper model wasn't available.
     /// Called after a model download completes. Uses the just-downloaded preset so we
     /// don't fail again looking for a different model than what the user downloaded.
@@ -279,10 +340,9 @@ final class TranscriptionViewModel {
     }
 
     /// Decrypts encrypted PCM sidecar files to temp files for transcription.
-    /// Returns the resolved mic path, system path, and a list of temp files to clean up.
     private func decryptPCMIfNeeded(
         _ recording: LocalRecording
-    ) throws -> (micPath: String, systemPath: String?, tempFiles: [URL]) {
+    ) throws -> DecryptedPCMPaths {
         var tempFiles: [URL] = []
 
         let micPath: String
@@ -305,7 +365,7 @@ final class TranscriptionViewModel {
             systemPath = recording.systemPCMFileURL?.path
         }
 
-        return (micPath, systemPath, tempFiles)
+        return DecryptedPCMPaths(micPath: micPath, systemPath: systemPath, tempFiles: tempFiles)
     }
 
     private func renderOptions(for recording: LocalRecording) -> GoogleMeetOptions {

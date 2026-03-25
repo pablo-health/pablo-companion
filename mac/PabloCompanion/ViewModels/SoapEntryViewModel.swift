@@ -1,0 +1,163 @@
+import Foundation
+import os
+
+/// Drives the SOAP entry UI — connects the EHR navigator to the therapist-facing
+/// confirmation flow.
+///
+/// State machine:
+///   idle → connecting → navigating → matchingPatient → awaitingConfirmation
+///     → (therapist confirms) → entering → completed
+///     → (therapist cancels) → cancelled
+///     → (error at any point) → failed
+@MainActor
+@Observable
+final class SoapEntryViewModel {
+    // MARK: - Published state
+
+    var phase: SoapEntryPhase = .idle
+    var statusMessage = ""
+    var confirmation: SoapEntryConfirmation?
+    var errorMessage: String?
+    /// Set to true when Chrome needs to be relaunched — the view shows a confirmation alert.
+    var showChromeRelaunchAlert = false
+    /// Set to true when the EHR login page is detected.
+    var showEHRLoginPrompt = false
+    var ehrLoginSystem = ""
+
+    // MARK: - Dependencies
+
+    private var navigator: EHRNavigator?
+    private var currentInput: NoteEntryInput?
+    private var relaunchContinuation: CheckedContinuation<Bool, Never>?
+    private var loginContinuation: CheckedContinuation<Bool, Never>?
+    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "SoapEntryViewModel")
+
+    // MARK: - Setup
+
+    /// Call after auth is configured. Creates the navigator with the backend API client.
+    func configure(baseURL: String, getToken: @escaping @Sendable () async throws -> String) {
+        let apiClient = NavigationAPIClient(baseURL: baseURL, getToken: getToken)
+        let nav = EHRNavigator(apiClient: apiClient)
+        nav.onChromeRelaunchNeeded = { [weak self] in
+            await self?.requestChromeRelaunch() ?? false
+        }
+        nav.onEHRLoginRequired = { [weak self] ehrSystem in
+            await self?.requestEHRLogin(ehrSystem: ehrSystem) ?? false
+        }
+        self.navigator = nav
+    }
+
+    private func requestChromeRelaunch() async -> Bool {
+        showChromeRelaunchAlert = true
+        return await withCheckedContinuation { continuation in
+            relaunchContinuation = continuation
+        }
+    }
+
+    /// Called by the view when the user responds to the Chrome relaunch alert.
+    func respondToChromeRelaunch(approved: Bool) {
+        relaunchContinuation?.resume(returning: approved)
+        relaunchContinuation = nil
+        showChromeRelaunchAlert = false
+    }
+
+    private func requestEHRLogin(ehrSystem: String) async -> Bool {
+        ehrLoginSystem = ehrSystem
+        showEHRLoginPrompt = true
+        return await withCheckedContinuation { continuation in
+            loginContinuation = continuation
+        }
+    }
+
+    /// Called by the view when the therapist says they've signed in.
+    func respondToEHRLogin(signedIn: Bool) {
+        loginContinuation?.resume(returning: signedIn)
+        loginContinuation = nil
+        showEHRLoginPrompt = false
+    }
+
+    // MARK: - Entry flow
+
+    /// Starts the SOAP entry flow. Navigates the EHR and pauses for confirmation.
+    func startEntry(input: NoteEntryInput) async {
+        guard let navigator else {
+            errorMessage = "Navigator not configured. Please sign in first."
+            phase = .failed
+            return
+        }
+
+        currentInput = input
+        errorMessage = nil
+        phase = .connecting
+
+        do {
+            let onPhase: @Sendable (SoapEntryPhase, String) -> Void = { [weak self] newPhase, message in
+                Task { @MainActor in
+                    self?.phase = newPhase
+                    self?.statusMessage = message
+                }
+            }
+            let result = try await navigator.navigateToSoapForm(
+                input: input, onPhaseChange: onPhase
+            )
+
+            confirmation = result
+            phase = .awaitingConfirmation
+            statusMessage = "Found \(result.patientMatch) — \(result.appointmentMatch). Confirm to enter note."
+        } catch {
+            logger.error("SOAP entry navigation failed: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
+            phase = .failed
+        }
+    }
+
+    /// Therapist confirmed — fill the SOAP fields, then disconnect CDP.
+    func confirmEntry() async {
+        guard let navigator, let input = currentInput else { return }
+
+        do {
+            try await navigator.commitEntry(
+                input: input,
+                formFields: confirmation?.formFields
+            ) { [weak self] newPhase, message in
+                self?.phase = newPhase
+                self?.statusMessage = message
+            }
+
+            phase = .completed
+            statusMessage = "Note entered. Please review and click 'Sign and Complete'."
+            logger.info("SOAP entry completed for session \(input.sessionId)")
+        } catch {
+            logger.error("SOAP entry commit failed: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
+            phase = .failed
+        }
+
+        // Disconnect CDP — don't leave the debug port open longer than needed
+        navigator.disconnect()
+    }
+
+    /// Therapist cancelled — abort without saving, disconnect CDP.
+    func cancelEntry() {
+        phase = .cancelled
+        statusMessage = "Entry cancelled."
+        confirmation = nil
+        currentInput = nil
+        navigator?.disconnect()
+    }
+
+    /// Reset to idle for the next session.
+    func reset() {
+        phase = .idle
+        statusMessage = ""
+        confirmation = nil
+        errorMessage = nil
+        currentInput = nil
+    }
+
+    /// Call on app quit to clean up the debug Chrome profile cookies.
+    func cleanup() {
+        navigator?.disconnect(killChrome: true)
+        navigator?.clearDebugProfileCookies()
+    }
+}

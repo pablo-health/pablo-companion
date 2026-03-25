@@ -39,15 +39,9 @@ final class APIClient {
 
     // MARK: - Health
 
-    /// Checks if the backend is reachable via the Rust API client.
-    func healthCheck() async throws -> Bool {
-        do {
-            try await Pablo.healthCheck(baseUrl: baseURLString)
-            return true
-        } catch {
-            logger.warning("Health check failed: \(error.localizedDescription)")
-            return false
-        }
+    /// Checks backend reachability and version compatibility via the Rust API client.
+    func healthCheck() async throws -> HealthStatus {
+        try await Pablo.healthCheck(baseUrl: baseURLString)
     }
 
     // MARK: - Recordings

@@ -41,6 +41,9 @@ windows/**/obj/
 *.swp
 *.swo
 
+# Claude Code local settings
+.claude/settings.local.json
+
 # Credentials / secrets
 *.p12
 *.mobileprovision
