@@ -4,8 +4,14 @@ namespace PabloCompanion.Tests.Services;
 
 public class TranscriptStoreTests : IDisposable
 {
-    private readonly TranscriptStore _store = new();
+    private readonly CredentialManager _credentials = new();
+    private readonly TranscriptStore _store;
     private readonly string _testSessionId = $"test-{Guid.NewGuid()}";
+
+    public TranscriptStoreTests()
+    {
+        _store = new TranscriptStore(_credentials);
+    }
 
     [Fact]
     public void SaveAndGetRoundtrip()

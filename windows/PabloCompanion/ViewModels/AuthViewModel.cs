@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -34,6 +35,7 @@ public partial class AuthViewModel : ObservableObject
     private readonly APIClient _apiClient;
     private readonly InactivityMonitor _inactivityMonitor;
     private System.Threading.Timer? _refreshTimer;
+    private string? _pkceCodeVerifier;
     private static readonly HttpClient s_httpClient = new();
 
     [ObservableProperty]
@@ -135,6 +137,11 @@ public partial class AuthViewModel : ObservableObject
             loginUrl += $"&tenant_id={Uri.EscapeDataString(tenantId)}";
         }
 
+        // PKCE (RFC 7636)
+        _pkceCodeVerifier = PkceHelper.GenerateCodeVerifier();
+        var challenge = PkceHelper.CodeChallenge(_pkceCodeVerifier);
+        loginUrl += $"&code_challenge={Uri.EscapeDataString(challenge)}&code_challenge_method=S256";
+
         Process.Start(new ProcessStartInfo
         {
             FileName = loginUrl,
@@ -202,7 +209,17 @@ public partial class AuthViewModel : ObservableObject
         }
 
         var exchangeUrl = $"{authUrl.TrimEnd('/')}/api/auth/native/exchange";
-        var payload = JsonSerializer.Serialize(new { code, redirect_uri = RedirectUri });
+        var bodyObj = new Dictionary<string, string>
+        {
+            ["code"] = code,
+            ["redirect_uri"] = RedirectUri,
+        };
+        if (_pkceCodeVerifier != null)
+        {
+            bodyObj["code_verifier"] = _pkceCodeVerifier;
+            _pkceCodeVerifier = null;
+        }
+        var payload = JsonSerializer.Serialize(bodyObj);
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
         var response = await s_httpClient.PostAsync(exchangeUrl, content);
@@ -329,5 +346,30 @@ public partial class AuthViewModel : ObservableObject
             delay,
             Timeout.InfiniteTimeSpan
         );
+    }
+}
+
+/// <summary>
+/// PKCE (RFC 7636) helper for native app OAuth flows.
+/// </summary>
+internal static class PkceHelper
+{
+    public static string GenerateCodeVerifier()
+    {
+        var bytes = new byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return Convert.ToBase64String(bytes)
+            .Replace("+", "-")
+            .Replace("/", "_")
+            .TrimEnd('=');
+    }
+
+    public static string CodeChallenge(string verifier)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(verifier));
+        return Convert.ToBase64String(hash)
+            .Replace("+", "-")
+            .Replace("/", "_")
+            .TrimEnd('=');
     }
 }
