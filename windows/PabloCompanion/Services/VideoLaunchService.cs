@@ -12,9 +12,27 @@ public sealed partial class VideoLaunchService
     [GeneratedRegex(@"zoom\.us/j/(\d+)")]
     private static partial Regex ZoomMeetingIdRegex();
 
+    private static readonly HashSet<string> AllowedVideoHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "zoom.us", "us02web.zoom.us", "us04web.zoom.us", "us05web.zoom.us", "us06web.zoom.us",
+        "teams.microsoft.com", "teams.live.com",
+        "meet.google.com",
+    };
+
+    private static bool IsAllowedVideoDomain(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        if (!string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)) return false;
+        var host = uri.Host;
+        return AllowedVideoHosts.Contains(host)
+            || host.EndsWith(".zoom.us", StringComparison.OrdinalIgnoreCase);
+    }
+
     public void LaunchVideoCall(string? videoLink, string? platform)
     {
         if (string.IsNullOrWhiteSpace(videoLink)) return;
+
+        if (!IsAllowedVideoDomain(videoLink)) return;
 
         var url = platform?.ToLowerInvariant() switch
         {

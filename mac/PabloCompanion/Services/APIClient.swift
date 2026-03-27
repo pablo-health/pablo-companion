@@ -13,15 +13,22 @@ final class APIClient {
     /// Optional closure to provide a Bearer token for authenticated requests.
     var getToken: (@Sendable () async throws -> String)?
 
+    private static let fallbackURL: URL = {
+        // Static string — guaranteed to parse. Extracted to avoid force-unwrap at call site.
+        guard let url = URL(string: "https://api.pablo.health") else {
+            preconditionFailure("Hardcoded fallback URL is invalid")
+        }
+        return url
+    }()
+
     init(baseURL: String = "https://api.pablo.health") {
         guard URLValidator.validateScheme(baseURL) == nil,
               let url = URL(string: baseURL)
         else {
             // Placeholder URL — will be overwritten by configureAndLoad() after auth.
             // Non-fatal so the app can still launch and reach the login screen.
-            // swiftlint:disable:next force_unwrapping
-            self.baseURL = URL(string: "https://api.pablo.health")!
-            self.baseURLString = "https://api.pablo.health"
+            self.baseURL = Self.fallbackURL
+            self.baseURLString = Self.fallbackURL.absoluteString
             return
         }
         self.baseURL = url

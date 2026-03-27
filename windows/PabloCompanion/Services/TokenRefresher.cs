@@ -21,7 +21,7 @@ public sealed class TokenRefresher
 
     public async Task<TokenResponse> RefreshTokenAsync(string refreshToken, string apiKey)
     {
-        var url = $"https://securetoken.googleapis.com/v1/token?key={Uri.EscapeDataString(apiKey)}";
+        var url = "https://securetoken.googleapis.com/v1/token";
 
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -33,6 +33,7 @@ public sealed class TokenRefresher
         {
             Content = content,
         };
+        request.Headers.Add("X-Goog-Api-Key", apiKey);
 
         var response = await HttpClient.SendAsync(request);
 

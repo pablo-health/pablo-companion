@@ -41,6 +41,10 @@ enum VideoLaunchService {
     // MARK: - Platform Launchers
 
     private static func launchZoom(link: String, sessionId: String) {
+        guard let linkURL = URL(string: link), isAllowedVideoDomain(linkURL) else {
+            logger.error("Blocked Zoom URL for session \(sessionId): not an allowed domain")
+            return
+        }
         // Extract meeting ID from Zoom URL (e.g., https://zoom.us/j/123456789)
         let meetingId = extractZoomMeetingId(from: link)
         let scheme = "zoommtg://zoom.us/join?confno=\(meetingId)"
@@ -55,6 +59,10 @@ enum VideoLaunchService {
     }
 
     private static func launchTeams(link: String, sessionId: String) {
+        guard let linkURL = URL(string: link), isAllowedVideoDomain(linkURL) else {
+            logger.error("Blocked Teams URL for session \(sessionId): not an allowed domain")
+            return
+        }
         // Convert https:// Teams link to msteams:// deep link
         let teamsLink = link.replacingOccurrences(
             of: "https://",
@@ -70,12 +78,27 @@ enum VideoLaunchService {
     }
 
     private static func launchBrowser(link: String, sessionId: String) {
-        guard let url = URL(string: link) else {
-            logger.error("Invalid video URL for session \(sessionId): \(link)")
+        guard let url = URL(string: link), isAllowedVideoDomain(url) else {
+            logger.error("Blocked or invalid video URL for session \(sessionId)")
             return
         }
         logger.info("Opening video link in browser for session \(sessionId)")
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - Domain Validation
+
+    private static let allowedVideoHosts: Set<String> = [
+        "zoom.us", "us02web.zoom.us", "us04web.zoom.us", "us05web.zoom.us", "us06web.zoom.us",
+        "teams.microsoft.com", "teams.live.com",
+        "meet.google.com",
+    ]
+
+    /// Returns true if the URL's host is a known video platform domain.
+    private static func isAllowedVideoDomain(_ url: URL) -> Bool {
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        return allowedVideoHosts.contains(host)
+            || host.hasSuffix(".zoom.us")
     }
 
     // MARK: - URL Parsing

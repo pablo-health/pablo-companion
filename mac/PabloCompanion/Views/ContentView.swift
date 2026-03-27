@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var activeSessionId: String?
     @State private var selectedTab = 0
     @State private var versionBlock: UpdateRequiredView.Reason?
+    @State private var screenLockObserver: NSObjectProtocol?
 
     var body: some View {
         Group {
@@ -68,6 +69,25 @@ struct ContentView: View {
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { break }
                 await transcriptionVM.retryPendingUploads()
+            }
+        }
+        .task {
+            // HIPAA inactivity timeout — lock after 15 minutes of no user input.
+            // Skip if a session is actively recording (therapist is talking, not at keyboard).
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { break }
+                let isIdle = InactivityMonitor.systemIdleSeconds() >= InactivityMonitor.timeoutSeconds
+                if activeSessionId == nil, isIdle {
+                    authVM.signOut()
+                }
+            }
+        }
+        .onAppear {
+            screenLockObserver = InactivityMonitor.observeScreenLock { [authVM] in
+                // Don't sign out during an active recording session
+                guard activeSessionId == nil else { return }
+                authVM.signOut()
             }
         }
         .sheet(item: $viewingTranscript) { item in

@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import os
 import SwiftUI
@@ -46,6 +47,9 @@ final class AuthViewModel {
     }
 
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "AuthViewModel")
+
+    /// PKCE code verifier for the current auth flow (RFC 7636).
+    private var pkceCodeVerifier: String?
 
     // MARK: - Init
 
@@ -146,6 +150,13 @@ final class AuthViewModel {
         if !tenantID.isEmpty {
             queryItems.append(URLQueryItem(name: "tenant_id", value: tenantID))
         }
+
+        // PKCE (RFC 7636) — generate verifier and send challenge
+        let verifier = PKCEHelper.generateCodeVerifier()
+        pkceCodeVerifier = verifier
+        queryItems.append(URLQueryItem(name: "code_challenge", value: PKCEHelper.codeChallenge(for: verifier)))
+        queryItems.append(URLQueryItem(name: "code_challenge_method", value: "S256"))
+
         components?.queryItems = queryItems
         return components?.url
     }
@@ -188,10 +199,15 @@ final class AuthViewModel {
         var request = URLRequest(url: exchangeURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+        var body: [String: String] = [
             "code": code,
             "redirect_uri": AppConstants.redirectURI,
-        ])
+        ]
+        if let verifier = pkceCodeVerifier {
+            body["code_verifier"] = verifier
+            pkceCodeVerifier = nil
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -353,5 +369,28 @@ struct JWTDecoder {
 
     func extractEmail(from jwt: String) -> String? {
         decodePayload(jwt)?["email"] as? String
+    }
+}
+
+// MARK: - PKCE (RFC 7636)
+
+enum PKCEHelper {
+    /// Generates a cryptographically random code verifier (43-128 URL-safe characters).
+    static func generateCodeVerifier() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    /// Computes the S256 code challenge from a code verifier.
+    static func codeChallenge(for verifier: String) -> String {
+        let hash = SHA256.hash(data: Data(verifier.utf8))
+        return Data(hash).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }
