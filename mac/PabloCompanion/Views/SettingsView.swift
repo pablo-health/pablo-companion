@@ -180,10 +180,10 @@ struct SettingsView: View {
     @ObservedObject private var modelManager = ModelManager.shared
     private let hardware = HardwareCapabilityService()
 
-    ///    #if DEBUG
+    #if DEBUG
     @State private var showDebugRecordingView = false
     @State private var showDebugSoapEntryView = false
-    //  #endif
+    #endif
 
     private var audioFormatSection: some View {
         Section("Audio Format") {
@@ -320,7 +320,7 @@ struct SettingsView: View {
                 liveDiagnostics
             }
 
-//            #if DEBUG
+            #if DEBUG
             Button("Open Debug Recording View") {
                 showDebugRecordingView = true
             }
@@ -328,7 +328,6 @@ struct SettingsView: View {
             .sheet(isPresented: $showDebugRecordingView) {
                 DebugRecordingView()
             }
-            //           #endif
 
             Button("Open Debug SOAP Entry View") {
                 showDebugSoapEntryView = true
@@ -337,6 +336,7 @@ struct SettingsView: View {
             .sheet(isPresented: $showDebugSoapEntryView) {
                 DebugSoapEntryView()
             }
+            #endif
         }
     }
 

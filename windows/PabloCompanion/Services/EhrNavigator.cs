@@ -120,7 +120,10 @@ public sealed class EhrNavigator : IAsyncDisposable
                     const el = document.querySelector('{{selector}}');
                     if (!el) return 'not_found';
                     el.focus();
-                    el.innerHTML = '{{escaped}}';
+                    el.textContent = '';
+                    const p = document.createElement('p');
+                    p.textContent = '{{escaped}}';
+                    el.appendChild(p);
                     el.dispatchEvent(new Event('input', { bubbles: true }));
                     el.dispatchEvent(new Event('change', { bubbles: true }));
                     return 'filled';

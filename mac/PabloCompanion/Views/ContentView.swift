@@ -96,6 +96,11 @@ struct ContentView: View {
         .sheet(item: $detailSession) { session in
             sessionDetailSheet(session)
         }
+        .onChange(of: authVM.authState) { _, newState in
+            if case .unauthenticated = newState {
+                clearAllPHI()
+            }
+        }
         .onChange(of: uploadVM.backendURL) { _, newURL in
             patientVM.backendURL = newURL
             sessionVM.backendURL = newURL
@@ -394,5 +399,35 @@ struct ContentView: View {
         )
         .tabItem { Label("Settings", systemImage: "gear") }
         .tag(3)
+    }
+
+    // MARK: - PHI Cleanup
+
+    /// Clears all PHI from in-memory ViewModels on sign-out.
+    private func clearAllPHI() {
+        sessionVM.todaySessions = []
+        sessionVM.sessions = []
+        sessionVM.totalSessions = 0
+        sessionVM.hasMoreSessions = false
+        sessionVM.errorMessage = nil
+
+        recordingVM.recordings = []
+        recordingVM.sessionRecordingMap = [:]
+        recordingVM.activeSessionId = nil
+        recordingVM.stopPlayback()
+        recordingVM.userEmail = nil
+
+        transcriptionVM.states = [:]
+        transcriptionVM.pendingUploadCount = 0
+        transcriptionVM.awaitingModelRecordings = []
+        transcriptionVM.errorMessage = nil
+        transcriptionVM.userEmail = nil
+
+        patientVM.patients = []
+        patientVM.searchText = ""
+
+        activeSessionId = nil
+        detailSession = nil
+        viewingTranscript = nil
     }
 }
