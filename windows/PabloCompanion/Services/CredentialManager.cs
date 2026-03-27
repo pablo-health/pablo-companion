@@ -10,12 +10,19 @@ public sealed class CredentialManager
 {
     private const string Resource = "PabloCompanion";
 
-    private static readonly string[] TokenKeys =
+    private static readonly string[] AuthTokenKeys =
     [
         "idToken", "refreshToken", "userEmail",
         "authServerURL", "firebaseAPIKey", "backendAPIURL", "tenantID",
-        "deviceEncryptionKey"
     ];
+
+    private const string LegacyDeviceKeyName = "deviceEncryptionKey";
+
+    /// <summary>
+    /// The signed-in user's email, used to scope per-user encryption keys.
+    /// Set after successful authentication.
+    /// </summary>
+    public string? ActiveUserEmail { get; set; }
 
     public string? GetValue(string key)
     {
@@ -102,32 +109,66 @@ public sealed class CredentialManager
     }
 
     /// <summary>
-    /// Returns the 32-byte device encryption key, creating one if it doesn't exist.
-    /// Stored as Base64 in PasswordVault. Used for HIPAA-compliant audio encryption.
+    /// Returns the encryption key for the active user. Convenience wrapper used by all services.
     /// </summary>
     public byte[]? GetOrCreateDeviceEncryptionKey()
     {
-        var existing = GetValue("deviceEncryptionKey");
+        return GetOrCreateEncryptionKey(ActiveUserEmail ?? "");
+    }
+
+    /// <summary>
+    /// Returns the 32-byte encryption key for the given user, creating one if it doesn't exist.
+    /// On first call after upgrade, migrates the legacy device-wide key to the user's account.
+    /// </summary>
+    public byte[]? GetOrCreateEncryptionKey(string userEmail)
+    {
+        var userKeyName = $"encryptionKey_{userEmail}";
+
+        // 1. Check for existing per-user key
+        var existing = GetValue(userKeyName);
         if (existing != null)
         {
             try { return Convert.FromBase64String(existing); }
-            catch { /* corrupt — regenerate */ }
+            catch { /* corrupt — regenerate below */ }
         }
 
+        // 2. Migrate legacy device-wide key if present
+        var legacy = GetValue(LegacyDeviceKeyName);
+        if (legacy != null)
+        {
+            SetValue(userKeyName, legacy);
+            RemoveValue(LegacyDeviceKeyName);
+            try { return Convert.FromBase64String(legacy); }
+            catch { /* corrupt — regenerate below */ }
+        }
+
+        // 3. Generate new 32-byte AES-256 key
         var key = new byte[32];
         System.Security.Cryptography.RandomNumberGenerator.Fill(key);
-        SetValue("deviceEncryptionKey", Convert.ToBase64String(key));
+        SetValue(userKeyName, Convert.ToBase64String(key));
         return key;
     }
 
     /// <summary>
-    /// Removes all stored credentials. Used during sign-out.
+    /// Removes auth tokens only. Encryption keys are preserved so pending uploads
+    /// can still be retried after the next sign-in.
     /// </summary>
-    public void ClearAll()
+    public void ClearAuthTokens()
     {
-        foreach (var key in TokenKeys)
+        foreach (var key in AuthTokenKeys)
         {
             RemoveValue(key);
         }
+    }
+
+    /// <summary>
+    /// Removes auth tokens AND the encryption key for the given user.
+    /// Call only for explicit "purge local data" — not on regular sign-out.
+    /// </summary>
+    public void PurgeAllData(string userEmail)
+    {
+        ClearAuthTokens();
+        RemoveValue($"encryptionKey_{userEmail}");
+        RemoveValue(LegacyDeviceKeyName);
     }
 }

@@ -89,8 +89,13 @@ final class TranscriptionViewModel {
     // MARK: - Private
 
     private var apiClient = APIClient()
-    private let store = PendingTranscriptStore()
+    private var store = PendingTranscriptStore()
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "TranscriptionViewModel")
+
+    /// The signed-in user's email, used to scope encryption keys.
+    var userEmail: String? {
+        didSet { store.userEmail = userEmail }
+    }
 
     private var autoTranscribe: Bool {
         UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool ?? true
@@ -406,7 +411,7 @@ final class TranscriptionViewModel {
 
         let micPath: String
         if recording.isEncrypted, let micURL = recording.micPCMFileURL {
-            let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: micURL)
+            let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: micURL, userEmail: userEmail)
             tempFiles.append(tempURL)
             micPath = tempURL.path
             logger.info("Decrypted mic PCM to temp file")
@@ -416,7 +421,7 @@ final class TranscriptionViewModel {
 
         let systemPath: String?
         if recording.isEncrypted, let systemURL = recording.systemPCMFileURL {
-            let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: systemURL)
+            let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: systemURL, userEmail: userEmail)
             tempFiles.append(tempURL)
             systemPath = tempURL.path
             logger.info("Decrypted system PCM to temp file")

@@ -122,6 +122,11 @@ struct ContentView: View {
         patientVM.configureAuth { [authVM] in try await authVM.getValidToken() }
         sessionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
 
+        // Scope encryption keys to the signed-in user
+        let email = authVM.authenticatedEmail
+        recordingVM.userEmail = email
+        transcriptionVM.userEmail = email
+
         do {
             _ = try await authVM.getValidToken()
         } catch {
