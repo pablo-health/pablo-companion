@@ -3397,10 +3397,11 @@ class FfiConverterTypeSessionSource: FfiConverterRustBuffer<SessionSource> {
 
 
 public enum SessionStatus: int {
-    
+
     Scheduled,
     InProgress,
     RecordingComplete,
+    Transcribing,
     Queued,
     Processing,
     PendingReview,

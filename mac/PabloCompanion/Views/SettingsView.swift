@@ -175,6 +175,7 @@ struct SettingsView: View {
     @AppStorage("sessionType") private var sessionType = DisplaySessionType.oneToOne.rawValue
     @AppStorage("autoTranscribe") private var autoTranscribe = true
     @AppStorage("swapSpeakers") private var swapSpeakers = false
+    @AppStorage("transcriptionMode") private var transcriptionMode = TranscriptionMode.cloud.rawValue
 
     @ObservedObject private var modelManager = ModelManager.shared
     private let hardware = HardwareCapabilityService()
@@ -201,40 +202,57 @@ struct SettingsView: View {
         Section("Transcription") {
             Toggle("Auto-transcribe after session", isOn: $autoTranscribe)
 
-            Picker("Quality Preset", selection: $qualityPreset) {
-                ForEach(WhisperModelPreset.allCases, id: \.rawValue) { preset in
-                    Text(preset.displayName).tag(preset.rawValue)
-                }
+            Picker("Transcription Mode", selection: $transcriptionMode) {
+                Text("Cloud (recommended)").tag(TranscriptionMode.cloud.rawValue)
+                Text("On this Mac").tag(TranscriptionMode.local.rawValue)
             }
-
-            Picker("Session Type", selection: $sessionType) {
-                ForEach(DisplaySessionType.allCases, id: \.rawValue) { type in
-                    Text(type.displayName).tag(type.rawValue)
-                }
-            }
-
-            Toggle("Swap mic/speaker labels", isOn: $swapSpeakers)
-            Text("Enable when your microphone captures the patient and system audio carries the therapist.")
+            Text(transcriptionMode == TranscriptionMode.cloud.rawValue
+                ? "Audio is uploaded to Pablo's servers for transcription. Faster and more accurate."
+                : "Audio is transcribed locally using Whisper. Requires model download.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if let warning = transcriptionWarning {
-                Label {
-                    Text(warning)
-                        .font(.caption)
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color.pabloHoney)
-                }
-                .foregroundStyle(Color.pabloHoney)
+            if transcriptionMode == TranscriptionMode.local.rawValue {
+                localTranscriptionOptions
             }
+        }
+    }
 
-            LabeledContent("CPU", value: hardware.isAppleSilicon ? "Apple Silicon" : "Intel")
-            LabeledContent("RAM", value: "\(hardware.physicalMemoryGB) GB")
-
+    @ViewBuilder
+    private var localTranscriptionOptions: some View {
+        Picker("Quality Preset", selection: $qualityPreset) {
             ForEach(WhisperModelPreset.allCases, id: \.rawValue) { preset in
-                modelRow(preset)
+                Text(preset.displayName).tag(preset.rawValue)
             }
+        }
+
+        Picker("Session Type", selection: $sessionType) {
+            ForEach(DisplaySessionType.allCases, id: \.rawValue) { type in
+                Text(type.displayName).tag(type.rawValue)
+            }
+        }
+
+        Toggle("Swap mic/speaker labels", isOn: $swapSpeakers)
+        Text("Enable when your microphone captures the patient and system audio carries the therapist.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+        if let warning = transcriptionWarning {
+            Label {
+                Text(warning)
+                    .font(.caption)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.pabloHoney)
+            }
+            .foregroundStyle(Color.pabloHoney)
+        }
+
+        LabeledContent("CPU", value: hardware.isAppleSilicon ? "Apple Silicon" : "Intel")
+        LabeledContent("RAM", value: "\(hardware.physicalMemoryGB) GB")
+
+        ForEach(WhisperModelPreset.allCases, id: \.rawValue) { preset in
+            modelRow(preset)
         }
     }
 

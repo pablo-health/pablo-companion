@@ -240,6 +240,7 @@ struct SessionRowView: View {
         case .scheduled: "Scheduled"
         case .inProgress: "In Progress"
         case .recordingComplete: "Complete"
+        case .transcribing: "Transcribing"
         case .queued: "Queued"
         case .processing: "Processing"
         case .pendingReview: "Review"
@@ -253,7 +254,7 @@ struct SessionRowView: View {
         switch session.status {
         case .scheduled: Color.pabloSky.opacity(0.2)
         case .inProgress: Color.pabloSage.opacity(0.2)
-        case .recordingComplete, .queued, .processing: Color.pabloHoney.opacity(0.2)
+        case .recordingComplete, .transcribing, .queued, .processing: Color.pabloHoney.opacity(0.2)
         case .pendingReview: Color.pabloHoney.opacity(0.3)
         case .finalized: Color.pabloSage.opacity(0.15)
         case .cancelled, .failed: Color.pabloBlush.opacity(0.3)
@@ -264,7 +265,7 @@ struct SessionRowView: View {
         switch session.status {
         case .scheduled: Color.pabloSky
         case .inProgress: Color.pabloSage
-        case .recordingComplete, .queued, .processing: Color.pabloHoney
+        case .recordingComplete, .transcribing, .queued, .processing: Color.pabloHoney
         case .pendingReview: .orange
         case .finalized: Color.pabloSage
         case .cancelled, .failed: .red

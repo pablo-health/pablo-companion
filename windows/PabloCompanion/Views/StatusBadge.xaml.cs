@@ -31,6 +31,7 @@ public sealed partial class StatusBadge : UserControl
             SessionStatus.Scheduled => ("Scheduled", "#E8D5B8", "#6B5344"),
             SessionStatus.InProgress => ("In Progress", "#7A9E7E", "#FFFFFF"),
             SessionStatus.RecordingComplete => ("Recorded", "#89B4C8", "#FFFFFF"),
+            SessionStatus.Transcribing => ("Transcribing", "#89B4C8", "#FFFFFF"),
             SessionStatus.Queued => ("Queued", "#E8D5B8", "#6B5344"),
             SessionStatus.Processing => ("Processing", "#89B4C8", "#FFFFFF"),
             SessionStatus.PendingReview => ("Review", "#D4922E", "#FFFFFF"),

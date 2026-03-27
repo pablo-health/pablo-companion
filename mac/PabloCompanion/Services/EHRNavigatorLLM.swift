@@ -35,7 +35,7 @@ extension EHRNavigator {
         return nil
     }
 
-    // swiftlint:disable:next function_body_length function_parameter_count
+    // swiftlint:disable:next function_parameter_count
     private func executeNavigationStep(
         step: Int, goal: String, input: NoteEntryInput,
         cdp: CDPConnection,

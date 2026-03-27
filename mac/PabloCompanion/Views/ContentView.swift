@@ -308,7 +308,11 @@ struct ContentView: View {
                         _ = await sessionVM.endSession(sessionId)
                         let segments = recordingVM.allRecordingsForSession(sessionId)
                         if !segments.isEmpty {
-                            await transcriptionVM.transcribeSegments(segments, sessionId: sessionId)
+                            if transcriptionVM.transcriptionMode == .cloud {
+                                await transcriptionVM.uploadAudioSegments(segments, sessionId: sessionId)
+                            } else {
+                                await transcriptionVM.transcribeSegments(segments, sessionId: sessionId)
+                            }
                         }
                         recordingVM.clearSessionSegments(sessionId)
                     }
