@@ -100,6 +100,7 @@ public partial class AuthViewModel : ObservableObject
         if (expiry != null && expiry.Value > DateTimeOffset.UtcNow.AddMinutes(5))
         {
             UserEmail = email;
+            _credentials.ActiveUserEmail = email;
             AuthState = AuthState.Authenticated;
             ScheduleTokenRefresh(expiry.Value);
         }
@@ -188,7 +189,8 @@ public partial class AuthViewModel : ObservableObject
     {
         _refreshTimer?.Dispose();
         _refreshTimer = null;
-        _credentials.ClearAll();
+        _credentials.ClearAuthTokens();
+        _credentials.ActiveUserEmail = null;
         UserEmail = null;
         AuthState = AuthState.Unauthenticated;
 
@@ -259,6 +261,7 @@ public partial class AuthViewModel : ObservableObject
 
         var email = JwtDecoder.GetEmail(idToken);
         _credentials.UserEmail = email;
+        _credentials.ActiveUserEmail = email;
         UserEmail = email;
 
         var expiry = JwtDecoder.GetExpiry(idToken);
@@ -326,6 +329,7 @@ public partial class AuthViewModel : ObservableObject
 
             var email = JwtDecoder.GetEmail(result.IdToken);
             _credentials.UserEmail = email;
+            _credentials.ActiveUserEmail = email;
             UserEmail = email;
 
             var expiry = JwtDecoder.GetExpiry(result.IdToken);

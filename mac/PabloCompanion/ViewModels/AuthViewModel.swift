@@ -83,7 +83,7 @@ final class AuthViewModel {
     // MARK: - Sign Out
 
     func signOut() {
-        KeychainManager.deleteAll()
+        KeychainManager.deleteAuthTokens()
         tokenExpiryTimestamp = 0
         authState = .unauthenticated
         errorMessage = nil

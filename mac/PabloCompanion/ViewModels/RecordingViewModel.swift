@@ -55,6 +55,11 @@ final class RecordingViewModel {
     private let playerDelegate = AudioPlayerDelegateAdapter()
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "RecordingViewModel")
 
+    /// The signed-in user's email, used to scope the encryption key.
+    var userEmail: String? {
+        didSet { service.userEmail = userEmail }
+    }
+
     init() {
         configureServiceCallbacks()
     }
@@ -146,7 +151,7 @@ final class RecordingViewModel {
         do {
             let player: AVAudioPlayer
             if recording.isEncrypted {
-                let wavData = try RecordingEncryptor.decryptFile(at: recording.fileURL)
+                let wavData = try RecordingEncryptor.decryptFile(at: recording.fileURL, userEmail: userEmail)
                 player = try AVAudioPlayer(data: wavData)
             } else {
                 player = try AVAudioPlayer(contentsOf: recording.fileURL)

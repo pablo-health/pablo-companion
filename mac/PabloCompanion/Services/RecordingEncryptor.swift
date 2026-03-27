@@ -2,16 +2,21 @@ import AudioCaptureKit
 import CryptoKit
 import Foundation
 
-/// Production AES-256-GCM encryptor using a per-device key stored in Keychain.
+/// Production AES-256-GCM encryptor using a per-user key stored in Keychain.
 struct RecordingEncryptor: CaptureEncryptor {
     private let key: SymmetricKey
 
-    init?() {
-        guard let keyData = KeychainManager.deviceEncryptionKey()
-            ?? KeychainManager.getOrCreateDeviceEncryptionKey()
-        else {
-            return nil
+    /// Creates an encryptor using the encryption key for the given user.
+    /// Falls back to the legacy device-wide key if no user email is available (e.g. standalone recordings).
+    init?(userEmail: String? = nil) {
+        let keyData: Data? = if let email = userEmail {
+            KeychainManager.getOrCreateEncryptionKey(forUser: email)
+        } else {
+            // Legacy fallback for standalone recordings without a signed-in user
+            KeychainManager.encryptionKey(forUser: "")
+                ?? KeychainManager.getOrCreateEncryptionKey(forUser: "")
         }
+        guard let keyData else { return nil }
         self.key = SymmetricKey(data: keyData)
     }
 
@@ -46,7 +51,7 @@ struct RecordingEncryptor: CaptureEncryptor {
     ///
     /// File format: 44-byte WAV header followed by encrypted chunks.
     /// Each chunk: 4-byte UInt32 length prefix (little-endian) + combined sealed box data.
-    static func decryptFile(at url: URL) throws -> Data {
+    static func decryptFile(at url: URL, userEmail: String? = nil) throws -> Data {
         let fileData = try Data(contentsOf: url)
         let headerSize = 44
         guard fileData.count > headerSize else {
@@ -56,8 +61,8 @@ struct RecordingEncryptor: CaptureEncryptor {
         let header = fileData.prefix(headerSize)
         var offset = headerSize
 
-        guard let encryptor = Self() else {
-            throw CaptureError.encryptionFailed("Device encryption key not available")
+        guard let encryptor = Self(userEmail: userEmail) else {
+            throw CaptureError.encryptionFailed("Encryption key not available")
         }
 
         var pcmData = Data()
@@ -95,10 +100,10 @@ struct RecordingEncryptor: CaptureEncryptor {
     /// Returns the path to the decrypted temp file.
     ///
     /// Format: sequential `[4-byte UInt32 LE length][AES-GCM sealed box]` chunks.
-    static func decryptPCMToTempFile(at url: URL) throws -> URL {
+    static func decryptPCMToTempFile(at url: URL, userEmail: String? = nil) throws -> URL {
         let fileData = try Data(contentsOf: url)
-        guard let encryptor = Self() else {
-            throw CaptureError.encryptionFailed("Device encryption key not available")
+        guard let encryptor = Self(userEmail: userEmail) else {
+            throw CaptureError.encryptionFailed("Encryption key not available")
         }
 
         var pcmData = Data()

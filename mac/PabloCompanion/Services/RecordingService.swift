@@ -82,6 +82,9 @@ final class RecordingService {
 
     // MARK: - Recording Controls
 
+    /// The signed-in user's email, used to scope the encryption key.
+    var userEmail: String?
+
     func startRecording(encryptionEnabled: Bool, debugEnableMic: Bool, debugEnableSystem: Bool) async {
         lastRecordingConfig = RecordingConfig(
             encryptionEnabled: encryptionEnabled,
@@ -91,7 +94,7 @@ final class RecordingService {
         lastOutputDeviceUID = defaultOutputDeviceUID()
         logger.info("Starting recording – system audio: \(self.systemAudioAvailableAtStart)")
 
-        let encryptor: RecordingEncryptor? = encryptionEnabled ? RecordingEncryptor() : nil
+        let encryptor: RecordingEncryptor? = encryptionEnabled ? RecordingEncryptor(userEmail: userEmail) : nil
         let config = CaptureConfiguration(
             sampleRate: 48000,
             bitDepth: 16,

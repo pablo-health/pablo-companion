@@ -20,6 +20,9 @@ struct PendingTranscriptStore {
 
     // MARK: - Private
 
+    /// User email for per-user encryption key scoping. Set after sign-in.
+    var userEmail: String?
+
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PendingTranscriptStore")
 
     private var storeDirectory: URL {
@@ -37,7 +40,7 @@ struct PendingTranscriptStore {
 
     /// Encrypt and save a pending transcript. Overwrites any existing entry for the same recording.
     func save(_ pending: PendingTranscript) {
-        guard let encryptor = RecordingEncryptor() else {
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else {
             logger.error("Cannot save pending transcript: encryption key unavailable")
             return
         }
@@ -54,7 +57,7 @@ struct PendingTranscriptStore {
 
     /// Load and decrypt all pending transcripts from disk.
     func loadAll() -> [PendingTranscript] {
-        guard let encryptor = RecordingEncryptor() else { return [] }
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else { return [] }
         let urls: [URL]
         do {
             urls = try FileManager.default.contentsOfDirectory(
