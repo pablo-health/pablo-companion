@@ -209,7 +209,10 @@ final class EHRNavigator {
                 if (!el) return 'NOT_FOUND';
                 el.focus();
                 if (el.contentEditable === 'true') {
-                    el.innerHTML = '<p>\(escaped)</p>';
+                    el.textContent = '';
+                    const p = document.createElement('p');
+                    p.textContent = '\(escaped)';
+                    el.appendChild(p);
                 } else {
                     el.value = '\(escaped)';
                 }
@@ -292,7 +295,7 @@ final class EHRNavigator {
         process.executableURL = URL(fileURLWithPath: chromePath)
         var args = [
             "--remote-debugging-port=\(port)",
-            "--remote-allow-origins=*",
+            "--remote-allow-origins=http://127.0.0.1",
             "--user-data-dir=\(profileDir)",
             "--no-default-browser-check",
             "--no-first-run",

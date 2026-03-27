@@ -21,9 +21,21 @@ public static partial class PhiSanitizer
     [GeneratedRegex(@"\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}")]
     private static partial Regex DateRegex();
 
+    // DOB: YYYY-MM-DD (ISO format)
+    [GeneratedRegex(@"\d{4}-\d{2}-\d{2}")]
+    private static partial Regex IsoDateRegex();
+
     // SSN: xxx-xx-xxxx
-    [GeneratedRegex(@"\d{3}-\d{2}-\d{4}")]
+    [GeneratedRegex(@"\b\d{3}-\d{2}-\d{4}\b")]
     private static partial Regex SsnRegex();
+
+    // SSN: xxxxxxxxx (no dashes)
+    [GeneratedRegex(@"\b\d{9}\b")]
+    private static partial Regex SsnNoDashRegex();
+
+    // MRN: MRN-123456, MRN: 123456, MRN#123456
+    [GeneratedRegex(@"\bMRN[:\-\s#]*\d{4,10}\b", RegexOptions.IgnoreCase)]
+    private static partial Regex MrnRegex();
 
     // ICD-10: letter + 2 digits + optional .digits
     [GeneratedRegex(@"\b[A-Z]\d{2}\.?\d{0,4}\b")]
@@ -50,9 +62,12 @@ public static partial class PhiSanitizer
 
         // Strip common PHI patterns
         stripped = SsnRegex().Replace(stripped, "[SSN]");
+        stripped = SsnNoDashRegex().Replace(stripped, "[SSN]");
+        stripped = MrnRegex().Replace(stripped, "[MRN]");
         stripped = PhoneRegex().Replace(stripped, "[PHONE]");
         stripped = EmailRegex().Replace(stripped, "[EMAIL]");
         stripped = DateRegex().Replace(stripped, "[DATE]");
+        stripped = IsoDateRegex().Replace(stripped, "[DATE]");
         stripped = Icd10Regex().Replace(stripped, "[DX]");
 
         return stripped;

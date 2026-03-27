@@ -15,10 +15,16 @@ enum PHISanitizer {
     static func strip(from text: String, patientName: String) -> String {
         var stripped = text
 
-        // Strip patient name and individual name parts
-        stripped = stripped.replacingOccurrences(of: patientName, with: "[PATIENT]")
+        // Strip patient name (case-insensitive) and individual name parts
+        stripped = stripped.replacingOccurrences(
+            of: patientName, with: "[PATIENT]",
+            options: .caseInsensitive
+        )
         for part in patientName.split(separator: " ") where part.count > 2 {
-            stripped = stripped.replacingOccurrences(of: String(part), with: "[NAME]")
+            stripped = stripped.replacingOccurrences(
+                of: String(part), with: "[NAME]",
+                options: .caseInsensitive
+            )
         }
 
         // Strip common PHI patterns
@@ -36,14 +42,18 @@ enum PHISanitizer {
 
     // Phone: (xxx) xxx-xxxx, xxx-xxx-xxxx, xxx.xxx.xxxx
     // Email: user@domain.com
-    // DOB: MM/DD/YYYY, MM-DD-YYYY
-    // SSN: xxx-xx-xxxx
+    // DOB: MM/DD/YYYY, MM-DD-YYYY, YYYY-MM-DD (ISO format)
+    // SSN: xxx-xx-xxxx, xxxxxxxxx (no dashes)
+    // MRN: common formats like MRN-123456, MRN: 123456
     // ICD-10: letter + 2 digits + optional .digits
     private static let phiPatterns: [(String, String)] = [
         (#"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"#, "[PHONE]"),
         (#"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"#, "[EMAIL]"),
         (#"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"#, "[DATE]"),
-        (#"\d{3}-\d{2}-\d{4}"#, "[SSN]"),
+        (#"\d{4}-\d{2}-\d{2}"#, "[DATE]"),
+        (#"\b\d{3}-\d{2}-\d{4}\b"#, "[SSN]"),
+        (#"\b\d{9}\b"#, "[SSN]"),
+        (#"(?i)\bMRN[:\-\s#]*\d{4,10}\b"#, "[MRN]"),
         (#"\b[A-Z]\d{2}\.?\d{0,4}\b"#, "[DX]"),
     ]
 }
