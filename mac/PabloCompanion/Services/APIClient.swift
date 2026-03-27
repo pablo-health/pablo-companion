@@ -431,8 +431,8 @@ final class APIClient {
 
 // MARK: - Multipart Data Helper
 
-extension Data {
-    fileprivate mutating func appendMultipartFile(
+private extension Data {
+    mutating func appendMultipartFile(
         fieldName: String,
         fileName: String,
         mimeType: String,
