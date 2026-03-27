@@ -362,36 +362,27 @@ final class APIClient {
 
         onProgress(0.1)
 
-        var body = Data()
-
-        // therapist_audio (required)
-        let therapistData = try Data(contentsOf: therapistAudioURL)
-        body.appendMultipartFile(
+        var parts = try [MultipartFilePart(
             fieldName: "therapist_audio",
             fileName: therapistAudioURL.lastPathComponent,
             mimeType: "audio/wav",
-            data: therapistData,
-            boundary: boundary
-        )
+            data: Data(contentsOf: therapistAudioURL)
+        )]
 
         onProgress(0.3)
 
-        // client_audio (required by endpoint, but we send empty if unavailable)
         if let clientAudioURL, let clientData = try? Data(contentsOf: clientAudioURL) {
-            body.appendMultipartFile(
+            parts.append(MultipartFilePart(
                 fieldName: "client_audio",
                 fileName: clientAudioURL.lastPathComponent,
                 mimeType: "audio/wav",
-                data: clientData,
-                boundary: boundary
-            )
+                data: clientData
+            ))
         }
 
         onProgress(0.5)
 
-        // Close boundary
-        body.append(Data("--\(boundary)--\r\n".utf8))
-        request.httpBody = body
+        request.httpBody = buildMultipartBody(parts: parts, boundary: boundary)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -431,20 +422,27 @@ final class APIClient {
 
 // MARK: - Multipart Data Helper
 
-private extension Data {
-    mutating func appendMultipartFile(
-        fieldName: String,
-        fileName: String,
-        mimeType: String,
-        data: Data,
-        boundary: String
-    ) {
-        append(Data("--\(boundary)\r\n".utf8))
-        append(Data("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileName)\"\r\n".utf8))
-        append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
-        append(data)
-        append(Data("\r\n".utf8))
+/// A single field in a multipart/form-data request body.
+private struct MultipartFilePart {
+    let fieldName: String
+    let fileName: String
+    let mimeType: String
+    let data: Data
+}
+
+private func buildMultipartBody(parts: [MultipartFilePart], boundary: String) -> Data {
+    var body = Data()
+    for part in parts {
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body
+            .append(Data("Content-Disposition: form-data; name=\"\(part.fieldName)\"; filename=\"\(part.fileName)\"\r\n"
+                    .utf8))
+        body.append(Data("Content-Type: \(part.mimeType)\r\n\r\n".utf8))
+        body.append(part.data)
+        body.append(Data("\r\n".utf8))
     }
+    body.append(Data("--\(boundary)--\r\n".utf8))
+    return body
 }
 
 enum APIError: LocalizedError {
