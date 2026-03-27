@@ -151,11 +151,12 @@ public partial class SessionViewModel : ObservableObject
             await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.RecordingComplete);
             ActiveSession = null;
 
-            // Auto-transcribe if enabled — add to pending store for resiliency
+            // Upload audio to backend for server-side transcription (default on Windows).
+            // Falls back to local transcription if upload fails and auto-transcribe is on.
             if (_transcriptionVm.AutoTranscribe)
             {
                 _pendingStore.Add(sessionId, _transcriptionVm.QualityPreset);
-                _ = _transcriptionVm.TranscribeSessionAsync(sessionId);
+                _ = _transcriptionVm.UploadAudioAsync(sessionId);
             }
 
             await LoadTodaySessionsAsync();

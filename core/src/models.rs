@@ -11,6 +11,7 @@ pub enum SessionStatus {
     Scheduled,
     InProgress,
     RecordingComplete,
+    Transcribing,
     Queued,
     Processing,
     PendingReview,

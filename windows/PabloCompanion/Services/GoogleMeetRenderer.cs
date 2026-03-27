@@ -151,7 +151,7 @@ public static class GoogleMeetRenderer
 
 // Data types used by transcription services
 public enum SpeakerLabel { Therapist, Client, Unknown }
-public enum TranscriptionState { Idle, DownloadingModel, Preprocessing, Transcribing, Complete, PendingUpload, Error }
+public enum TranscriptionState { Idle, DownloadingModel, Preprocessing, Transcribing, Uploading, Complete, PendingUpload, Error }
 public enum QualityPreset { Fast, Balanced, Accurate }
 
 public sealed record TranscriptSegment(SpeakerLabel Speaker, double StartSeconds, double EndSeconds, string Text);

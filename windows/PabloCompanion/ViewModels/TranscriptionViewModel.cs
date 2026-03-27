@@ -323,6 +323,47 @@ public partial class TranscriptionViewModel : ObservableObject
     public string GetModelSizeLabel() => _modelManager.GetModelSizeLabel(QualityPreset);
 
     /// <summary>
+    /// Uploads therapist and client audio to the backend for server-side transcription.
+    /// This is the default flow on Windows — audio is always sent to the cloud.
+    /// </summary>
+    public async Task UploadAudioAsync(string sessionId)
+    {
+        if (State == TranscriptionState.Uploading)
+            return;
+
+        var recording = _recordingStore.Get(sessionId);
+        if (recording?.MicPcmFilePath == null)
+        {
+            ErrorMessage = "No recording found for this session.";
+            State = TranscriptionState.Error;
+            return;
+        }
+
+        ActiveSessionId = sessionId;
+        State = TranscriptionState.Uploading;
+        Progress = 0.1;
+        ProgressMessage = "Uploading audio to Pablo...";
+        ErrorMessage = null;
+
+        try
+        {
+            var response = await _apiClient.UploadAudioAsync(
+                sessionId,
+                recording.MicPcmFilePath,
+                recording.SystemPcmFilePath);
+
+            State = TranscriptionState.Complete;
+            Progress = 1.0;
+            ProgressMessage = response.Message;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Audio upload failed: {ex.Message}";
+            State = TranscriptionState.Error;
+        }
+    }
+
+    /// <summary>
     /// Clears all transcript data. Called on sign-out to prevent PHI leakage.
     /// </summary>
     public void ClearAllData()

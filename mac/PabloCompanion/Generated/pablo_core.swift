@@ -2388,10 +2388,11 @@ public func FfiConverterTypeSessionSource_lower(_ value: SessionSource) -> RustB
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum SessionStatus: Equatable, Hashable {
-    
+
     case scheduled
     case inProgress
     case recordingComplete
+    case transcribing
     case queued
     case processing
     case pendingReview
@@ -2420,23 +2421,25 @@ public struct FfiConverterTypeSessionStatus: FfiConverterRustBuffer {
         switch variant {
         
         case 1: return .scheduled
-        
+
         case 2: return .inProgress
-        
+
         case 3: return .recordingComplete
-        
-        case 4: return .queued
-        
-        case 5: return .processing
-        
-        case 6: return .pendingReview
-        
-        case 7: return .finalized
-        
-        case 8: return .cancelled
-        
-        case 9: return .failed
-        
+
+        case 4: return .transcribing
+
+        case 5: return .queued
+
+        case 6: return .processing
+
+        case 7: return .pendingReview
+
+        case 8: return .finalized
+
+        case 9: return .cancelled
+
+        case 10: return .failed
+
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -2447,38 +2450,42 @@ public struct FfiConverterTypeSessionStatus: FfiConverterRustBuffer {
         
         case .scheduled:
             writeInt(&buf, Int32(1))
-        
-        
+
+
         case .inProgress:
             writeInt(&buf, Int32(2))
-        
-        
+
+
         case .recordingComplete:
             writeInt(&buf, Int32(3))
-        
-        
-        case .queued:
+
+
+        case .transcribing:
             writeInt(&buf, Int32(4))
-        
-        
-        case .processing:
+
+
+        case .queued:
             writeInt(&buf, Int32(5))
-        
-        
-        case .pendingReview:
+
+
+        case .processing:
             writeInt(&buf, Int32(6))
-        
-        
-        case .finalized:
+
+
+        case .pendingReview:
             writeInt(&buf, Int32(7))
-        
-        
-        case .cancelled:
+
+
+        case .finalized:
             writeInt(&buf, Int32(8))
-        
-        
-        case .failed:
+
+
+        case .cancelled:
             writeInt(&buf, Int32(9))
+
+
+        case .failed:
+            writeInt(&buf, Int32(10))
         
         }
     }

@@ -321,6 +321,90 @@ final class APIClient {
         return prefs
     }
 
+    // MARK: - Audio Upload (native URLSession — not via Rust core)
+
+    /// Uploads therapist and client audio files to the backend for server-side transcription.
+    /// Uses native URLSession multipart/form-data since this endpoint is not in pablo-core.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The backend session UUID (must be in `recording_complete` status).
+    ///   - therapistAudioURL: Path to the mic PCM/WAV sidecar file.
+    ///   - clientAudioURL: Path to the system audio PCM/WAV sidecar file (optional).
+    ///   - onProgress: Progress callback (0.0–1.0). Simulated since URLSession upload
+    ///     progress requires delegate-based uploads.
+    /// - Returns: `AudioUploadResponse` with the session's new status.
+    func uploadAudio(
+        sessionId: String,
+        therapistAudioURL: URL,
+        clientAudioURL: URL?,
+        onProgress: @Sendable @escaping (Double) -> Void
+    ) async throws -> AudioUploadResponse {
+        let token = try await requireToken()
+
+        let endpoint = "\(baseURLString)/api/sessions/\(sessionId)/upload-audio"
+        guard let url = URL(string: endpoint) else {
+            throw APIError.invalidResponse
+        }
+
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+
+        onProgress(0.1)
+
+        var body = Data()
+
+        // therapist_audio (required)
+        let therapistData = try Data(contentsOf: therapistAudioURL)
+        body.appendMultipartFile(
+            fieldName: "therapist_audio",
+            fileName: therapistAudioURL.lastPathComponent,
+            mimeType: "audio/wav",
+            data: therapistData,
+            boundary: boundary
+        )
+
+        onProgress(0.3)
+
+        // client_audio (required by endpoint, but we send empty if unavailable)
+        if let clientAudioURL, let clientData = try? Data(contentsOf: clientAudioURL) {
+            body.appendMultipartFile(
+                fieldName: "client_audio",
+                fileName: clientAudioURL.lastPathComponent,
+                mimeType: "audio/wav",
+                data: clientData,
+                boundary: boundary
+            )
+        }
+
+        onProgress(0.5)
+
+        // Close boundary
+        body.append(Data("--\(boundary)--\r\n".utf8))
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        onProgress(0.9)
+
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw APIError.serverError(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        let decoded = try JSONDecoder().decode(AudioUploadResponse.self, from: data)
+        onProgress(1.0)
+        logger.info("Audio uploaded for session \(sessionId)")
+        return decoded
+    }
+
     // MARK: - Multipart helper (kept for backward compat + tests)
 
     func createMultipartBody(
@@ -335,6 +419,24 @@ final class APIClient {
         body.append(fileData)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         return body
+    }
+}
+
+// MARK: - Multipart Data Helper
+
+extension Data {
+    fileprivate mutating func appendMultipartFile(
+        fieldName: String,
+        fileName: String,
+        mimeType: String,
+        data: Data,
+        boundary: String
+    ) {
+        append(Data("--\(boundary)\r\n".utf8))
+        append(Data("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileName)\"\r\n".utf8))
+        append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
+        append(data)
+        append(Data("\r\n".utf8))
     }
 }
 

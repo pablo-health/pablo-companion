@@ -101,6 +101,11 @@ final class TranscriptionViewModel {
         return WhisperModelPreset(rawValue: raw) ?? .balanced
     }
 
+    var transcriptionMode: TranscriptionMode {
+        let raw = UserDefaults.standard.string(forKey: "transcriptionMode") ?? ""
+        return TranscriptionMode(rawValue: raw) ?? .cloud
+    }
+
     /// Configures the API client with a token provider for authenticated requests.
     func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
         apiClient.getToken = getToken
@@ -109,13 +114,67 @@ final class TranscriptionViewModel {
     // MARK: - Public API
 
     /// Triggers transcription for a recording if auto-transcribe is enabled.
+    /// Routes to cloud upload or local Whisper based on the user's transcription mode setting.
     func transcribeIfNeeded(_ recording: LocalRecording, sessionId: String? = nil) {
         guard autoTranscribe else { return }
         guard recording.micPCMFileURL != nil else {
             logger.info("Skipping transcription: no PCM sidecar")
             return
         }
-        Task { await transcribe(recording, sessionId: sessionId) }
+        if transcriptionMode == .cloud, let sessionId {
+            Task { await uploadAudioToBackend(recording, sessionId: sessionId) }
+        } else {
+            Task { await transcribe(recording, sessionId: sessionId) }
+        }
+    }
+
+    /// Uploads audio files for a set of recordings to the backend for server-side transcription.
+    /// Used when transcription mode is `.cloud`.
+    func uploadAudioSegments(_ recordings: [LocalRecording], sessionId: String) async {
+        guard autoTranscribe else { return }
+        let viable = recordings.filter { $0.micPCMFileURL != nil }
+        guard !viable.isEmpty else { return }
+
+        // For cloud upload, use the last recording's audio files (multi-segment will be
+        // concatenated on the backend in a future iteration).
+        if let recording = viable.last {
+            await uploadAudioToBackend(recording, sessionId: sessionId)
+        }
+    }
+
+    /// Uploads the therapist (mic) and client (system) audio to the backend.
+    private func uploadAudioToBackend(_ recording: LocalRecording, sessionId: String) async {
+        guard let micURL = recording.micPCMFileURL else {
+            states[recording.id] = .failed(message: "No mic audio file available")
+            return
+        }
+
+        states[recording.id] = .running
+        logger.info("Uploading audio to backend for server-side transcription")
+
+        do {
+            // Decrypt if needed
+            let pcm = try decryptPCMIfNeeded(recording)
+            defer { pcm.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+
+            let therapistURL = URL(fileURLWithPath: pcm.micPath)
+            let clientURL = pcm.systemPath.map { URL(fileURLWithPath: $0) }
+
+            let response = try await apiClient.uploadAudio(
+                sessionId: sessionId,
+                therapistAudioURL: therapistURL,
+                clientAudioURL: clientURL
+            ) { _ in
+                // Progress callback — could wire to UI in future
+            }
+
+            states[recording.id] = .done(transcript: "")
+            logger.info("Audio upload succeeded: \(response.message)")
+        } catch {
+            let message = error.localizedDescription
+            states[recording.id] = .failed(message: "Audio upload failed: \(message)")
+            logger.error("Audio upload failed: \(message)")
+        }
     }
 
     /// Unconditionally runs the full transcription pipeline for a recording.
