@@ -228,9 +228,8 @@ final class PracticeWebSocketClient: @unchecked Sendable {
     }
 
     private func handleStatusUpdate(_ json: [String: Any]) {
-        if let stateStr = json["state"] as? String,
-           let pabloState = PabloState(rawValue: stateStr)
-        {
+        guard let stateStr = json["state"] as? String else { return }
+        if let pabloState = PabloState(rawValue: stateStr) {
             onPabloStateChanged?(pabloState)
         }
     }

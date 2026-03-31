@@ -105,7 +105,7 @@ final class PracticeMicCapture: @unchecked Sendable {
         accumulator.append(pcmData)
         while accumulator.count >= frameBytes {
             let frame = accumulator.prefix(frameBytes)
-            accumulator = accumulator.dropFirst(frameBytes).asData
+            accumulator = Data(accumulator.dropFirst(frameBytes))
             lock.unlock()
             onAudioFrame?(frame)
             lock.lock()
@@ -199,12 +199,5 @@ enum PracticeMicError: LocalizedError {
         case .converterFailed:
             "Failed to initialize audio format converter."
         }
-    }
-}
-
-extension Data.SubSequence {
-    /// Convert Data.SubSequence back to Data.
-    fileprivate var asData: Data {
-        Data(self)
     }
 }
