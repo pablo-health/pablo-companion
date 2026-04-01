@@ -3,14 +3,16 @@ import SwiftUI
 /// Main view — authenticates, then shows four-tab navigation.
 struct ContentView: View {
     var authVM: AuthViewModel
-    @State private var sessionVM = SessionViewModel()
+    @State var sessionVM = SessionViewModel()
     @State private var recordingVM = RecordingViewModel()
     @State private var uploadVM = UploadViewModel()
     @State private var patientVM = PatientViewModel()
     @State private var transcriptionVM = TranscriptionViewModel()
+    @State var practiceVM = PracticeViewModel()
+    @State var showPractice = false
     @State private var viewingTranscript: TranscriptViewerItem?
     @State private var detailSession: Session?
-    @State private var activeSessionId: String?
+    @State var activeSessionId: String?
     @State private var selectedTab = 0
     @State private var versionBlock: UpdateRequiredView.Reason?
     @State private var screenLockObserver: NSObjectProtocol?
@@ -104,6 +106,10 @@ struct ContentView: View {
         .onChange(of: uploadVM.backendURL) { _, newURL in
             patientVM.backendURL = newURL
             sessionVM.backendURL = newURL
+            practiceVM.backendURL = newURL
+        }
+        .sheet(isPresented: $showPractice) {
+            practiceSheet
         }
     }
 
@@ -126,6 +132,7 @@ struct ContentView: View {
         uploadVM.configureAuth { [authVM] in try await authVM.getValidToken() }
         patientVM.configureAuth { [authVM] in try await authVM.getValidToken() }
         sessionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
+        practiceVM.configureAuth { [authVM] in try await authVM.getValidToken() }
 
         // Scope encryption keys to the signed-in user
         let email = authVM.authenticatedEmail
@@ -348,6 +355,17 @@ struct ContentView: View {
             activeSessionId: activeSessionId,
             onSessionTapped: { detailSession = $0 }
         )
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    startPractice()
+                } label: {
+                    Label("Practice", systemImage: "pawprint.fill")
+                }
+                .disabled(activeSessionId != nil || practiceVM.isSessionActive)
+                .accessibilityLabel("Start practice session with Pablo Bear")
+            }
+        }
         .tabItem { Label("Today", systemImage: "calendar") }
         .tag(0)
     }
@@ -425,6 +443,8 @@ struct ContentView: View {
 
         patientVM.patients = []
         patientVM.searchText = ""
+
+        practiceVM.dismiss()
 
         activeSessionId = nil
         detailSession = nil
