@@ -23,7 +23,9 @@ final class LoopbackServer: @unchecked Sendable {
     private(set) var port: UInt16 = 0
 
     /// The redirect URI to send to the authorization server.
-    var redirectURI: String { "http://127.0.0.1:\(port)/callback" }
+    var redirectURI: String {
+        "http://127.0.0.1:\(port)/callback"
+    }
 
     enum ServerError: LocalizedError {
         case bindFailed
