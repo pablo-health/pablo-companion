@@ -9,13 +9,10 @@ public partial class App : Application
 
     public static IServiceProvider Services { get; private set; } = null!;
     public static Microsoft.UI.Dispatching.DispatcherQueue? UiDispatcherQueue { get; private set; }
-    public static Uri? PendingProtocolUri { get; set; }
-
     /// <summary>
     /// True when COM activation bypassed Main() and another instance already owns the mutex.
     /// </summary>
     private bool _isSecondInstance;
-    private Uri? _comProtocolUri;
     private Mutex? _comPathMutex;
     private Window? _window;
 
@@ -32,16 +29,6 @@ public partial class App : Application
             if (!createdNew)
             {
                 _isSecondInstance = true;
-                try
-                {
-                    var activatedArgs = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs();
-                    if (activatedArgs.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Protocol)
-                    {
-                        var protocolArgs = activatedArgs.Data as Windows.ApplicationModel.Activation.IProtocolActivatedEventArgs;
-                        _comProtocolUri = protocolArgs?.Uri;
-                    }
-                }
-                catch { }
                 return;
             }
         }
@@ -55,10 +42,6 @@ public partial class App : Application
     {
         if (_isSecondInstance)
         {
-            if (_comProtocolUri != null)
-            {
-                Program.SendUriToExistingInstance(_comProtocolUri);
-            }
             Environment.Exit(0);
             return;
         }
@@ -66,12 +49,6 @@ public partial class App : Application
         _window = new Views.MainWindow();
         UiDispatcherQueue = _window.DispatcherQueue;
         _window.Activate();
-
-        if (PendingProtocolUri != null)
-        {
-            HandleProtocolActivation(PendingProtocolUri);
-            PendingProtocolUri = null;
-        }
 
         // Resume pending transcription uploads after launch
         _ = ResumePendingTranscriptionsAsync();
@@ -100,18 +77,6 @@ public partial class App : Application
         services.AddSingleton<ViewModels.PatientViewModel>();
         services.AddSingleton<ViewModels.RecordingViewModel>();
         services.AddSingleton<ViewModels.TranscriptionViewModel>();
-    }
-
-    public static void HandleProtocolActivationStatic(Uri uri)
-    {
-        var app = (App)Current;
-        app.HandleProtocolActivation(uri);
-    }
-
-    private void HandleProtocolActivation(Uri uri)
-    {
-        var authVm = Services.GetRequiredService<ViewModels.AuthViewModel>();
-        _ = authVm.HandleAuthCallbackAsync(uri);
     }
 
     private static async Task ResumePendingTranscriptionsAsync()

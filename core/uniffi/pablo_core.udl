@@ -292,6 +292,7 @@ enum SessionSource {
     "Web",
     "Companion",
     "Calendar",
+    "Practice",
 };
 
 enum QualityPreset {
