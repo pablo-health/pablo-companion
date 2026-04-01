@@ -50,7 +50,7 @@ struct LoginView: View {
             ProgressView("Authenticating...")
         } else {
             Button("Sign In") {
-                authViewModel.signIn()
+                Task { await authViewModel.signIn() }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)

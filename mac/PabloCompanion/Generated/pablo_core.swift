@@ -2318,6 +2318,7 @@ public enum SessionSource: Equatable, Hashable {
     case web
     case companion
     case calendar
+    case practice
 
 
 
@@ -2344,7 +2345,9 @@ public struct FfiConverterTypeSessionSource: FfiConverterRustBuffer {
         case 2: return .companion
         
         case 3: return .calendar
-        
+
+        case 4: return .practice
+
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -2363,6 +2366,10 @@ public struct FfiConverterTypeSessionSource: FfiConverterRustBuffer {
         
         case .calendar:
             writeInt(&buf, Int32(3))
+
+
+        case .practice:
+            writeInt(&buf, Int32(4))
         
         }
     }

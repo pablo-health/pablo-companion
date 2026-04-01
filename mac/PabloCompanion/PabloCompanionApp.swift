@@ -13,7 +13,6 @@ struct PabloCompanionApp: App {
     var body: some Scene {
         Window("Pablo", id: "main") {
             ContentView(authVM: authVM)
-                .onOpenURL { url in authVM.handleOpenURL(url) }
                 .task {
                     await requestScreenCapturePermission()
                 }

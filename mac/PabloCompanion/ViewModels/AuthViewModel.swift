@@ -4,7 +4,7 @@ import Foundation
 import os
 import SwiftUI
 
-/// Manages authentication state via ASWebAuthenticationSession and Firebase token refresh.
+/// Manages authentication state via loopback redirect (RFC 8252 §7.3) and Firebase token refresh.
 @MainActor
 @Observable
 final class AuthViewModel {
@@ -51,6 +51,9 @@ final class AuthViewModel {
     /// PKCE code verifier for the current auth flow (RFC 7636).
     private var pkceCodeVerifier: String?
 
+    /// Active loopback server for the current sign-in attempt (if any).
+    private var loopbackServer: LoopbackServer?
+
     // MARK: - Init
 
     init() {
@@ -59,25 +62,55 @@ final class AuthViewModel {
 
     // MARK: - Sign In
 
-    func signIn() {
-        guard let url = buildAuthURL() else {
-            errorMessage = "Invalid auth server URL."
-            return
+    /// Starts the OAuth sign-in flow using a loopback redirect (RFC 8252 §7.3).
+    /// Spins up a local HTTP server, opens the browser, waits for the callback.
+    func signIn() async {
+        // Cancel any previous in-flight sign-in
+        loopbackServer?.stop()
+        loopbackServer = nil
+
+        let server = LoopbackServer()
+        loopbackServer = server
+
+        do {
+            let port = try await server.start()
+            logger.info("Loopback server started on port \(port)")
+
+            guard let url = buildAuthURL(redirectURI: server.redirectURI) else {
+                errorMessage = "Invalid auth server URL."
+                server.stop()
+                loopbackServer = nil
+                return
+            }
+
+            authState = .authenticating
+            errorMessage = nil
+
+            NSWorkspace.shared.open(url)
+            logger.info("Opened auth URL in browser")
+
+            let callbackURL = try await server.waitForCallback(timeout: 120)
+
+            guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+                  let code = components.queryItems?.first(where: { $0.name == "code" })?.value
+            else {
+                errorMessage = "Missing authorization code in callback."
+                authState = .unauthenticated
+                return
+            }
+
+            await exchangeCodeForTokens(code: code, redirectURI: server.redirectURI)
+        } catch let error as LoopbackServer.ServerError {
+            errorMessage = error.errorDescription
+            authState = .unauthenticated
+        } catch {
+            errorMessage = "Sign-in failed. Please try again."
+            authState = .unauthenticated
+            logger.error("Sign-in error: \(error.localizedDescription)")
         }
 
-        authState = .authenticating
-        errorMessage = nil
-
-        // Open the auth page in the default browser. The callback will arrive
-        // via the registered pablohealth:// URL scheme → onOpenURL → handleOpenURL.
-        NSWorkspace.shared.open(url)
-        logger.info("Opened auth URL in browser: \(url)")
-    }
-
-    /// Called from SwiftUI's `onOpenURL` when macOS routes a `pablohealth://` URL to the app.
-    func handleOpenURL(_ url: URL) {
-        guard url.scheme == AppConstants.callbackURLScheme else { return }
-        handleAuthCallback(callbackURL: url)
+        server.stop()
+        loopbackServer = nil
     }
 
     // MARK: - Sign Out
@@ -139,14 +172,14 @@ final class AuthViewModel {
         }
     }
 
-    private func buildAuthURL() -> URL? {
+    private func buildAuthURL(redirectURI: String) -> URL? {
         if let error = URLValidator.validateScheme(authServerURL) {
             errorMessage = error
             return nil
         }
         let base = authServerURL.trimmingCharacters(in: .init(charactersIn: "/"))
         var components = URLComponents(string: "\(base)/native-auth")
-        var queryItems = [URLQueryItem(name: "redirect_uri", value: AppConstants.redirectURI)]
+        var queryItems = [URLQueryItem(name: "redirect_uri", value: redirectURI)]
         if !tenantID.isEmpty {
             queryItems.append(URLQueryItem(name: "tenant_id", value: tenantID))
         }
@@ -161,34 +194,9 @@ final class AuthViewModel {
         return components?.url
     }
 
-    private func handleAuthCallback(callbackURL: URL) {
-        guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-              let queryItems = components.queryItems
-        else {
-            errorMessage = "Invalid callback URL."
-            authState = .unauthenticated
-            return
-        }
-
-        let params = Dictionary(uniqueKeysWithValues: queryItems.compactMap { item in
-            item.value.map { (item.name, $0) }
-        })
-
-        guard let code = params["code"] else {
-            errorMessage = "Missing authorization code in callback."
-            authState = .unauthenticated
-            return
-        }
-
-        // Exchange the one-time code for tokens
-        Task {
-            await exchangeCodeForTokens(code: code)
-        }
-    }
-
     // MARK: - Code Exchange (RFC 8252)
 
-    private func exchangeCodeForTokens(code: String) async {
+    private func exchangeCodeForTokens(code: String, redirectURI: String) async {
         let base = authServerURL.trimmingCharacters(in: .init(charactersIn: "/"))
         guard let exchangeURL = URL(string: "\(base)/api/auth/native/exchange") else {
             errorMessage = "Invalid auth server URL."
@@ -201,7 +209,7 @@ final class AuthViewModel {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body: [String: String] = [
             "code": code,
-            "redirect_uri": AppConstants.redirectURI,
+            "redirect_uri": redirectURI,
         ]
         if let verifier = pkceCodeVerifier {
             body["code_verifier"] = verifier
@@ -254,6 +262,10 @@ final class AuthViewModel {
         authState = .authenticated(email: email)
         errorMessage = nil
         logger.info("Signed in successfully")
+
+        // Bring the app window to the foreground after completing the token exchange.
+        // The browser still has focus at this point since the user authenticated there.
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     private func refreshToken() async throws -> String {
