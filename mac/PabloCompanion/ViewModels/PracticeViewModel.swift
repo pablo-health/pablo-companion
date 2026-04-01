@@ -42,7 +42,10 @@ final class PracticeViewModel {
     private let audioPlayer = PracticeAudioPlayer()
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PracticeViewModel")
     private var durationTimer: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
     private var sessionStartTime: Date?
+    private var reconnectAttempts = 0
+    private static let maxReconnectAttempts = 3
 
     /// The mic device UID to use (mirrors RecordingViewModel.selectedMicID).
     var selectedMicID: String?
@@ -222,17 +225,65 @@ final class PracticeViewModel {
         switch state {
         case .disconnected:
             if case .active = phase {
-                // Unexpected disconnect during active session
-                showErrorAlert("Connection to practice server lost.")
-                cleanup()
-                phase = .error("Connection lost")
+                // Unexpected disconnect — attempt reconnection
+                attemptReconnection()
             }
         case .connecting, .authenticating, .waitingForSession:
             break // already in .connecting phase
         case .active:
-            break // handled by onSessionStarted
+            reconnectAttempts = 0 // reset on successful connection
         case .ending:
             break // handled by onSessionEnded
+        }
+    }
+
+    // MARK: - Reconnection
+
+    /// Attempts to reconnect using a fresh single-use ticket.
+    /// Retries up to 3 times within the server's 30-second reconnection window.
+    private func attemptReconnection() {
+        guard let sessionId, reconnectAttempts < Self.maxReconnectAttempts else {
+            logger.error("Reconnection failed — max attempts reached")
+            cleanup()
+            phase = .error("Connection lost")
+            return
+        }
+
+        reconnectAttempts += 1
+        phase = .connecting
+        logger.info("Reconnecting (attempt \(self.reconnectAttempts)/\(Self.maxReconnectAttempts))")
+
+        let lastSeq = wsClient.lastReceivedSequence
+
+        reconnectTask?.cancel()
+        reconnectTask = Task { [weak self] in
+            guard let self else { return }
+
+            // Brief backoff: 0.5s, 1s, 2s
+            let delay = 0.5 * pow(2.0, Double(self.reconnectAttempts - 1))
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+
+            do {
+                let ticket = try await self.apiClient.fetchTicket()
+                guard let wsURL = self.apiClient.webSocketURL(ticket: ticket) else {
+                    throw APIError.invalidResponse
+                }
+
+                self.wsClient.disconnect(forReconnect: true)
+                self.wsClient.connect(url: wsURL)
+
+                // Wait for auth, then resume session
+                try await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                self.wsClient.resumeSession(sessionId: sessionId, lastSequence: lastSeq)
+
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.logger.error("Reconnect attempt failed: \(error.localizedDescription)")
+                // Will trigger another handleConnectionState(.disconnected) → retry
+                self.attemptReconnection()
+            }
         }
     }
 
@@ -252,6 +303,9 @@ final class PracticeViewModel {
     // MARK: - Cleanup
 
     private func cleanup() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectAttempts = 0
         durationTimer?.cancel()
         durationTimer = nil
         micCapture.stop()

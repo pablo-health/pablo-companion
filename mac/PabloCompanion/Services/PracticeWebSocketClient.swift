@@ -51,6 +51,14 @@ final class PracticeWebSocketClient: @unchecked Sendable {
         return _state
     }
 
+    /// Last received sequence number from server binary frames (for session_resume).
+    private var _lastReceivedSequence: UInt16 = 0
+    var lastReceivedSequence: UInt16 {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastReceivedSequence
+    }
+
     private func setState(_ newState: ConnectionState) {
         lock.lock()
         _state = newState
@@ -82,6 +90,17 @@ final class PracticeWebSocketClient: @unchecked Sendable {
         let message: [String: Any] = [
             "type": "session_start",
             "session_id": sessionId,
+        ]
+        sendJSON(message)
+        setState(.waitingForSession)
+    }
+
+    /// Resumes a session after reconnection (30-second window).
+    func resumeSession(sessionId: String, lastSequence: UInt16) {
+        let message: [String: Any] = [
+            "type": "session_resume",
+            "session_id": sessionId,
+            "last_sequence": lastSequence,
         ]
         sendJSON(message)
         setState(.waitingForSession)
@@ -127,7 +146,9 @@ final class PracticeWebSocketClient: @unchecked Sendable {
 
     // MARK: - Disconnect
 
-    func disconnect() {
+    /// Disconnects the WebSocket. If `forReconnect` is true, preserves
+    /// sequence numbers so the session can be resumed.
+    func disconnect(forReconnect: Bool = false) {
         heartbeatTask?.cancel()
         heartbeatTask = nil
         receiveTask?.cancel()
@@ -138,9 +159,12 @@ final class PracticeWebSocketClient: @unchecked Sendable {
         urlSession?.invalidateAndCancel()
         urlSession = nil
 
-        lock.lock()
-        sendSequence = 0
-        lock.unlock()
+        if !forReconnect {
+            lock.lock()
+            sendSequence = 0
+            _lastReceivedSequence = 0
+            lock.unlock()
+        }
 
         setState(.disconnected)
     }
@@ -265,6 +289,10 @@ final class PracticeWebSocketClient: @unchecked Sendable {
 
         let flags = data[1]
         let isFinal = (flags & 0x01) != 0
+        let seq = (UInt16(data[2]) << 8) | UInt16(data[3])
+        lock.lock()
+        _lastReceivedSequence = seq
+        lock.unlock()
         let pcmData = data.subdata(in: 4 ..< data.count)
 
         onAudioReceived?(pcmData, isFinal)
