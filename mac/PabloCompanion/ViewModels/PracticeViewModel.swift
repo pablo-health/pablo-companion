@@ -83,8 +83,10 @@ final class PracticeViewModel {
             sessionId = response.sessionId
             logger.info("Practice session created: \(response.sessionId)")
 
-            // 2. Connect WebSocket
-            let wsURL = try await apiClient.webSocketURL()
+            // 2. Connect WebSocket using the single-use ticket from session creation
+            guard let wsURL = apiClient.webSocketURL(ticket: response.wsTicket) else {
+                throw APIError.invalidResponse
+            }
             wsClient.connect(url: wsURL)
 
             // 3. Start mic capture (will begin sending frames once WS is active)

@@ -70,16 +70,19 @@ final class PracticeAPIClient {
         logger.info("Ended practice session \(sessionId) via REST")
     }
 
-    /// Builds the authenticated WebSocket URL for a practice session.
-    func webSocketURL() async throws -> URL {
-        let token = try await requireToken()
+    /// Builds the WebSocket URL using a single-use ticket from session creation.
+    func webSocketURL(ticket: String) -> URL? {
         let wsBase = baseURL
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://")
-        let urlString = "\(wsBase)/api/practice/ws?token=\(token)"
-        guard let url = URL(string: urlString) else {
-            throw APIError.invalidResponse
-        }
-        return url
+        return URL(string: "\(wsBase)/api/practice/ws?ticket=\(ticket)")
+    }
+
+    /// Fetches a fresh single-use WebSocket ticket for reconnection.
+    /// Tickets expire after 30 seconds and can only be used once.
+    func fetchTicket() async throws -> String {
+        let (data, _) = try await makeRequest("/api/practice/ws-ticket", method: "POST")
+        let response = try JSONDecoder().decode(TicketResponse.self, from: data)
+        return response.ticket
     }
 }

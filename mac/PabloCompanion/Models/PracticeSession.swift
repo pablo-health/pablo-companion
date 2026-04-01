@@ -7,6 +7,7 @@ struct PracticeSessionResponse: Codable, Sendable {
     let topicName: String
     let status: String
     let wsUrl: String
+    let wsTicket: String
     let createdAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -15,8 +16,14 @@ struct PracticeSessionResponse: Codable, Sendable {
         case topicName = "topic_name"
         case status
         case wsUrl = "ws_url"
+        case wsTicket = "ws_ticket"
         case createdAt = "created_at"
     }
+}
+
+/// Response from POST /api/practice/ws-ticket.
+struct TicketResponse: Codable, Sendable {
+    let ticket: String
 }
 
 /// Response from GET /api/practice/sessions/{id}.
