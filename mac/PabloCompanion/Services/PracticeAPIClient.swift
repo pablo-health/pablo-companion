@@ -71,10 +71,12 @@ final class PracticeAPIClient {
     }
 
     /// Builds the WebSocket URL using a single-use ticket from session creation.
+    /// Forces IPv4 (127.0.0.1) for localhost to avoid URLSessionWebSocketTask IPv6 issues.
     func webSocketURL(ticket: String) -> URL? {
         let wsBase = baseURL
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://")
+            .replacingOccurrences(of: "://localhost", with: "://127.0.0.1")
         return URL(string: "\(wsBase)/api/practice/ws?ticket=\(ticket)")
     }
 
