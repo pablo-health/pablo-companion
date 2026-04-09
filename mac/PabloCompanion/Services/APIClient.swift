@@ -8,7 +8,7 @@ final class APIClient {
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "APIClient")
 
     nonisolated let baseURL: URL
-    nonisolated private let baseURLString: String
+    nonisolated let baseURLString: String
 
     /// Optional closure to provide a Bearer token for authenticated requests.
     var getToken: (@Sendable () async throws -> String)?
@@ -37,7 +37,7 @@ final class APIClient {
 
     // MARK: - Token helper
 
-    private func requireToken() async throws -> String {
+    func requireToken() async throws -> String {
         guard let getToken else {
             throw APIError.notAuthenticated
         }

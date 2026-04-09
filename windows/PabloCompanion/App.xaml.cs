@@ -77,6 +77,7 @@ public partial class App : Application
         services.AddSingleton<ViewModels.PatientViewModel>();
         services.AddSingleton<ViewModels.RecordingViewModel>();
         services.AddSingleton<ViewModels.TranscriptionViewModel>();
+        services.AddSingleton<ViewModels.SubscriptionViewModel>();
     }
 
     private static async Task ResumePendingTranscriptionsAsync()

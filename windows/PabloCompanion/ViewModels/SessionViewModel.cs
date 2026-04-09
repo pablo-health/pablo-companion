@@ -32,6 +32,13 @@ public partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
 
+    /// <summary>
+    /// Set when a 403 indicates the subscription has lapsed.
+    /// MainWindow observes this to trigger a subscription status refresh.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool SubscriptionBlocked { get; set; }
+
     [ObservableProperty]
     public partial Session? ActiveSession { get; set; }
 
@@ -133,6 +140,11 @@ public partial class SessionViewModel : ObservableObject
 
             await LoadTodaySessionsAsync();
         }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("(403)"))
+        {
+            SubscriptionBlocked = true;
+            ErrorMessage = "Your subscription needs attention. Please update your billing.";
+        }
         catch (PabloException)
         {
             ErrorMessage = "Failed to start session.";
@@ -185,6 +197,11 @@ public partial class SessionViewModel : ObservableObject
 
             var session = await _apiClient.CreateSessionAsync(request);
             await StartSessionAsync(session.Id);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("(403)"))
+        {
+            SubscriptionBlocked = true;
+            ErrorMessage = "Your subscription needs attention. Please update your billing.";
         }
         catch (PabloException)
         {

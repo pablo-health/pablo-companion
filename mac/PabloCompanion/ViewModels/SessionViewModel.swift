@@ -21,6 +21,10 @@ final class SessionViewModel {
     var errorMessage: String?
     var showError = false
 
+    /// Set when a 403 indicates the subscription has lapsed.
+    /// ContentView observes this to trigger a subscription status refresh.
+    var subscriptionBlocked = false
+
     // MARK: - Published state (session history)
 
     /// All sessions (paginated), refreshed by `loadSessions()`.
@@ -118,6 +122,9 @@ final class SessionViewModel {
             isLoading = false
             return session
         } catch {
+            if case let APIError.serverError(statusCode, _) = error, statusCode == 403 {
+                subscriptionBlocked = true
+            }
             errorMessage = error.localizedDescription
             showError = true
             logger.error("Failed to create ad-hoc session: \(error.localizedDescription)")
@@ -139,6 +146,9 @@ final class SessionViewModel {
             logger.info("Started session")
             return session
         } catch {
+            if case let APIError.serverError(statusCode, _) = error, statusCode == 403 {
+                subscriptionBlocked = true
+            }
             errorMessage = error.localizedDescription
             showError = true
             logger.error("Failed to start session: \(error.localizedDescription)")

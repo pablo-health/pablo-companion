@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using PabloCompanion.Models;
 using uniffi.pablo_core;
 
 namespace PabloCompanion.Services;
@@ -131,6 +132,49 @@ public sealed class APIClient
     public async Task<UserPreferences> SavePreferencesAsync(UserPreferences preferences)
     {
         return await PabloCoreMethods.SavePreferences(BaseUrl, GetToken(), preferences);
+    }
+
+    // Subscription Status (native HttpClient — not via Rust core)
+
+    public async Task<SubscriptionInfo> FetchSubscriptionStatusAsync()
+    {
+        var token = GetToken();
+        var url = $"{BaseUrl}/api/users/me/status";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("X-Client-Type", "pablo-companion-windows/1.0");
+
+        var response = await Http.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Subscription status fetch failed ({(int)response.StatusCode}): {body}");
+
+        var wrapper = JsonSerializer.Deserialize<SubscriptionResponse>(body, JsonOptions)
+            ?? throw new InvalidOperationException("Failed to parse subscription status");
+
+        return wrapper.Subscription
+            ?? throw new InvalidOperationException("No subscription data in response");
+    }
+
+    public async Task<SubscriptionInfo> ExtendSubscriptionAsync()
+    {
+        var token = GetToken();
+        var url = $"{BaseUrl}/api/users/me/subscription/extend";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("X-Client-Type", "pablo-companion-windows/1.0");
+
+        var response = await Http.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Extension request failed ({(int)response.StatusCode}): {body}");
+
+        return JsonSerializer.Deserialize<SubscriptionInfo>(body, JsonOptions)
+            ?? throw new InvalidOperationException("Failed to parse extension response");
     }
 
     // Audio Upload (native HttpClient — not via Rust core)
