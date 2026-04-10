@@ -23,8 +23,6 @@ jobs:
       pull-requests: read
     outputs:
       mac: ${{ github.event_name == 'push' || steps.filter.outputs.mac }}
-      core: ${{ github.event_name == 'push' || steps.filter.outputs.core }}
-      has-cargo: ${{ steps.cargo-check.outputs.exists }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
@@ -33,16 +31,6 @@ jobs:
           filters: |
             mac:
               - 'mac/**'
-            core:
-              - 'core/**'
-      - name: Check for core/Cargo.toml
-        id: cargo-check
-        run: |
-          if [ -f core/Cargo.toml ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
 
   swift-lint:
     name: Swift Lint
@@ -102,48 +90,6 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             test | xcpretty
-
-  rust-lint:
-    name: Rust Lint
-    needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.has-cargo == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          workspaces: "core -> core/target"
-
-      - name: Check formatting
-        working-directory: core
-        run: cargo fmt --all --check
-
-      - name: Clippy
-        working-directory: core
-        run: cargo clippy --no-default-features -- -D warnings -W clippy::undocumented_unsafe_blocks
-
-  rust-test:
-    name: Rust Test
-    needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.has-cargo == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          workspaces: "core -> core/target"
-
-      - name: Test
-        working-directory: core
-        run: cargo test --no-default-features
 
   dependency-review:
     name: Dependency Review

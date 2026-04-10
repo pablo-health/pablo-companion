@@ -37,15 +37,7 @@ public sealed partial class SettingsPage : Page
         // Transcription settings
         PopulateTranscriptionSettings();
 
-        try
-        {
-            var coreVersion = uniffi.pablo_core.PabloCoreMethods.CoreVersion();
-            VersionText.Text = $"Pablo Companion (Windows) — Core v{coreVersion}";
-        }
-        catch
-        {
-            VersionText.Text = "Pablo Companion (Windows)";
-        }
+        VersionText.Text = "Pablo Companion (Windows) v1.0.0";
     }
 
     private async void HealthCheck_Click(object sender, RoutedEventArgs e)

@@ -1,4 +1,4 @@
-using uniffi.pablo_core;
+using PabloCompanion.Models;
 
 namespace PabloCompanion.Helpers;
 

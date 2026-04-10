@@ -34,107 +34,66 @@ The desktop companion app for therapists — macOS and Windows. Sits on the desk
 
 ---
 
-## Architecture: Shared Rust Core + Native UI
+## Architecture: Native Apps with Shared API Contract
 
-**This is a monorepo.** Native UI on each platform, shared business logic in Rust. Non-negotiable architectural decision — chosen to maximize therapist UX quality (real native apps, not WebViews) while keeping core logic correct and maintained in one place.
+**This is a monorepo.** Fully native apps on each platform — no shared Rust core, no FFI layer. Each platform uses its own idiomatic HTTP client and model types. The Pablo backend REST API is the shared contract.
+
+> **History:** The project originally used a shared Rust core (pablo-core via UniFFI) for cross-platform business logic. This was removed because the FFI complexity wasn't justified — Whisper transcription couldn't be made to work reliably on Windows, and maintaining Rust + UniFFI bindings added friction without enough benefit. Both platforms now use native HTTP clients (URLSession on macOS, HttpClient on Windows).
 
 ```
 pablo-health/pablo-companion/
-├── core/                    # Rust crate (pablo-core) — shared business logic, UniFFI bindings
-│   ├── Cargo.toml
-│   ├── src/
-│   └── uniffi/
-│       └── pablo_core.udl   # FFI interface definition
 ├── mac/                     # SwiftUI macOS app
 │   ├── PabloCompanion.xcodeproj
-│   └── Sources/
-│       ├── Models/          # Thin Swift wrappers over pablo-core UniFFI types
+│   └── PabloCompanion/
+│       ├── Generated/       # PabloAPITypes.swift — shared model types (Codable)
+│       ├── Models/          # UI-layer model extensions
 │       ├── ViewModels/      # @MainActor ObservableObject — thin orchestration layer
 │       ├── Views/           # SwiftUI views, keep under 300 lines each
-│       ├── Services/        # Platform-only: RecordingService, VideoLaunchService
+│       ├── Services/        # APIClient, RecordingService, VideoLaunchService
 │       └── Assets.xcassets/
-├── windows/                 # WinUI 3 / C# — stub until needed
-│   └── .gitkeep
+├── windows/                 # WinUI 3 / C# Windows app
+│   ├── PabloCompanion/
+│   │   ├── Models/          # PabloAPITypes.cs — shared model types
+│   │   ├── ViewModels/
+│   │   ├── Views/
+│   │   └── Services/        # APIClient, RecordingService, etc.
+│   └── PabloCompanion.Tests/
 ├── docs/
 ├── Makefile
 └── .github/workflows/
-    ├── core.yml             # Triggers on core/** only
-    └── mac.yml              # Triggers on mac/** only
+    ├── ci.yml               # macOS lint + build + test
+    └── windows.yml          # Windows build + test
 ```
 
 ### Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Shared core | Rust (`pablo-core` crate, UniFFI) |
 | macOS UI | SwiftUI (macOS 14+), MVVM |
-| Windows UI | WinUI 3 / C# — TBD |
-| Audio (macOS) | AudioCaptureKit (from `audiotake2`, already has Pablo branding) |
-| Audio (Windows) | WASAPI — TBD |
-| Auth (macOS) | Inherited from `audiotake2`; Windows auth TBD |
+| macOS networking | URLSession, Codable |
+| Windows UI | WinUI 3 / C# (.NET 10) |
+| Windows networking | HttpClient, System.Text.Json |
+| Audio (macOS) | AudioCaptureKit (from `audiotake2`) |
+| Audio (Windows) | AudioCaptureKit C# (WASAPI) |
+| Transcription (macOS) | Apple Speech / server-side |
+| Transcription (Windows) | Whisper.net / server-side |
+| Auth (macOS) | Inherited from `audiotake2` |
+| Auth (Windows) | CredentialManager / loopback OAuth |
 | Calendar | Pablo backend owns the schedule — no client-side calendar sync |
 | Video launch | URL schemes (`zoommtg://`, `msteams://`), browser for Google Meet |
 | Backend | Pablo FastAPI REST API |
-| Build | Cargo (Rust core), Xcode + SPM (macOS) |
+| Build | Xcode + SPM (macOS), dotnet (Windows) |
 | Issue tracking | beads (`bd`) |
 
----
+### Cross-Platform Parity Rule
 
-## The Rust Decision Rule
+**Mac is the primary development platform. Windows features should follow.**
 
-**Before writing business logic in Swift or C#, ask: "Will the other platform need this?"**
-
-If yes → it belongs in `core/` (Rust). If no → native is fine.
-
-### Belongs in core/ (Rust)
-
-- Pablo API client (`GET /sessions`, `POST /sessions`, auth, etc.)
-- Data models: `Session`, `Patient`, `Recording`, `SyncState`
-- Offline sync queue and conflict resolution
-- Auth token management logic (storage is platform-native; the logic is Rust)
-- Audio post-processing or format conversion (if any)
-- Any rule that must behave identically on macOS and Windows
-
-### Stays native (Swift for mac/, C# for windows/)
-
-- All UI (SwiftUI views / WinUI XAML)
-- Audio capture (AudioCaptureKit on macOS, WASAPI on Windows)
-- Platform credential storage (Keychain on macOS, Windows Credential Manager)
-- URL scheme / `NSWorkspace` / `ShellExecute` for video launch
-- System APIs: notifications, menu bar / taskbar, login items
-- App lifecycle, window management
-
-### FFI Boundary Rule
-
-**Keep the Rust ↔ Swift interface thin and boring.**
-
-Expose simple async functions with plain value types. No complex generics, no closures across the boundary, no shared mutable state.
-
-```swift
-// Bad — complex callback crossing the boundary
-rustCore.startSession(onProgress: { ... }, onError: { ... })
-
-// Good — simple async call, observe state in Swift
-let session = await rustCore.createSession(patientId: id)
-```
-
-### Debugging Rust
-
-**The compiler is your primary debugger.** Rust's errors catch most logic bugs before runtime.
-
-Runtime tools:
-- `rust-analyzer` in VS Code/Cursor — excellent, mature
-- `CodeLLDB` extension — full breakpoints, same LLDB as Xcode
-- `dbg!()` macro — prints expression + value + file/line
-- `cargo test -- --nocapture` — fast feedback loop
-
-**3am failure modes, in order of likelihood:**
-
-1. **FFI boundary panic** — Rust panic across UniFFI = UB. Fix: always `Result<T, E>`, never panic at the boundary, `catch_unwind` on anything fallible.
-2. **UniFFI type surprise** — generated Swift doesn't look like what you wrote. Fix: read the generated `.swift` file, not just the `.udl`.
-3. **Borrow checker + async** — reference doesn't outlive the future. Fix: `Arc<T>` for anything crossing async boundaries.
-4. **Xcode can't find the Rust dylib** — linker flags wrong in Xcode build settings. Fix: establish this in PABLO-D-004 and commit the working config immediately.
-5. **tokio `block_on` inside async context** — silent deadlock. Fix: expose all async Rust via UniFFI's async support; never mix blocking and async.
+When adding a new feature:
+1. Implement on macOS first (Swift)
+2. Port the same API models and service logic to Windows (C#)
+3. Keep model types in sync: `mac/PabloCompanion/Generated/PabloAPITypes.swift` ↔ `windows/PabloCompanion/Models/PabloAPITypes.cs`
+4. The Pablo backend REST API is the shared contract — both platforms must serialize/deserialize identically
 
 ---
 
@@ -265,10 +224,10 @@ git config user.email "kurtn@pablo.health"
 @MainActor
 final class SessionListViewModel: ObservableObject {
     @Published var sessions: [Session] = []
-    private let core: PabloCore  // UniFFI-generated type
+    private let apiClient: APIClient
 
     func loadSessions() async {
-        sessions = try await core.fetchTodaySessions()
+        sessions = try await apiClient.fetchTodaySessions(timezone: TimeZone.current.identifier)
     }
 }
 ```
@@ -293,23 +252,9 @@ final class SessionListViewModel: ObservableObject {
 
 ---
 
-## Rust Conventions (core/)
-
-- Expose all public API via `pablo_core.udl` (UniFFI interface file)
-- `async fn` everywhere — use `tokio` runtime
-- All fallible functions return `Result<T, PabloError>` — never panic at the FFI boundary
-- One file per domain: `api_client.rs`, `models.rs`, `sync.rs`, `auth.rs`
-
----
-
 ## Definition of Done
 
 A task is NOT complete until:
-
-**For core/ (Rust):**
-1. `cargo build` with zero warnings
-2. `cargo test` — all tests green
-3. All public functions return `Result<T, E>` — no unwrap at FFI boundary
 
 **For mac/ (Swift):**
 1. Xcode builds with zero warnings (warnings = errors in CI)
@@ -317,9 +262,14 @@ A task is NOT complete until:
 3. Tested in Simulator; physical Mac for audio/permission flows
 4. No hardcoded UI strings
 
+**For windows/ (C#):**
+1. `dotnet build` succeeds
+2. `make test-windows` passes
+3. Tested on Windows (VM or physical)
+
 **For all:**
 5. PR created and linked to the beads task
-6. `make check` passes (runs both `cargo test` and `xcodebuild test`)
+6. `make check` passes (lint + xcodebuild) or `make check-windows` (dotnet build + test)
 
 ---
 

@@ -60,5 +60,5 @@
 # Swift version
 --swiftversion 6.0
 
-# Exclude generated files (UniFFI Swift bindings — not hand-authored)
+# Exclude generated/shared API types file
 --exclude PabloCompanion/Generated

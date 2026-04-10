@@ -1,6 +1,6 @@
-.PHONY: check build-mac test-mac build-core test-core generate-bindings generate-bindings-cs build-core-windows build-windows test-windows check-windows lint-swift codeql
+.PHONY: check build-mac test-mac lint-swift build-windows test-windows check-windows codeql
 
-check: lint-swift build-core test-core build-mac
+check: lint-swift build-mac
 
 lint-swift:
 	swiftlint lint --strict --config mac/.swiftlint.yml mac/PabloCompanion/
@@ -23,12 +23,6 @@ test-mac:
 	  CODE_SIGNING_REQUIRED=NO \
 	  CODE_SIGNING_ALLOWED=NO \
 	  test | xcpretty
-
-build-core:
-	cargo build --manifest-path core/Cargo.toml
-
-test-core:
-	cargo test --manifest-path core/Cargo.toml
 
 codeql:
 	@which codeql > /dev/null 2>&1 || (echo "CodeQL CLI not found. Install with: brew install codeql" && exit 1)
@@ -61,22 +55,7 @@ codeql:
 	results = [r for run in data.get('runs',[]) for r in run.get('results',[])]; \
 	[print(f\"[{r.get('level','?').upper()}] {r['message']['text']} — {r['locations'][0]['physicalLocation']['artifactLocation']['uri']}:{r['locations'][0]['physicalLocation']['region']['startLine']}\") for r in results] if results else print('No issues found.')"
 
-# Re-generate Swift bindings after UDL changes.
-# Run this whenever core/uniffi/pablo_core.udl changes, then commit the output.
-generate-bindings: build-core
-	cargo run --manifest-path core/Cargo.toml --bin uniffi-bindgen generate \
-	  core/uniffi/pablo_core.udl \
-	  --language swift \
-	  --out-dir mac/PabloCompanion/Generated/
-
 # ── Windows targets ──────────────────────────────────────────────────────────
-
-build-core-windows:
-	cargo build --manifest-path core/Cargo.toml --target x86_64-pc-windows-msvc
-
-generate-bindings-cs: build-core
-	uniffi-bindgen-cs generate core/uniffi/pablo_core.udl \
-	  --out-dir windows/PabloCompanion/Generated/
 
 build-windows:
 	dotnet build windows/PabloCompanion.sln
@@ -84,4 +63,4 @@ build-windows:
 test-windows:
 	dotnet test windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj
 
-check-windows: build-core test-core build-windows test-windows
+check-windows: build-windows test-windows

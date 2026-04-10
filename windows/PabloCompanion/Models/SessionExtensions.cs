@@ -1,5 +1,3 @@
-using uniffi.pablo_core;
-
 namespace PabloCompanion.Models;
 
 /// <summary>
