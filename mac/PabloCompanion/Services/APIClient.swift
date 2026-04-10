@@ -5,10 +5,10 @@ import os
 /// Replaces the previous Rust FFI (pablo-core) delegation with direct HTTP calls.
 @MainActor
 final class APIClient {
-    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "APIClient")
+    let logger = Logger(subsystem: AppConstants.appBundleID, category: "APIClient")
 
     nonisolated let baseURL: URL
-    nonisolated private let baseURLString: String
+    nonisolated let baseURLString: String
 
     /// Optional closure to provide a Bearer token for authenticated requests.
     var getToken: (@Sendable () async throws -> String)?
@@ -24,13 +24,13 @@ final class APIClient {
         return url
     }()
 
-    private nonisolated let jsonDecoder: JSONDecoder = {
+    nonisolated private let jsonDecoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder
     }()
 
-    private nonisolated let jsonEncoder: JSONEncoder = {
+    nonisolated private let jsonEncoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         return encoder
@@ -52,7 +52,7 @@ final class APIClient {
 
     // MARK: - Token helper
 
-    private func requireToken() async throws -> String {
+    func requireToken() async throws -> String {
         guard let getToken else {
             throw APIError.notAuthenticated
         }
@@ -86,9 +86,10 @@ final class APIClient {
 
         // Extract minimum client version for macOS from nested object
         var minClientVersion = "0.0.0"
-        if let minClientVersions = json["min_client_versions"] as? [String: Any],
-           let macosMin = minClientVersions["macos"] as? String {
-            minClientVersion = macosMin
+        if let minClientVersions = json["min_client_versions"] as? [String: Any] {
+            if let macosMin = minClientVersions["macos"] as? String {
+                minClientVersion = macosMin
+            }
         }
 
         // Compare versions to determine compatibility
@@ -385,97 +386,6 @@ final class APIClient {
         return prefs
     }
 
-    // MARK: - Audio Upload (native URLSession multipart)
-
-    /// Uploads therapist and client audio files to the backend for server-side transcription.
-    /// Uses native URLSession multipart/form-data since this endpoint is not in pablo-core.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The backend session UUID (must be in `recording_complete` status).
-    ///   - therapistAudioURL: Path to the mic PCM/WAV sidecar file.
-    ///   - clientAudioURL: Path to the system audio PCM/WAV sidecar file (optional).
-    ///   - onProgress: Progress callback (0.0-1.0). Simulated since URLSession upload
-    ///     progress requires delegate-based uploads.
-    /// - Returns: `AudioUploadResponse` with the session's new status.
-    func uploadAudio(
-        sessionId: String,
-        therapistAudioURL: URL,
-        clientAudioURL: URL?,
-        onProgress: @Sendable @escaping (Double) -> Void
-    ) async throws -> AudioUploadResponse {
-        let token = try await requireToken()
-
-        let endpoint = "\(baseURLString)/api/sessions/\(sessionId)/upload-audio"
-        guard let url = URL(string: endpoint) else {
-            throw APIError.invalidResponse
-        }
-
-        let boundary = UUID().uuidString
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
-
-        onProgress(0.1)
-
-        var parts = try [MultipartFilePart(
-            fieldName: "therapist_audio",
-            fileName: therapistAudioURL.lastPathComponent,
-            mimeType: "audio/wav",
-            data: Data(contentsOf: therapistAudioURL)
-        )]
-
-        onProgress(0.3)
-
-        if let clientAudioURL, let clientData = try? Data(contentsOf: clientAudioURL) {
-            parts.append(MultipartFilePart(
-                fieldName: "client_audio",
-                fileName: clientAudioURL.lastPathComponent,
-                mimeType: "audio/wav",
-                data: clientData
-            ))
-        }
-
-        onProgress(0.5)
-
-        request.httpBody = buildMultipartBody(parts: parts, boundary: boundary)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-
-        onProgress(0.9)
-
-        guard (200 ... 299).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw APIError.serverError(statusCode: httpResponse.statusCode, message: message)
-        }
-
-        let decoded = try JSONDecoder().decode(AudioUploadResponse.self, from: data)
-        onProgress(1.0)
-        logger.info("Audio uploaded for session \(sessionId)")
-        return decoded
-    }
-
-    // MARK: - Multipart helper (kept for backward compat + tests)
-
-    func createMultipartBody(
-        fileData: Data,
-        fileName: String,
-        boundary: String
-    ) -> Data {
-        var body = Data()
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".utf8))
-        body.append(Data("Content-Type: application/octet-stream\r\n\r\n".utf8))
-        body.append(fileData)
-        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-        return body
-    }
-
     // MARK: - Private Helpers
 
     /// Builds a URLRequest with standard headers.
@@ -516,7 +426,7 @@ final class APIClient {
     }
 
     /// Decodes a successful HTTP response body into the requested type.
-    private func handleResponse<T: Decodable>(_ data: Data, _ response: URLResponse) throws -> T {
+    private func handleResponse<T: Decodable>(_ data: Data, _: URLResponse) throws -> T {
         do {
             return try jsonDecoder.decode(T.self, from: data)
         } catch {
@@ -560,77 +470,11 @@ final class APIClient {
         let rhsParts = rhs.split(separator: ".").compactMap { Int($0) }
 
         for i in 0 ..< max(lhsParts.count, rhsParts.count) {
-            let l = i < lhsParts.count ? lhsParts[i] : 0
-            let r = i < rhsParts.count ? rhsParts[i] : 0
-            if l < r { return true }
-            if l > r { return false }
+            let left = i < lhsParts.count ? lhsParts[i] : 0
+            let right = i < rhsParts.count ? rhsParts[i] : 0
+            if left < right { return true }
+            if left > right { return false }
         }
         return false
     }
-}
-
-// MARK: - Multipart Data Helper
-
-/// A single field in a multipart/form-data request body.
-private struct MultipartFilePart {
-    let fieldName: String
-    let fileName: String
-    let mimeType: String
-    let data: Data
-}
-
-private func buildMultipartBody(parts: [MultipartFilePart], boundary: String) -> Data {
-    var body = Data()
-    for part in parts {
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body
-            .append(Data("Content-Disposition: form-data; name=\"\(part.fieldName)\"; filename=\"\(part.fileName)\"\r\n"
-                    .utf8))
-        body.append(Data("Content-Type: \(part.mimeType)\r\n\r\n".utf8))
-        body.append(part.data)
-        body.append(Data("\r\n".utf8))
-    }
-    body.append(Data("--\(boundary)--\r\n".utf8))
-    return body
-}
-
-enum APIError: LocalizedError {
-    case invalidResponse
-    case serverError(statusCode: Int, message: String)
-    case notAuthenticated
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidResponse:
-            "Invalid response from server."
-        case let .serverError(code, message):
-            "Server error (\(code)): \(message)"
-        case .notAuthenticated:
-            "Not authenticated. Please sign in."
-        }
-    }
-}
-
-/// Server configuration returned by the therapy-assistant-platform's /api/config endpoint.
-struct ServerConfig: Codable, Sendable {
-    let apiUrl: String
-    let firebaseApiKey: String?
-    let firebaseProjectId: String?
-}
-
-/// Fetches runtime configuration from the therapy-assistant-platform.
-/// This discovers the backend API URL so the user doesn't have to enter it manually.
-func fetchServerConfig(authServerURL: String) async throws -> ServerConfig {
-    let base = authServerURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    try URLValidator.throwIfInvalid(base)
-    guard let url = URL(string: "\(base)/api/config") else {
-        throw APIError.invalidResponse
-    }
-    let (data, response) = try await URLSession.shared.data(from: url)
-    guard let httpResponse = response as? HTTPURLResponse,
-          (200 ... 299).contains(httpResponse.statusCode)
-    else {
-        throw APIError.invalidResponse
-    }
-    return try JSONDecoder().decode(ServerConfig.self, from: data)
 }

@@ -76,12 +76,12 @@ public sealed class APIClient
 
         throw statusCode switch
         {
-            401 => new PabloApiException(statusCode, "Unauthenticated"),
-            403 => new PabloApiException(statusCode, "Forbidden"),
-            404 => new PabloApiException(statusCode, string.IsNullOrWhiteSpace(body) ? "Not found" : body),
-            409 => new PabloApiException(statusCode, string.IsNullOrWhiteSpace(body) ? "Conflict" : body),
-            426 => new PabloApiException(statusCode, "Update required"),
-            _ => new PabloApiException(statusCode, $"HTTP {statusCode}: {body}"),
+            401 => new PabloException(statusCode, "Unauthenticated"),
+            403 => new PabloException(statusCode, "Forbidden"),
+            404 => new PabloException(statusCode, string.IsNullOrWhiteSpace(body) ? "Not found" : body),
+            409 => new PabloException(statusCode, string.IsNullOrWhiteSpace(body) ? "Conflict" : body),
+            426 => new PabloException(statusCode, "Update required"),
+            _ => new PabloException(statusCode, $"HTTP {statusCode}: {body}"),
         };
     }
 

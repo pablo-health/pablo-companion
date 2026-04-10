@@ -263,11 +263,11 @@ public sealed record TranscriptionConfig(
 
 // ── Error type ───────────────────────────────────────────────────────────────
 
-public class PabloApiException : Exception
+public class PabloException : Exception
 {
     public ushort StatusCode { get; }
 
-    public PabloApiException(ushort statusCode, string message) : base(message)
+    public PabloException(ushort statusCode, string message) : base(message)
     {
         StatusCode = statusCode;
     }

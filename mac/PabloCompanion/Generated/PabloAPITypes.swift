@@ -20,28 +20,28 @@ enum SessionStatus: String, Codable, Sendable, CaseIterable {
 }
 
 enum VideoPlatform: String, Codable, Sendable {
-    case zoom = "zoom"
-    case teams = "teams"
-    case meet = "meet"
-    case none = "none"
+    case zoom
+    case teams
+    case meet
+    case none
 }
 
 enum SessionType: String, Codable, Sendable {
-    case individual = "individual"
-    case couples = "couples"
+    case individual
+    case couples
 }
 
 enum SessionSource: String, Codable, Sendable {
-    case web = "web"
-    case companion = "companion"
-    case calendar = "calendar"
-    case practice = "practice"
+    case web
+    case companion
+    case calendar
+    case practice
 }
 
 enum QualityPreset: String, Codable, Sendable {
-    case fast = "fast"
-    case balanced = "balanced"
-    case accurate = "accurate"
+    case fast
+    case balanced
+    case accurate
 }
 
 enum SpeakerLabel: String, Codable, Sendable {
@@ -446,7 +446,7 @@ enum PabloError: LocalizedError, Sendable {
             return "Whisper model init error: \(message)"
         case .whisperTranscribe(let message):
             return "Whisper transcription error: \(message)"
-        case .apiClient(let statusCode, let message):
+        case let .apiClient(statusCode, message):
             return "API error (HTTP \(statusCode)): \(message)"
         case .jsonParse(let message):
             return "JSON parse error: \(message)"
