@@ -88,6 +88,21 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async Task PreloadPatientsAsync(PatientViewModel patientVm)
+    {
+        try
+        {
+            await patientVm.LoadPatientsAsync();
+        }
+        catch (Exception ex)
+        {
+            // Debug-only diagnostic — not a support log. Log only the exception type
+            // to avoid any risk of PHI appearing in log output (e.g. from HTTP response
+            // bodies embedded in inner exception messages).
+            System.Diagnostics.Debug.WriteLine($"Failed to preload patients: {ex.GetType().Name}");
+        }
+    }
+
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is NavigationViewItem item)
