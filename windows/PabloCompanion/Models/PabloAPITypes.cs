@@ -92,6 +92,38 @@ public enum SessionMode
     Couples,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<QualityPreset>))]
+public enum QualityPreset
+{
+    [JsonStringEnumMemberName("fast")]
+    Fast,
+
+    [JsonStringEnumMemberName("balanced")]
+    Balanced,
+
+    [JsonStringEnumMemberName("accurate")]
+    Accurate,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<SpeakerLabel>))]
+public enum SpeakerLabel
+{
+    [JsonStringEnumMemberName("therapist")]
+    Therapist,
+
+    [JsonStringEnumMemberName("client")]
+    Client,
+
+    [JsonStringEnumMemberName("client_a")]
+    ClientA,
+
+    [JsonStringEnumMemberName("client_b")]
+    ClientB,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown,
+}
+
 // ── Records / Classes ────────────────────────────────────────────────────────
 
 public sealed record PatientSummary(
