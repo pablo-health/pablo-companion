@@ -178,7 +178,11 @@ fn truncate_for_error(body: &str) -> String {
     if body.len() <= MAX_ERROR_LEN {
         body.to_string()
     } else {
-        format!("{}… (truncated, {} bytes total)", &body[..MAX_ERROR_LEN], body.len())
+        format!(
+            "{}… (truncated, {} bytes total)",
+            &body[..MAX_ERROR_LEN],
+            body.len()
+        )
     }
 }
 

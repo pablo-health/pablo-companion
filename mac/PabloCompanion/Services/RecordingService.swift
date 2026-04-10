@@ -38,9 +38,8 @@ final class RecordingService {
 
         // Migrate from legacy directory name if it exists and new one doesn't
         let legacyDir = base.appendingPathComponent("MacOSSample-Recordings", isDirectory: true)
-        if FileManager.default.fileExists(atPath: legacyDir.path),
-           !FileManager.default.fileExists(atPath: dir.path)
-        {
+        let legacyExists = FileManager.default.fileExists(atPath: legacyDir.path)
+        if legacyExists, !FileManager.default.fileExists(atPath: dir.path) {
             try? FileManager.default.moveItem(at: legacyDir, to: dir)
         }
 
