@@ -126,9 +126,8 @@ public sealed class APIClient
         // Compare versions.
         var clientUpdateRequired = ParseSemver(ClientVersion).CompareTo(ParseSemver(minClientVersion)) < 0;
 
-        var serverUpdateRequired = string.IsNullOrEmpty(serverVersion)
-            ? false
-            : ParseSemver(serverVersion).CompareTo(ParseSemver(MinServerVersion)) < 0;
+        var serverUpdateRequired = !string.IsNullOrEmpty(serverVersion)
+            && ParseSemver(serverVersion).CompareTo(ParseSemver(MinServerVersion)) < 0;
 
         return new HealthStatus(
             ServerVersion: serverVersion,
