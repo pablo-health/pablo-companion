@@ -4,9 +4,14 @@ import os
 
 /// Persists the session → recording mapping so it survives app restarts.
 ///
-/// Stored as plain JSON at `~/Library/Application Support/PabloCompanion/SessionRecordings.json`.
-/// Contains NO PHI — only session IDs (backend UUIDs), recording IDs (local UUIDs),
-/// file paths, and technical metadata.
+/// Stored as AES-256-GCM encrypted JSON at
+/// `~/Library/Application Support/PabloCompanion/SessionRecordings.enc`.
+/// Although the data contains only session IDs, recording IDs, and file paths
+/// (no clinical PHI), session IDs can correlate to patient records on the backend,
+/// so we encrypt to match the PendingTranscriptStore security posture.
+///
+/// Falls back to reading the legacy unencrypted `.json` file on first access
+/// and migrates it to the encrypted format.
 struct SessionRecordingStore {
     // MARK: - Types
 
@@ -26,29 +31,52 @@ struct SessionRecordingStore {
 
     // MARK: - Private
 
+    /// User email for per-user encryption key scoping. Set after sign-in.
+    var userEmail: String?
+
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "SessionRecordingStore")
 
-    private var storeURL: URL {
+    private var storeDirectory: URL {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         )[0]
         let dir = appSupport.appendingPathComponent("PabloCompanion", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("SessionRecordings.json")
+        return dir
+    }
+
+    private var encryptedStoreURL: URL {
+        storeDirectory.appendingPathComponent("SessionRecordings.enc")
+    }
+
+    /// Legacy plaintext store path — used for migration only.
+    private var legacyStoreURL: URL {
+        storeDirectory.appendingPathComponent("SessionRecordings.json")
     }
 
     // MARK: - Public API
 
-    /// Load the full session→recording map from disk.
+    /// Load the full session→recording map from disk (decrypting on read).
+    /// On first call after upgrade, migrates the legacy plaintext JSON to encrypted format.
     func loadAll() -> [String: RecordingEntry] {
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return [:] }
-        do {
-            let data = try Data(contentsOf: storeURL)
-            return try JSONDecoder().decode([String: RecordingEntry].self, from: data)
-        } catch {
-            logger.warning("Failed to load session recording map: \(error.localizedDescription)")
-            return [:]
+        // Try encrypted store first
+        if FileManager.default.fileExists(atPath: encryptedStoreURL.path) {
+            return loadEncrypted() ?? [:]
         }
+
+        // Migrate legacy plaintext store if it exists
+        if FileManager.default.fileExists(atPath: legacyStoreURL.path) {
+            let migrated = loadLegacy()
+            if !migrated.isEmpty {
+                write(migrated)
+                // Remove legacy file after successful migration
+                try? FileManager.default.removeItem(at: legacyStoreURL)
+                logger.info("Migrated session recording store from plaintext to encrypted")
+            }
+            return migrated
+        }
+
+        return [:]
     }
 
     /// Save a single session→recording mapping, merging with existing entries.
@@ -58,15 +86,44 @@ struct SessionRecordingStore {
         write(map)
     }
 
-    /// Persist the full map (used for bulk operations).
+    /// Persist the full map (encrypted with per-user AES-256-GCM key).
     func write(_ map: [String: RecordingEntry]) {
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else {
+            logger.error("Cannot save session recording store: encryption key unavailable")
+            return
+        }
         do {
             let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(map)
-            try data.write(to: storeURL, options: .atomic)
+            encoder.outputFormatting = [.sortedKeys]
+            let json = try encoder.encode(map)
+            let encrypted = try encryptor.encrypt(json)
+            try encrypted.write(to: encryptedStoreURL, options: .atomic)
         } catch {
             logger.error("Failed to save session recording map: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Private Helpers
+
+    private func loadEncrypted() -> [String: RecordingEntry]? {
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else { return nil }
+        do {
+            let encrypted = try Data(contentsOf: encryptedStoreURL)
+            let json = try encryptor.decrypt(encrypted)
+            return try JSONDecoder().decode([String: RecordingEntry].self, from: json)
+        } catch {
+            logger.warning("Failed to decrypt session recording store: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func loadLegacy() -> [String: RecordingEntry] {
+        do {
+            let data = try Data(contentsOf: legacyStoreURL)
+            return try JSONDecoder().decode([String: RecordingEntry].self, from: data)
+        } catch {
+            logger.warning("Failed to load legacy session recording map: \(error.localizedDescription)")
+            return [:]
         }
     }
 

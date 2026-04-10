@@ -31,9 +31,19 @@ final class RecordingService {
 
     // MARK: - Internal
 
+    /// Directory for session recordings. Migrates from legacy name on first access.
     var recordingsDirectory: URL {
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MacOSSample-Recordings", isDirectory: true)
+        let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent("PabloCompanion-Recordings", isDirectory: true)
+
+        // Migrate from legacy directory name if it exists and new one doesn't
+        let legacyDir = base.appendingPathComponent("MacOSSample-Recordings", isDirectory: true)
+        if FileManager.default.fileExists(atPath: legacyDir.path),
+           !FileManager.default.fileExists(atPath: dir.path)
+        {
+            try? FileManager.default.moveItem(at: legacyDir, to: dir)
+        }
+
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

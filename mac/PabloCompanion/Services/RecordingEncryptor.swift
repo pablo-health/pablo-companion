@@ -99,6 +99,9 @@ struct RecordingEncryptor: CaptureEncryptor {
     /// Decrypts an encrypted PCM sidecar file (no WAV header) to a temp file.
     /// Returns the path to the decrypted temp file.
     ///
+    /// **Important:** The caller is responsible for deleting the returned temp file
+    /// after use to avoid leaving decrypted PHI on disk. Use `cleanupTempFile(_:)`.
+    ///
     /// Format: sequential `[4-byte UInt32 LE length][AES-GCM sealed box]` chunks.
     static func decryptPCMToTempFile(at url: URL, userEmail: String? = nil) throws -> URL {
         let fileData = try Data(contentsOf: url)
@@ -129,6 +132,13 @@ struct RecordingEncryptor: CaptureEncryptor {
             .appendingPathComponent("pablo_\(UUID().uuidString).pcm")
         try pcmData.write(to: tempURL)
         return tempURL
+    }
+
+    /// Removes a temporary decrypted file created by `decryptPCMToTempFile(at:)`.
+    /// Call this in a `defer` block after processing to prevent decrypted PHI
+    /// from persisting on disk.
+    static func cleanupTempFile(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
     }
 
     func keyMetadata() -> [String: String] {

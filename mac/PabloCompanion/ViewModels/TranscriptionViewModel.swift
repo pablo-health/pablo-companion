@@ -160,7 +160,7 @@ final class TranscriptionViewModel {
         do {
             // Decrypt if needed
             let pcm = try decryptPCMIfNeeded(recording)
-            defer { pcm.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+            defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
 
             let therapistURL = URL(fileURLWithPath: pcm.micPath)
             let clientURL = pcm.systemPath.map { URL(fileURLWithPath: $0) }
@@ -210,7 +210,7 @@ final class TranscriptionViewModel {
         do {
             // Decrypt encrypted PCM sidecars to temp files before feeding to Whisper.
             let pcm = try decryptPCMIfNeeded(recording)
-            defer { pcm.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+            defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
 
             let config = try buildTranscriptionConfig(sampleRate: recording.sampleRate, using: presetOverride)
             let result = try await transcribeSession1on1(
@@ -331,7 +331,7 @@ final class TranscriptionViewModel {
         for rec in viable {
             do {
                 let pcm = try decryptPCMIfNeeded(rec)
-                defer { pcm.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+                defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
 
                 let config = try buildTranscriptionConfig(sampleRate: rec.sampleRate)
                 let result = try await transcribeSession1on1(

@@ -30,7 +30,7 @@ final class RecordingViewModel {
     var activeSessionId: String?
     /// Maps session IDs to recording IDs for correlating sessions with local recordings.
     var sessionRecordingMap: [String: UUID] = [:]
-    private let recordingStore = SessionRecordingStore()
+    private var recordingStore = SessionRecordingStore()
     var systemAudioActive = false
     var recordingStalled = false
     var persistentError: String?
@@ -57,7 +57,10 @@ final class RecordingViewModel {
 
     /// The signed-in user's email, used to scope the encryption key.
     var userEmail: String? {
-        didSet { service.userEmail = userEmail }
+        didSet {
+            service.userEmail = userEmail
+            recordingStore.userEmail = userEmail
+        }
     }
 
     init() {

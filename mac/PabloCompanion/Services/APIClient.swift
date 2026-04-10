@@ -333,6 +333,9 @@ final class APIClient {
     /// Uploads therapist and client audio files to the backend for server-side transcription.
     /// Uses native URLSession multipart/form-data since this endpoint is not in pablo-core.
     ///
+    /// Writes the multipart body to a temp file to avoid loading large audio files
+    /// (potentially hundreds of MB) entirely into memory simultaneously.
+    ///
     /// - Parameters:
     ///   - sessionId: The backend session UUID (must be in `recording_complete` status).
     ///   - therapistAudioURL: Path to the mic PCM/WAV sidecar file.
@@ -359,32 +362,26 @@ final class APIClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+        request.timeoutInterval = 300
 
         onProgress(0.1)
 
-        var parts = try [MultipartFilePart(
-            fieldName: "therapist_audio",
-            fileName: therapistAudioURL.lastPathComponent,
-            mimeType: "audio/wav",
-            data: Data(contentsOf: therapistAudioURL)
-        )]
+        // Write the multipart body to a temp file instead of holding everything in RAM.
+        // For 60-min sessions each sidecar can be ~330 MB; holding two in memory risks OOM.
+        let tempBodyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pablo_upload_\(UUID().uuidString).tmp")
+        defer { try? FileManager.default.removeItem(at: tempBodyURL) }
+
+        try writeMultipartBody(
+            to: tempBodyURL,
+            boundary: boundary,
+            therapistAudioURL: therapistAudioURL,
+            clientAudioURL: clientAudioURL
+        )
 
         onProgress(0.3)
 
-        if let clientAudioURL, let clientData = try? Data(contentsOf: clientAudioURL) {
-            parts.append(MultipartFilePart(
-                fieldName: "client_audio",
-                fileName: clientAudioURL.lastPathComponent,
-                mimeType: "audio/wav",
-                data: clientData
-            ))
-        }
-
-        onProgress(0.5)
-
-        request.httpBody = buildMultipartBody(parts: parts, boundary: boundary)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.upload(for: request, fromFile: tempBodyURL)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
@@ -443,6 +440,47 @@ private func buildMultipartBody(parts: [MultipartFilePart], boundary: String) ->
     }
     body.append(Data("--\(boundary)--\r\n".utf8))
     return body
+}
+
+/// Writes a multipart/form-data body to a file, streaming each audio file in chunks
+/// to avoid loading the full payload into memory. Each audio file is read in 1 MB chunks.
+private func writeMultipartBody(
+    to outputURL: URL,
+    boundary: String,
+    therapistAudioURL: URL,
+    clientAudioURL: URL?
+) throws {
+    FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: outputURL)
+    defer { try? handle.close() }
+
+    let chunkSize = 1_048_576 // 1 MB
+
+    func writeFilePart(fieldName: String, fileURL: URL) throws {
+        let header = "--\(boundary)\r\n"
+            + "Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileURL.lastPathComponent)\"\r\n"
+            + "Content-Type: audio/wav\r\n\r\n"
+        handle.write(Data(header.utf8))
+
+        let inputHandle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? inputHandle.close() }
+        while autoreleasepool(invoking: {
+            let chunk = inputHandle.readData(ofLength: chunkSize)
+            if chunk.isEmpty { return false }
+            handle.write(chunk)
+            return true
+        }) {}
+
+        handle.write(Data("\r\n".utf8))
+    }
+
+    try writeFilePart(fieldName: "therapist_audio", fileURL: therapistAudioURL)
+
+    if let clientAudioURL, FileManager.default.fileExists(atPath: clientAudioURL.path) {
+        try writeFilePart(fieldName: "client_audio", fileURL: clientAudioURL)
+    }
+
+    handle.write(Data("--\(boundary)--\r\n".utf8))
 }
 
 enum APIError: LocalizedError {
