@@ -12,6 +12,7 @@ struct KeychainManager: Sendable {
         case firebaseAPIKey = "firebase_api_key"
         case backendAPIURL = "backend_api_url"
         case tenantID = "tenant_id"
+        case tokenExpiry = "token_expiry"
     }
 
     private static let serviceName = AppConstants.appBundleID
@@ -94,6 +95,7 @@ struct KeychainManager: Sendable {
             .firebaseAPIKey,
             .backendAPIURL,
             .tenantID,
+            .tokenExpiry,
         ] {
             deleteToken(forKey: key)
         }

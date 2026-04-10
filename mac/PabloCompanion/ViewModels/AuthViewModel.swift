@@ -31,7 +31,15 @@ final class AuthViewModel {
     }
 
     @ObservationIgnored
-    @AppStorage("tokenExpiry") private var tokenExpiryTimestamp: Double = 0
+    private var tokenExpiryTimestamp: Double {
+        get {
+            guard let stored = KeychainManager.getToken(forKey: .tokenExpiry) else { return 0 }
+            return Double(stored) ?? 0
+        }
+        set {
+            KeychainManager.saveToken(String(newValue), forKey: .tokenExpiry)
+        }
+    }
 
     var tenantID: String {
         get { KeychainManager.getToken(forKey: .tenantID) ?? "" }
@@ -92,9 +100,10 @@ final class AuthViewModel {
             let callbackURL = try await server.waitForCallback(timeout: 120)
 
             guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-                  let code = components.queryItems?.first(where: { $0.name == "code" })?.value
+                  let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
+                  Self.isValidAuthCode(code)
             else {
-                errorMessage = "Missing authorization code in callback."
+                errorMessage = "Invalid or missing authorization code in callback."
                 authState = .unauthenticated
                 return
             }
@@ -192,6 +201,13 @@ final class AuthViewModel {
 
         components?.queryItems = queryItems
         return components?.url
+    }
+
+    /// Validates that an authorization code contains only safe characters and is
+    /// within the expected length range. Matches the Windows validation pattern.
+    private static func isValidAuthCode(_ code: String) -> Bool {
+        let pattern = #"^[a-zA-Z0-9_\-\.]{10,2000}$"#
+        return code.range(of: pattern, options: .regularExpression) != nil
     }
 
     // MARK: - Code Exchange (RFC 8252)
