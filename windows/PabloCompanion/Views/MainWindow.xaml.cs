@@ -43,7 +43,16 @@ public sealed partial class MainWindow : Window
 
     private async Task InitAsync()
     {
-        await _authVm.TryRestoreSessionAsync();
+        try
+        {
+            await _authVm.TryRestoreSessionAsync();
+        }
+        catch (Exception)
+        {
+            // Prevent unhandled exceptions from fire-and-forget startup initialization.
+            // Keep default unauthenticated UI state when restore fails.
+        }
+
         UpdateAuthUI();
     }
 
@@ -64,7 +73,7 @@ public sealed partial class MainWindow : Window
 
             // Pre-load patient cache (matching macOS pattern)
             var patientVm = App.Services.GetRequiredService<PatientViewModel>();
-            _ = patientVm.LoadPatientsAsync();
+            _ = PreloadPatientsAsync(patientVm);
 
             if (ContentFrame.Content == null)
             {
