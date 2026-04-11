@@ -159,13 +159,6 @@ struct DebugRecordingView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        case .awaitingModel:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text("Awaiting model download…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         case let .done(transcript), let .pendingUpload(transcript):
             HStack(spacing: 8) {
                 Button("View Transcript") {
@@ -197,7 +190,7 @@ struct DebugRecordingView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                 Button("Retry") {
-                    Task { await transcriptionVM.transcribe(recording) }
+                    transcriptionVM.transcribeIfNeeded(recording)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -206,7 +199,7 @@ struct DebugRecordingView: View {
         case nil:
             if recording.micPCMFileURL != nil {
                 Button("Transcribe") {
-                    Task { await transcriptionVM.transcribe(recording) }
+                    transcriptionVM.transcribeIfNeeded(recording)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

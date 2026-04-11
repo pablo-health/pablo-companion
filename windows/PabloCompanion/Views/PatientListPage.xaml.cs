@@ -6,7 +6,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using PabloCompanion.Helpers;
 using PabloCompanion.ViewModels;
-using uniffi.pablo_core;
+using PabloCompanion.Models;
 
 namespace PabloCompanion.Views;
 

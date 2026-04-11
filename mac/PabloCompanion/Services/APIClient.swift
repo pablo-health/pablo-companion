@@ -1,17 +1,20 @@
 import Foundation
 import os
 
-/// Thin wrapper around pablo-core Rust API client.
-/// Centralizes base URL and auth token so ViewModels don't scatter them.
+/// Native URLSession-based API client for the Pablo backend.
+/// Replaces the previous Rust FFI (pablo-core) delegation with direct HTTP calls.
 @MainActor
 final class APIClient {
-    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "APIClient")
+    let logger = Logger(subsystem: AppConstants.appBundleID, category: "APIClient")
 
     nonisolated let baseURL: URL
-    nonisolated private let baseURLString: String
+    nonisolated let baseURLString: String
 
     /// Optional closure to provide a Bearer token for authenticated requests.
     var getToken: (@Sendable () async throws -> String)?
+
+    private static let clientVersion = "1.0.0"
+    private static let minServerVersion = "1.0.0"
 
     private static let fallbackURL: URL = {
         // Static string — guaranteed to parse. Extracted to avoid force-unwrap at call site.
@@ -19,6 +22,18 @@ final class APIClient {
             preconditionFailure("Hardcoded fallback URL is invalid")
         }
         return url
+    }()
+
+    nonisolated private let jsonDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }()
+
+    nonisolated private let jsonEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
     }()
 
     init(baseURL: String = "https://api.pablo.health") {
@@ -37,7 +52,7 @@ final class APIClient {
 
     // MARK: - Token helper
 
-    private func requireToken() async throws -> String {
+    func requireToken() async throws -> String {
         guard let getToken else {
             throw APIError.notAuthenticated
         }
@@ -46,14 +61,53 @@ final class APIClient {
 
     // MARK: - Health
 
-    /// Checks backend reachability and version compatibility via the Rust API client.
+    /// Checks backend reachability and version compatibility.
+    /// This endpoint does NOT require authentication.
     func healthCheck() async throws -> HealthStatus {
-        try await Pablo.healthCheck(baseUrl: baseURLString)
+        let request = try await buildRequest("GET", path: "/api/health", authenticated: false)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw PabloError.apiClient(statusCode: UInt16(httpResponse.statusCode), message: message)
+        }
+
+        // Parse the raw JSON to extract version fields manually,
+        // matching the Rust implementation's behavior.
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw PabloError.jsonParse(message: "Health response is not a JSON object")
+        }
+
+        let serverVersion = json["server_version"] as? String ?? "unknown"
+
+        // Extract minimum client version for macOS from nested object
+        var minClientVersion = "0.0.0"
+        if let minClientVersions = json["min_client_versions"] as? [String: Any] {
+            if let macosMin = minClientVersions["macos"] as? String {
+                minClientVersion = macosMin
+            }
+        }
+
+        // Compare versions to determine compatibility
+        let clientUpdateRequired = Self.isVersion(Self.clientVersion, lessThan: minClientVersion)
+        let serverUpdateRequired = Self.isVersion(serverVersion, lessThan: Self.minServerVersion)
+
+        return HealthStatus(
+            serverVersion: serverVersion,
+            clientUpdateRequired: clientUpdateRequired,
+            serverUpdateRequired: serverUpdateRequired,
+            minClientVersion: minClientVersion,
+            minServerVersion: Self.minServerVersion
+        )
     }
 
     // MARK: - Recordings
 
-    /// Uploads a recording file to the backend via the Rust API client.
+    /// Uploads a recording file to the backend.
     func uploadRecording(
         fileURL: URL,
         onProgress: @Sendable @escaping (Double) -> Void
@@ -61,297 +115,9 @@ final class APIClient {
         let token = try await requireToken()
         logger.info("Uploading recording file")
 
-        // Simulate incremental progress since the Rust client
-        // doesn't provide upload progress callbacks.
         onProgress(0.3)
 
-        let response = try await Pablo.uploadRecording(
-            baseUrl: baseURLString,
-            token: token,
-            filePath: fileURL.path
-        )
-
-        onProgress(1.0)
-        logger.info("Upload successful")
-        return response
-    }
-
-    // MARK: - Patients
-
-    /// Fetches a paginated list of patients via the Rust API client.
-    func fetchPatients(
-        search: String = "",
-        page: Int = 1,
-        pageSize: Int = 50
-    ) async throws -> PatientListResponse {
-        let token = try await requireToken()
-
-        let response = try await Pablo.fetchPatients(
-            baseUrl: baseURLString,
-            token: token,
-            search: search.isEmpty ? nil : search,
-            page: UInt32(page),
-            pageSize: UInt32(pageSize)
-        )
-
-        logger.info("Fetched patients page")
-        return response
-    }
-
-    /// Creates a new patient via the Rust API client.
-    func createPatient(
-        firstName: String,
-        lastName: String,
-        email: String? = nil,
-        phone: String? = nil,
-        dateOfBirth: String? = nil,
-        diagnosis: String? = nil
-    ) async throws -> Patient {
-        let token = try await requireToken()
-
-        let request = CreatePatientRequest(
-            firstName: firstName,
-            lastName: lastName,
-            email: email,
-            phone: phone,
-            dateOfBirth: dateOfBirth,
-            diagnosis: diagnosis
-        )
-
-        let patient = try await Pablo.createPatient(
-            baseUrl: baseURLString,
-            token: token,
-            request: request
-        )
-
-        logger.info("Created patient")
-        return patient
-    }
-
-    // MARK: - Sessions
-
-    /// Fetches today's sessions for the given timezone via the Rust API client.
-    func fetchTodaySessions(timezone: String) async throws -> [Session] {
-        let token = try await requireToken()
-
-        let sessions = try await Pablo.fetchTodaySessions(
-            baseUrl: baseURLString,
-            token: token,
-            timezone: timezone
-        )
-
-        logger.info("Fetched today's sessions")
-        return sessions
-    }
-
-    /// Creates a new therapy session via the Rust API client.
-    func createSession(request: CreateSessionRequest) async throws -> Session {
-        let token = try await requireToken()
-
-        let session = try await Pablo.createSession(
-            baseUrl: baseURLString,
-            token: token,
-            request: request
-        )
-
-        logger.info("Created session")
-        return session
-    }
-
-    /// Fetches a single session by ID via the Rust API client.
-    func fetchSession(sessionId: String) async throws -> Session {
-        let token = try await requireToken()
-
-        return try await Pablo.fetchSession(
-            baseUrl: baseURLString,
-            token: token,
-            sessionId: sessionId
-        )
-    }
-
-    /// Fetches a paginated list of sessions via the Rust API client.
-    func fetchSessions(
-        page: Int = 1,
-        pageSize: Int = 50,
-        status: String? = nil
-    ) async throws -> SessionListResponse {
-        let token = try await requireToken()
-
-        let response = try await Pablo.fetchSessions(
-            baseUrl: baseURLString,
-            token: token,
-            page: UInt32(page),
-            pageSize: UInt32(pageSize),
-            status: status
-        )
-
-        logger.info("Fetched sessions page")
-        return response
-    }
-
-    /// Updates a session's status via the Rust API client.
-    func updateSessionStatus(
-        sessionId: String,
-        status: SessionStatus
-    ) async throws -> Session {
-        let token = try await requireToken()
-
-        let session = try await Pablo.updateSessionStatus(
-            baseUrl: baseURLString,
-            token: token,
-            sessionId: sessionId,
-            status: status
-        )
-
-        logger.info("Updated session status")
-        return session
-    }
-
-    /// Updates a session's fields via the Rust API client.
-    func updateSession(
-        sessionId: String,
-        request: UpdateSessionRequest
-    ) async throws -> Session {
-        let token = try await requireToken()
-
-        let session = try await Pablo.updateSession(
-            baseUrl: baseURLString,
-            token: token,
-            sessionId: sessionId,
-            request: request
-        )
-
-        logger.info("Updated session")
-        return session
-    }
-
-    /// Finalizes a session with a quality rating via the Rust API client.
-    func finalizeSession(
-        sessionId: String,
-        qualityRating: UInt8
-    ) async throws -> Session {
-        let token = try await requireToken()
-
-        let session = try await Pablo.finalizeSession(
-            baseUrl: baseURLString,
-            token: token,
-            sessionId: sessionId,
-            qualityRating: qualityRating
-        )
-
-        logger.info("Finalized session")
-        return session
-    }
-
-    // MARK: - Transcripts
-
-    /// Uploads a transcript for a session via the Rust API client.
-    func uploadTranscript(
-        sessionId: String,
-        format: String,
-        content: String
-    ) async throws -> TranscriptUploadResponse {
-        let token = try await requireToken()
-
-        let response = try await Pablo.uploadTranscript(
-            baseUrl: baseURLString,
-            token: token,
-            sessionId: sessionId,
-            format: format,
-            content: content
-        )
-
-        logger.info("Uploaded transcript")
-        return response
-    }
-
-    // MARK: - User Profile
-
-    /// Fetches the authenticated user's profile via the Rust API client.
-    func fetchUserProfile() async throws -> UserProfile {
-        let token = try await requireToken()
-
-        return try await Pablo.fetchUserProfile(
-            baseUrl: baseURLString,
-            token: token
-        )
-    }
-
-    // MARK: - BAA
-
-    /// Fetches the BAA acceptance status via the Rust API client.
-    func fetchBaaStatus() async throws -> BaaStatus {
-        let token = try await requireToken()
-
-        return try await Pablo.fetchBaaStatus(
-            baseUrl: baseURLString,
-            token: token
-        )
-    }
-
-    /// Accepts the BAA via the Rust API client.
-    func acceptBaa() async throws -> BaaStatus {
-        let token = try await requireToken()
-
-        let status = try await Pablo.acceptBaa(
-            baseUrl: baseURLString,
-            token: token
-        )
-
-        logger.info("BAA accepted")
-        return status
-    }
-
-    // MARK: - Preferences
-
-    /// Fetches user preferences via the Rust API client.
-    func fetchPreferences() async throws -> UserPreferences {
-        let token = try await requireToken()
-
-        return try await Pablo.fetchPreferences(
-            baseUrl: baseURLString,
-            token: token
-        )
-    }
-
-    /// Saves user preferences via the Rust API client.
-    func savePreferences(_ preferences: UserPreferences) async throws -> UserPreferences {
-        let token = try await requireToken()
-
-        let prefs = try await Pablo.savePreferences(
-            baseUrl: baseURLString,
-            token: token,
-            preferences: preferences
-        )
-
-        logger.info("Preferences saved")
-        return prefs
-    }
-
-    // MARK: - Audio Upload (native URLSession — not via Rust core)
-
-    /// Uploads therapist and client audio files to the backend for server-side transcription.
-    /// Uses native URLSession multipart/form-data since this endpoint is not in pablo-core.
-    ///
-    /// Writes the multipart body to a temp file to avoid loading large audio files
-    /// (potentially hundreds of MB) entirely into memory simultaneously.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The backend session UUID (must be in `recording_complete` status).
-    ///   - therapistAudioURL: Path to the mic PCM/WAV sidecar file.
-    ///   - clientAudioURL: Path to the system audio PCM/WAV sidecar file (optional).
-    ///   - onProgress: Progress callback (0.0–1.0). Simulated since URLSession upload
-    ///     progress requires delegate-based uploads.
-    /// - Returns: `AudioUploadResponse` with the session's new status.
-    func uploadAudio(
-        sessionId: String,
-        therapistAudioURL: URL,
-        clientAudioURL: URL?,
-        onProgress: @Sendable @escaping (Double) -> Void
-    ) async throws -> AudioUploadResponse {
-        let token = try await requireToken()
-
-        let endpoint = "\(baseURLString)/api/sessions/\(sessionId)/upload-audio"
+        let endpoint = "\(baseURLString)/api/recordings/upload"
         guard let url = URL(string: endpoint) else {
             throw APIError.invalidResponse
         }
@@ -362,123 +128,353 @@ final class APIClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
-        request.timeoutInterval = 300
+        request.setValue(Self.clientVersion, forHTTPHeaderField: "X-Client-Version")
+        request.setValue("macos", forHTTPHeaderField: "X-Client-Platform")
 
-        onProgress(0.1)
+        let fileData = try Data(contentsOf: fileURL)
+        let parts = [MultipartFilePart(
+            fieldName: "file",
+            fileName: fileURL.lastPathComponent,
+            mimeType: "application/octet-stream",
+            data: fileData
+        )]
+        request.httpBody = buildMultipartBody(parts: parts, boundary: boundary)
 
-        // Write the multipart body to a temp file instead of holding everything in RAM.
-        // For 60-min sessions each sidecar can be ~330 MB; holding two in memory risks OOM.
-        let tempBodyURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pablo_upload_\(UUID().uuidString).tmp")
-        defer { try? FileManager.default.removeItem(at: tempBodyURL) }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
 
-        try writeMultipartBody(
-            to: tempBodyURL,
-            boundary: boundary,
-            therapistAudioURL: therapistAudioURL,
-            clientAudioURL: clientAudioURL
+        let decoded: UploadResponse = try handleResponse(data, response)
+
+        onProgress(1.0)
+        logger.info("Upload successful")
+        return decoded
+    }
+
+    // MARK: - Patients
+
+    /// Fetches a paginated list of patients.
+    func fetchPatients(
+        search: String = "",
+        page: Int = 1,
+        pageSize: Int = 50
+    ) async throws -> PatientListResponse {
+        var path = "/api/patients?page=\(page)&page_size=\(pageSize)"
+        if !search.isEmpty, let encoded = search.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            path += "&search=\(encoded)"
+        }
+
+        let request = try await buildRequest("GET", path: path)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let decoded: PatientListResponse = try handleResponse(data, response)
+        logger.info("Fetched patients page")
+        return decoded
+    }
+
+    /// Creates a new patient.
+    func createPatient(
+        firstName: String,
+        lastName: String,
+        email: String? = nil,
+        phone: String? = nil,
+        dateOfBirth: String? = nil,
+        diagnosis: String? = nil
+    ) async throws -> Patient {
+        let body = CreatePatientRequest(
+            firstName: firstName,
+            lastName: lastName,
+            email: email,
+            phone: phone,
+            dateOfBirth: dateOfBirth,
+            diagnosis: diagnosis
         )
 
-        onProgress(0.3)
+        var request = try await buildRequest("POST", path: "/api/patients")
+        request.httpBody = try jsonEncoder.encode(body)
 
-        let (data, response) = try await URLSession.shared.upload(for: request, fromFile: tempBodyURL)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
 
+        let patient: Patient = try handleResponse(data, response)
+        logger.info("Created patient")
+        return patient
+    }
+
+    // MARK: - Sessions
+
+    /// Fetches today's sessions for the given timezone.
+    func fetchTodaySessions(timezone: String) async throws -> [Session] {
+        let encodedTZ = timezone.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? timezone
+        let path = "/api/sessions/today?timezone=\(encodedTZ)"
+
+        let request = try await buildRequest("GET", path: path)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let listResponse: SessionListResponse = try handleResponse(data, response)
+        logger.info("Fetched today's sessions")
+        return listResponse.data
+    }
+
+    /// Creates a new therapy session.
+    func createSession(request: CreateSessionRequest) async throws -> Session {
+        var urlRequest = try await buildRequest("POST", path: "/api/sessions/schedule")
+        urlRequest.httpBody = try jsonEncoder.encode(request)
+
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        try mapHTTPErrors(data: data, response: response)
+
+        let session: Session = try handleResponse(data, response)
+        logger.info("Created session")
+        return session
+    }
+
+    /// Fetches a single session by ID.
+    func fetchSession(sessionId: String) async throws -> Session {
+        let request = try await buildRequest("GET", path: "/api/sessions/\(sessionId)")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        return try handleResponse(data, response)
+    }
+
+    /// Fetches a paginated list of sessions.
+    func fetchSessions(
+        page: Int = 1,
+        pageSize: Int = 50,
+        status: String? = nil
+    ) async throws -> SessionListResponse {
+        var path = "/api/sessions?page=\(page)&page_size=\(pageSize)"
+        if let status {
+            path += "&status=\(status)"
+        }
+
+        let request = try await buildRequest("GET", path: path)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let decoded: SessionListResponse = try handleResponse(data, response)
+        logger.info("Fetched sessions page")
+        return decoded
+    }
+
+    /// Updates a session's status.
+    func updateSessionStatus(
+        sessionId: String,
+        status: SessionStatus
+    ) async throws -> Session {
+        var request = try await buildRequest("PATCH", path: "/api/sessions/\(sessionId)/status")
+        let body = ["status": status.rawValue]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let session: Session = try handleResponse(data, response)
+        logger.info("Updated session status")
+        return session
+    }
+
+    /// Updates a session's fields.
+    func updateSession(
+        sessionId: String,
+        request: UpdateSessionRequest
+    ) async throws -> Session {
+        var urlRequest = try await buildRequest("PATCH", path: "/api/sessions/\(sessionId)")
+        urlRequest.httpBody = try jsonEncoder.encode(request)
+
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        try mapHTTPErrors(data: data, response: response)
+
+        let session: Session = try handleResponse(data, response)
+        logger.info("Updated session")
+        return session
+    }
+
+    /// Finalizes a session with a quality rating.
+    func finalizeSession(
+        sessionId: String,
+        qualityRating: UInt8
+    ) async throws -> Session {
+        var request = try await buildRequest("PATCH", path: "/api/sessions/\(sessionId)/finalize")
+        let body: [String: Any] = ["quality_rating": Int(qualityRating)]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let session: Session = try handleResponse(data, response)
+        logger.info("Finalized session")
+        return session
+    }
+
+    // MARK: - Transcripts
+
+    /// Uploads a transcript for a session.
+    func uploadTranscript(
+        sessionId: String,
+        format: String,
+        content: String
+    ) async throws -> TranscriptUploadResponse {
+        var request = try await buildRequest("POST", path: "/api/sessions/\(sessionId)/transcript")
+        let body: [String: String] = ["format": format, "content": content]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let decoded: TranscriptUploadResponse = try handleResponse(data, response)
+        logger.info("Uploaded transcript")
+        return decoded
+    }
+
+    // MARK: - User Profile
+
+    /// Fetches the authenticated user's profile.
+    func fetchUserProfile() async throws -> UserProfile {
+        let request = try await buildRequest("GET", path: "/api/users/me")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        return try handleResponse(data, response)
+    }
+
+    // MARK: - BAA
+
+    /// Fetches the BAA acceptance status.
+    func fetchBaaStatus() async throws -> BaaStatus {
+        let request = try await buildRequest("GET", path: "/api/users/me/baa-status")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        return try handleResponse(data, response)
+    }
+
+    /// Accepts the BAA.
+    func acceptBaa() async throws -> BaaStatus {
+        let request = try await buildRequest("POST", path: "/api/users/me/accept-baa")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let status: BaaStatus = try handleResponse(data, response)
+        logger.info("BAA accepted")
+        return status
+    }
+
+    // MARK: - Preferences
+
+    /// Fetches user preferences.
+    func fetchPreferences() async throws -> UserPreferences {
+        let request = try await buildRequest("GET", path: "/api/users/me/preferences")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        return try handleResponse(data, response)
+    }
+
+    /// Saves user preferences.
+    func savePreferences(_ preferences: UserPreferences) async throws -> UserPreferences {
+        var request = try await buildRequest("PUT", path: "/api/users/me/preferences")
+        request.httpBody = try jsonEncoder.encode(preferences)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let prefs: UserPreferences = try handleResponse(data, response)
+        logger.info("Preferences saved")
+        return prefs
+    }
+
+    // MARK: - Private Helpers
+
+    /// Builds a URLRequest with standard headers.
+    /// - Parameters:
+    ///   - method: HTTP method (GET, POST, PATCH, PUT, DELETE).
+    ///   - path: API path (e.g. "/api/sessions"). Appended to `baseURLString`.
+    ///   - authenticated: Whether to include the Authorization header. Defaults to `true`.
+    /// - Returns: A configured URLRequest.
+    private func buildRequest(
+        _ method: String,
+        path: String,
+        authenticated: Bool = true
+    ) async throws -> URLRequest {
+        guard let url = URL(string: "\(baseURLString)\(path)") else {
+            throw APIError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+
+        // Standard client identification headers
+        request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+        request.setValue(Self.clientVersion, forHTTPHeaderField: "X-Client-Version")
+        request.setValue("macos", forHTTPHeaderField: "X-Client-Platform")
+
+        // Content-Type for mutating requests
+        if method == "POST" || method == "PATCH" || method == "PUT" {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+
+        // Auth header
+        if authenticated {
+            let token = try await requireToken()
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        return request
+    }
+
+    /// Decodes a successful HTTP response body into the requested type.
+    private func handleResponse<T: Decodable>(_ data: Data, _: URLResponse) throws -> T {
+        do {
+            return try jsonDecoder.decode(T.self, from: data)
+        } catch {
+            throw PabloError.jsonParse(message: "\(error.localizedDescription)")
+        }
+    }
+
+    /// Maps non-2xx HTTP status codes to typed `PabloError` values.
+    private func mapHTTPErrors(data: Data, response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
 
-        onProgress(0.9)
+        let statusCode = httpResponse.statusCode
 
-        guard (200 ... 299).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw APIError.serverError(statusCode: httpResponse.statusCode, message: message)
+        guard !(200 ... 299).contains(statusCode) else { return }
+
+        let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+
+        switch statusCode {
+        case 401:
+            throw PabloError.unauthenticated
+        case 403:
+            throw PabloError.forbidden
+        case 404:
+            throw PabloError.notFound(resource: message)
+        case 409:
+            throw PabloError.conflictState(message: message)
+        case 426:
+            throw PabloError.updateRequired(message: message)
+        default:
+            throw PabloError.apiClient(statusCode: UInt16(statusCode), message: message)
         }
-
-        let decoded = try JSONDecoder().decode(AudioUploadResponse.self, from: data)
-        onProgress(1.0)
-        logger.info("Audio uploaded for session \(sessionId)")
-        return decoded
     }
 
-    // MARK: - Multipart helper (kept for backward compat + tests)
+    // MARK: - Version Comparison
 
-    func createMultipartBody(
-        fileData: Data,
-        fileName: String,
-        boundary: String
-    ) -> Data {
-        var body = Data()
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".utf8))
-        body.append(Data("Content-Type: application/octet-stream\r\n\r\n".utf8))
-        body.append(fileData)
-        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-        return body
+    /// Semver comparison: returns `true` if `lhs` is strictly less than `rhs`.
+    private static func isVersion(_ lhs: String, lessThan rhs: String) -> Bool {
+        let lhsParts = lhs.split(separator: ".").compactMap { Int($0) }
+        let rhsParts = rhs.split(separator: ".").compactMap { Int($0) }
+
+        for i in 0 ..< max(lhsParts.count, rhsParts.count) {
+            let left = i < lhsParts.count ? lhsParts[i] : 0
+            let right = i < rhsParts.count ? rhsParts[i] : 0
+            if left < right { return true }
+            if left > right { return false }
+        }
+        return false
     }
-}
-
-// MARK: - Multipart Data Helper
-
-/// A single field in a multipart/form-data request body.
-private struct MultipartFilePart {
-    let fieldName: String
-    let fileName: String
-    let mimeType: String
-    let data: Data
-}
-
-private func buildMultipartBody(parts: [MultipartFilePart], boundary: String) -> Data {
-    var body = Data()
-    for part in parts {
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body
-            .append(Data("Content-Disposition: form-data; name=\"\(part.fieldName)\"; filename=\"\(part.fileName)\"\r\n"
-                    .utf8))
-        body.append(Data("Content-Type: \(part.mimeType)\r\n\r\n".utf8))
-        body.append(part.data)
-        body.append(Data("\r\n".utf8))
-    }
-    body.append(Data("--\(boundary)--\r\n".utf8))
-    return body
-}
-
-/// Writes a multipart/form-data body to a file, streaming each audio file in chunks
-/// to avoid loading the full payload into memory. Each audio file is read in 1 MB chunks.
-private func writeMultipartBody(
-    to outputURL: URL,
-    boundary: String,
-    therapistAudioURL: URL,
-    clientAudioURL: URL?
-) throws {
-    FileManager.default.createFile(atPath: outputURL.path, contents: nil)
-    let handle = try FileHandle(forWritingTo: outputURL)
-    defer { try? handle.close() }
-
-    let chunkSize = 1_048_576 // 1 MB
-
-    func writeFilePart(fieldName: String, fileURL: URL) throws {
-        let header = "--\(boundary)\r\n"
-            + "Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileURL.lastPathComponent)\"\r\n"
-            + "Content-Type: audio/wav\r\n\r\n"
-        handle.write(Data(header.utf8))
-
-        let inputHandle = try FileHandle(forReadingFrom: fileURL)
-        defer { try? inputHandle.close() }
-        while autoreleasepool(invoking: {
-            let chunk = inputHandle.readData(ofLength: chunkSize)
-            if chunk.isEmpty { return false }
-            handle.write(chunk)
-            return true
-        }) {}
-
-        handle.write(Data("\r\n".utf8))
-    }
-
-    try writeFilePart(fieldName: "therapist_audio", fileURL: therapistAudioURL)
-
-    if let clientAudioURL, FileManager.default.fileExists(atPath: clientAudioURL.path) {
-        try writeFilePart(fieldName: "client_audio", fileURL: clientAudioURL)
-    }
-
-    handle.write(Data("--\(boundary)--\r\n".utf8))
 }

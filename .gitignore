@@ -20,10 +20,6 @@ build/
 .swiftpm/
 SourcePackages/
 
-# Rust
-core/target/
-**/*.rs.bk
-
 # Windows / .NET
 windows/**/bin/
 windows/**/obj/

@@ -3,7 +3,7 @@ import os
 
 // MARK: - DecryptedPCMPaths
 
-/// Resolved paths after decrypting encrypted PCM sidecars for transcription.
+/// Resolved paths after decrypting encrypted PCM sidecars for upload.
 private struct DecryptedPCMPaths {
     let micPath: String
     let systemPath: String?
@@ -16,7 +16,6 @@ enum TranscriptionState: Sendable {
     case running
     case done(transcript: String)
     case pendingUpload(transcript: String)
-    case awaitingModel
     case failed(message: String)
 
     var transcript: String? {
@@ -34,14 +33,13 @@ enum TranscriptionState: Sendable {
 
 // MARK: - TranscriptionViewModel
 
-/// Orchestrates the local transcription pipeline after a session ends.
+/// Orchestrates cloud-based transcription after a session ends.
 ///
 /// Flow:
-///   1. `transcribeIfNeeded(_:)` — checks auto-transcribe setting, kicks off pipeline
-///   2. Calls pablo-core `transcribeSession1on1` then `renderGoogleMeet`
-///   3. Tries to POST the transcript to the backend
-///   4. On upload failure: saves encrypted pending file (retry queue)
-///   5. `retryPendingUploads()` — called on app launch to flush the queue
+///   1. `transcribeIfNeeded(_:)` — checks auto-transcribe setting, uploads audio
+///   2. Uploads mic + system audio to the backend for server-side transcription
+///   3. On upload failure: saves encrypted pending file (retry queue)
+///   4. `retryPendingUploads()` — called on app launch to flush the queue
 @MainActor
 @Observable
 final class TranscriptionViewModel {
@@ -52,24 +50,6 @@ final class TranscriptionViewModel {
 
     /// Number of transcripts waiting to be uploaded.
     var pendingUploadCount = 0
-
-    /// Recordings waiting for a Whisper model download before transcription.
-    /// Each entry pairs the recording with the backend session ID (if known).
-    var awaitingModelRecordings: [(recording: LocalRecording, sessionId: String?)] = []
-
-    /// Count derived from actual states. Returns 0 if any model is available
-    /// (stale `.awaitingModel` entries from before a download completed).
-    var awaitingModelCount: Int {
-        let manager = ModelManager.shared
-        let anyModelAvailable = WhisperModelPreset.allCases.contains {
-            manager.isAvailable($0)
-        }
-        if anyModelAvailable { return 0 }
-        return states.values.count(where: {
-            if case .awaitingModel = $0 { return true }
-            return false
-        })
-    }
 
     var errorMessage: String?
     var showError = false
@@ -101,16 +81,6 @@ final class TranscriptionViewModel {
         UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool ?? true
     }
 
-    private var qualityPreset: WhisperModelPreset {
-        let raw = UserDefaults.standard.string(forKey: "qualityPreset") ?? ""
-        return WhisperModelPreset(rawValue: raw) ?? .balanced
-    }
-
-    var transcriptionMode: TranscriptionMode {
-        let raw = UserDefaults.standard.string(forKey: "transcriptionMode") ?? ""
-        return TranscriptionMode(rawValue: raw) ?? .cloud
-    }
-
     /// Configures the API client with a token provider for authenticated requests.
     func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
         apiClient.getToken = getToken
@@ -118,23 +88,21 @@ final class TranscriptionViewModel {
 
     // MARK: - Public API
 
-    /// Triggers transcription for a recording if auto-transcribe is enabled.
-    /// Routes to cloud upload or local Whisper based on the user's transcription mode setting.
+    /// Triggers cloud transcription for a recording if auto-transcribe is enabled.
     func transcribeIfNeeded(_ recording: LocalRecording, sessionId: String? = nil) {
         guard autoTranscribe else { return }
         guard recording.micPCMFileURL != nil else {
             logger.info("Skipping transcription: no PCM sidecar")
             return
         }
-        if transcriptionMode == .cloud, let sessionId {
-            Task { await uploadAudioToBackend(recording, sessionId: sessionId) }
-        } else {
-            Task { await transcribe(recording, sessionId: sessionId) }
+        guard let sessionId else {
+            logger.info("Skipping cloud transcription: no session ID")
+            return
         }
+        Task { await uploadAudioToBackend(recording, sessionId: sessionId) }
     }
 
     /// Uploads audio files for a set of recordings to the backend for server-side transcription.
-    /// Used when transcription mode is `.cloud`.
     func uploadAudioSegments(_ recordings: [LocalRecording], sessionId: String) async {
         guard autoTranscribe else { return }
         let viable = recordings.filter { $0.micPCMFileURL != nil }
@@ -149,7 +117,7 @@ final class TranscriptionViewModel {
 
     /// Uploads the therapist (mic) and client (system) audio to the backend.
     private func uploadAudioToBackend(_ recording: LocalRecording, sessionId: String) async {
-        guard let micURL = recording.micPCMFileURL else {
+        guard recording.micPCMFileURL != nil else {
             states[recording.id] = .failed(message: "No mic audio file available")
             return
         }
@@ -179,57 +147,6 @@ final class TranscriptionViewModel {
             let message = error.localizedDescription
             states[recording.id] = .failed(message: "Audio upload failed: \(message)")
             logger.error("Audio upload failed: \(message)")
-        }
-    }
-
-    /// Unconditionally runs the full transcription pipeline for a recording.
-    /// - Parameter sessionId: The backend session UUID. Falls back to recording UUID if nil.
-    /// - Parameter presetOverride: If provided, uses this model preset instead of the user's configured quality preset.
-    func transcribe(
-        _ recording: LocalRecording,
-        sessionId: String? = nil,
-        using presetOverride: WhisperModelPreset? = nil
-    ) async {
-        guard let micPath = recording.micPCMFileURL?.path else {
-            states[recording.id] = .failed(message: "No mic audio file available")
-            return
-        }
-        let micSize = (try? FileManager.default.attributesOfItem(atPath: micPath)[.size] as? Int) ?? 0
-        if micSize == 0 {
-            states[recording.id] = .failed(
-                message: "Mic audio file is empty (0 bytes) — recording may have stalled"
-            )
-            logger.warning("Skipping transcription: mic PCM file is 0 bytes")
-            return
-        }
-
-        let backendSessionId = sessionId ?? recording.id.uuidString
-        states[recording.id] = .running
-        logger.info("Starting transcription")
-
-        do {
-            // Decrypt encrypted PCM sidecars to temp files before feeding to Whisper.
-            let pcm = try decryptPCMIfNeeded(recording)
-            defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
-
-            let config = try buildTranscriptionConfig(sampleRate: recording.sampleRate, using: presetOverride)
-            let result = try await transcribeSession1on1(
-                sessionId: backendSessionId,
-                micPath: pcm.micPath,
-                systemPath: pcm.systemPath,
-                config: config
-            )
-            let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: recording))
-            logger.info("Transcription complete, \(result.segments.count) segments")
-            await uploadOrQueue(recording: recording, sessionId: backendSessionId, text: text)
-        } catch is ModelError {
-            states[recording.id] = .awaitingModel
-            awaitingModelRecordings.append((recording: recording, sessionId: sessionId))
-            logger.info("Transcription deferred: model not downloaded")
-        } catch {
-            let message = error.localizedDescription
-            states[recording.id] = .failed(message: message)
-            logger.error("Transcription failed: \(message)")
         }
     }
 
@@ -308,102 +225,9 @@ final class TranscriptionViewModel {
         }
     }
 
-    /// Transcribes multiple recording segments and uploads the combined transcript.
-    /// Used when a session has multiple recordings due to audio source changes.
-    func transcribeSegments(_ recordings: [LocalRecording], sessionId: String) async {
-        guard autoTranscribe else { return }
-        let viable = recordings.filter { $0.micPCMFileURL != nil }
-        guard !viable.isEmpty else { return }
-
-        if viable.count == 1 {
-            await transcribe(viable[0], sessionId: sessionId)
-            return
-        }
-
-        for rec in viable {
-            states[rec.id] = .running
-        }
-        logger.info("Transcribing \(viable.count) segments for session")
-
-        var transcriptParts: [String] = []
-        var failed = false
-
-        for rec in viable {
-            do {
-                let pcm = try decryptPCMIfNeeded(rec)
-                defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
-
-                let config = try buildTranscriptionConfig(sampleRate: rec.sampleRate)
-                let result = try await transcribeSession1on1(
-                    sessionId: sessionId,
-                    micPath: pcm.micPath,
-                    systemPath: pcm.systemPath,
-                    config: config
-                )
-                let text = renderGoogleMeet(transcript: result, opts: renderOptions(for: rec))
-                transcriptParts.append(text)
-                states[rec.id] = .done(transcript: text)
-            } catch is ModelError {
-                states[rec.id] = .awaitingModel
-                awaitingModelRecordings.append((recording: rec, sessionId: sessionId))
-                failed = true
-            } catch {
-                states[rec.id] = .failed(message: error.localizedDescription)
-                logger.error("Segment transcription failed: \(error.localizedDescription)")
-                failed = true
-            }
-        }
-
-        guard !failed, !transcriptParts.isEmpty else { return }
-
-        let combined = transcriptParts.joined(separator: "\n\n")
-        await uploadOrQueue(recording: viable[viable.count - 1], sessionId: sessionId, text: combined)
-    }
-
-    /// Process recordings that were deferred because the Whisper model wasn't available.
-    /// Called after a model download completes. Uses the just-downloaded preset so we
-    /// don't fail again looking for a different model than what the user downloaded.
-    func processAwaitingModelRecordings(downloadedPreset: WhisperModelPreset) async {
-        let pending = awaitingModelRecordings
-        awaitingModelRecordings.removeAll()
-        for entry in pending {
-            await transcribe(entry.recording, sessionId: entry.sessionId, using: downloadedPreset)
-        }
-    }
-
     // MARK: - Private
 
-    private func buildTranscriptionConfig(
-        sampleRate: Double,
-        using presetOverride: WhisperModelPreset? = nil
-    ) throws -> TranscriptionConfig {
-        let modelURL = try resolveModelURL(preferred: presetOverride ?? qualityPreset)
-        let rate = UInt32(sampleRate)
-        return TranscriptionConfig(
-            modelPath: modelURL.path,
-            micChannels: 1,
-            micSampleRate: rate,
-            systemChannels: 2,
-            systemSampleRate: rate,
-            swapSpeakers: UserDefaults.standard.bool(forKey: "swapSpeakers")
-        )
-    }
-
-    /// Resolves a model URL, falling back to any available model if the preferred one isn't found.
-    private func resolveModelURL(preferred: WhisperModelPreset) throws -> URL {
-        let manager = ModelManager.shared
-        if let url = try? manager.modelURL(for: preferred) { return url }
-        logger.info("Preferred model \(preferred.modelFileName) not found, checking alternatives")
-        for preset in WhisperModelPreset.allCases where preset != preferred {
-            if let url = try? manager.modelURL(for: preset) {
-                logger.info("Falling back to \(preset.modelFileName)")
-                return url
-            }
-        }
-        throw ModelError.notFound(preferred)
-    }
-
-    /// Decrypts encrypted PCM sidecar files to temp files for transcription.
+    /// Decrypts encrypted PCM sidecar files to temp files for upload.
     private func decryptPCMIfNeeded(
         _ recording: LocalRecording
     ) throws -> DecryptedPCMPaths {
@@ -432,38 +256,8 @@ final class TranscriptionViewModel {
         return DecryptedPCMPaths(micPath: micPath, systemPath: systemPath, tempFiles: tempFiles)
     }
 
-    private func renderOptions(for recording: LocalRecording) -> GoogleMeetOptions {
-        GoogleMeetOptions(
-            sessionDate: recording.createdAt.formatted(date: .long, time: .omitted),
-            therapistName: "Therapist",
-            clientName: "Client",
-            clientAName: "Client A",
-            clientBName: "Client B"
-        )
-    }
-
-    private func uploadOrQueue(recording: LocalRecording, sessionId: String, text: String) async {
-        do {
-            try await postTranscript(sessionID: sessionId, text: text)
-            states[recording.id] = .done(transcript: text)
-            logger.info("Transcript uploaded")
-        } catch {
-            logger.warning("Upload failed, queuing for retry: \(error.localizedDescription)")
-            let pending = PendingTranscriptStore.PendingTranscript(
-                recordingID: recording.id,
-                sessionID: sessionId,
-                text: text,
-                createdAt: Date(),
-                retryCount: 0
-            )
-            store.save(pending)
-            states[recording.id] = .pendingUpload(transcript: text)
-            pendingUploadCount += 1
-        }
-    }
-
     private func postTranscript(sessionID: String, text: String) async throws {
-        let response = try await apiClient.uploadTranscript(
+        _ = try await apiClient.uploadTranscript(
             sessionId: sessionID,
             format: "txt",
             content: text

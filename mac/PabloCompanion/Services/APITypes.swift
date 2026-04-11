@@ -1,5 +1,30 @@
 import Foundation
 
+// MARK: - Multipart Data Helper
+
+/// A single field in a multipart/form-data request body.
+struct MultipartFilePart {
+    let fieldName: String
+    let fileName: String
+    let mimeType: String
+    let data: Data
+}
+
+func buildMultipartBody(parts: [MultipartFilePart], boundary: String) -> Data {
+    var body = Data()
+    for part in parts {
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body
+            .append(Data("Content-Disposition: form-data; name=\"\(part.fieldName)\"; filename=\"\(part.fileName)\"\r\n"
+                    .utf8))
+        body.append(Data("Content-Type: \(part.mimeType)\r\n\r\n".utf8))
+        body.append(part.data)
+        body.append(Data("\r\n".utf8))
+    }
+    body.append(Data("--\(boundary)--\r\n".utf8))
+    return body
+}
+
 enum APIError: LocalizedError {
     case invalidResponse
     case serverError(statusCode: Int, message: String)

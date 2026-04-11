@@ -5,11 +5,9 @@ on:
     branches: [main]
     paths:
       - 'windows/**'
-      - 'core/**'
   pull_request:
     paths:
       - 'windows/**'
-      - 'core/**'
   workflow_dispatch:
 
 permissions:
@@ -27,29 +25,6 @@ jobs:
 
       - name: Checkout AudioCaptureKit (sibling repo for project reference)
         run: git clone --depth 1 https://github.com/pablo-health/AudioCaptureKit.git ../AudioCaptureKit
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            core/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('core/Cargo.lock') }}
-
-      - name: Build Rust core (no transcription)
-        run: cargo build --manifest-path core/Cargo.toml --no-default-features
-
-      - name: Test Rust core (no transcription)
-        run: cargo test --manifest-path core/Cargo.toml --no-default-features
-
-      - name: Copy DLL to project
-        run: |
-          New-Item -ItemType Directory -Path windows/PabloCompanion/Native -Force
-          Copy-Item core/target/debug/pablo_core.dll windows/PabloCompanion/Native/
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v5

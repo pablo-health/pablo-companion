@@ -171,13 +171,7 @@ struct SettingsView: View {
     }
 
     @AppStorage("deleteAfterUpload") private var deleteAfterUpload = true
-    @AppStorage("qualityPreset") private var qualityPreset = WhisperModelPreset.balanced.rawValue
-    @AppStorage("sessionType") private var sessionType = DisplaySessionType.oneToOne.rawValue
     @AppStorage("autoTranscribe") private var autoTranscribe = true
-    @AppStorage("swapSpeakers") private var swapSpeakers = false
-    @AppStorage("transcriptionMode") private var transcriptionMode = TranscriptionMode.cloud.rawValue
-
-    @ObservedObject private var modelManager = ModelManager.shared
     private let hardware = HardwareCapabilityService()
 
     #if DEBUG
@@ -201,104 +195,10 @@ struct SettingsView: View {
     private var transcriptionSection: some View {
         Section("Transcription") {
             Toggle("Auto-transcribe after session", isOn: $autoTranscribe)
-
-            Picker("Transcription Mode", selection: $transcriptionMode) {
-                Text("Cloud (recommended)").tag(TranscriptionMode.cloud.rawValue)
-                Text("On this Mac").tag(TranscriptionMode.local.rawValue)
-            }
-            Text(transcriptionMode == TranscriptionMode.cloud.rawValue
-                ? "Audio is uploaded to Pablo's servers for transcription. Faster and more accurate."
-                : "Audio is transcribed locally using Whisper. Requires model download.")
+            Text("Audio is uploaded to Pablo's servers for transcription after each session ends.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            if transcriptionMode == TranscriptionMode.local.rawValue {
-                localTranscriptionOptions
-            }
         }
-    }
-
-    @ViewBuilder
-    private var localTranscriptionOptions: some View {
-        Picker("Quality Preset", selection: $qualityPreset) {
-            ForEach(WhisperModelPreset.allCases, id: \.rawValue) { preset in
-                Text(preset.displayName).tag(preset.rawValue)
-            }
-        }
-
-        Picker("Session Type", selection: $sessionType) {
-            ForEach(DisplaySessionType.allCases, id: \.rawValue) { type in
-                Text(type.displayName).tag(type.rawValue)
-            }
-        }
-
-        Toggle("Swap mic/speaker labels", isOn: $swapSpeakers)
-        Text("Enable when your microphone captures the patient and system audio carries the therapist.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-        if let warning = transcriptionWarning {
-            Label {
-                Text(warning)
-                    .font(.caption)
-            } icon: {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color.pabloHoney)
-            }
-            .foregroundStyle(Color.pabloHoney)
-        }
-
-        LabeledContent("CPU", value: hardware.isAppleSilicon ? "Apple Silicon" : "Intel")
-        LabeledContent("RAM", value: "\(hardware.physicalMemoryGB) GB")
-
-        ForEach(WhisperModelPreset.allCases, id: \.rawValue) { preset in
-            modelRow(preset)
-        }
-    }
-
-    private func modelRow(_ preset: WhisperModelPreset) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(preset.displayName)
-                    .font(.pabloBody(13))
-                Text(preset.diskSizeDescription)
-                    .font(.pabloBody(11))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if modelManager.downloadingPresets.contains(preset) {
-                HStack(spacing: 6) {
-                    ProgressView(value: modelManager.downloadProgress[preset] ?? 0)
-                        .frame(width: 80)
-                    Text("\(Int((modelManager.downloadProgress[preset] ?? 0) * 100))%")
-                        .font(.pabloBody(11))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-            } else if modelManager.isAvailable(preset) {
-                Label("Downloaded", systemImage: "checkmark.circle.fill")
-                    .font(.pabloBody(11))
-                    .foregroundStyle(Color.pabloSage)
-            } else {
-                Button("Download") {
-                    Task { try? await modelManager.downloadModel(preset) }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityLabel("Download \(preset.displayName) model")
-            }
-        }
-    }
-
-    private var transcriptionWarning: String? {
-        let preset = WhisperModelPreset(rawValue: qualityPreset) ?? .balanced
-        if preset == .highAccuracy, !hardware.meetsHighAccuracyRequirement {
-            return "High Accuracy requires 16+ GB RAM. Consider Balanced instead."
-        }
-        if hardware.isLowSpec {
-            return "Transcription may be slow on this Mac. Consider Cloud mode."
-        }
-        return nil
     }
 
     private var debugSection: some View {

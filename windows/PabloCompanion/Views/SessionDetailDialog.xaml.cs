@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Input;
 using PabloCompanion.Helpers;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
-using uniffi.pablo_core;
+using PabloCompanion.Models;
 using QualityPreset = PabloCompanion.Services.QualityPreset;
 
 namespace PabloCompanion.Views;

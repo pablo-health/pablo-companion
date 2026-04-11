@@ -3,7 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using PabloCompanion.ViewModels;
-using uniffi.pablo_core;
+using PabloCompanion.Models;
 
 namespace PabloCompanion.Views;
 
