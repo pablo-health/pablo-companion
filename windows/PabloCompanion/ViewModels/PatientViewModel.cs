@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PabloCompanion.Services;
-using uniffi.pablo_core;
+using PabloCompanion.Models;
 
 namespace PabloCompanion.ViewModels;
 

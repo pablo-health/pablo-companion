@@ -186,9 +186,6 @@ struct ContentView: View {
             }
         }
 
-        ModelManager.shared.onModelDownloaded = { [transcriptionVM] preset in
-            Task { await transcriptionVM.processAwaitingModelRecordings(downloadedPreset: preset) }
-        }
     }
 
     private func checkVersionCompatibility() {
@@ -245,7 +242,7 @@ struct ContentView: View {
         guard let recording = recordingVM.recordingForSession(session.id) else {
             return
         }
-        Task { await transcriptionVM.transcribe(recording, sessionId: session.id) }
+        transcriptionVM.transcribeIfNeeded(recording, sessionId: session.id)
     }
 
     private func showTranscript(for session: Session) {
@@ -331,7 +328,6 @@ struct ContentView: View {
             systemLevel: recordingVM.systemLevel,
             systemAudioActive: recordingVM.systemAudioActive,
             pendingUploadCount: transcriptionVM.pendingUploadCount,
-            awaitingModelCount: transcriptionVM.awaitingModelCount,
             transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
@@ -347,11 +343,7 @@ struct ContentView: View {
                         _ = await sessionVM.endSession(sessionId)
                         let segments = recordingVM.allRecordingsForSession(sessionId)
                         if !segments.isEmpty {
-                            if transcriptionVM.transcriptionMode == .cloud {
-                                await transcriptionVM.uploadAudioSegments(segments, sessionId: sessionId)
-                            } else {
-                                await transcriptionVM.transcribeSegments(segments, sessionId: sessionId)
-                            }
+                            await transcriptionVM.uploadAudioSegments(segments, sessionId: sessionId)
                         }
                         recordingVM.clearSessionSegments(sessionId)
                     }
@@ -462,7 +454,6 @@ extension ContentView {
 
         transcriptionVM.states = [:]
         transcriptionVM.pendingUploadCount = 0
-        transcriptionVM.awaitingModelRecordings = []
         transcriptionVM.errorMessage = nil
         transcriptionVM.userEmail = nil
 

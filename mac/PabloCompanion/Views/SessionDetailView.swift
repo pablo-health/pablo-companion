@@ -340,8 +340,6 @@ private struct TranscriptionSectionContent: View {
             transcriptCard(transcript, isPending: state?.isPendingUpload == true)
         case .running:
             progressCard("Transcribing…")
-        case .awaitingModel:
-            progressCard("Awaiting model download…")
         case let .failed(message):
             failedCard(message)
         case nil:

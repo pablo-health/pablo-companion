@@ -8,12 +8,11 @@ Sits on the desktop during the workday: therapists see today's sessions, click *
 
 ## Architecture
 
-Monorepo: shared Rust core with native UI on each platform.
+Monorepo: fully native apps on each platform, shared API contract via the Pablo backend.
 
 ```
-core/       # Rust (pablo-core crate, UniFFI) — shared business logic
 mac/        # SwiftUI macOS app (macOS 14+)
-windows/    # WinUI 3 / C# Windows app
+windows/    # WinUI 3 / C# Windows app (.NET 10)
 docs/       # Design docs, branding, accessibility standards
 scripts/    # Development utilities
 ```
@@ -22,16 +21,21 @@ scripts/    # Development utilities
 
 ## Getting Started
 
-### Prerequisites
+### Prerequisites (macOS)
 
-- Xcode 16+ (macOS)
-- Rust toolchain (`rustup`)
+- Xcode 16+
 - SwiftLint and SwiftFormat (`brew install swiftlint swiftformat`)
+
+### Prerequisites (Windows)
+
+- .NET 10 SDK
+- Visual Studio 2022+ with WinUI workload
 
 ### Build & Test
 
 ```bash
-make check    # lint + build + test (core and mac)
+make check          # lint + build (macOS)
+make check-windows  # build + test (Windows)
 ```
 
 ## Related

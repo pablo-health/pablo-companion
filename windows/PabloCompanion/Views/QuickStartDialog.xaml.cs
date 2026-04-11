@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml.Controls;
 using PabloCompanion.ViewModels;
-using uniffi.pablo_core;
+using PabloCompanion.Models;
 
 namespace PabloCompanion.Views;
 

@@ -15,7 +15,6 @@ struct DayView: View {
     var systemLevel: Float = 0
     var systemAudioActive = false
     var pendingUploadCount = 0
-    var awaitingModelCount = 0
     var transcriptionStateForSession: ((String) -> TranscriptionState?)?
     var hasRecordingForSession: ((String) -> Bool)?
     var playingSessionId: String?
@@ -53,9 +52,6 @@ struct DayView: View {
             }
             if pendingUploadCount > 0 {
                 transcriptionPendingBanner
-            }
-            if awaitingModelCount > 0 {
-                awaitingModelBanner
             }
             Divider()
             content
@@ -358,26 +354,6 @@ extension DayView {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .accessibilityLabel("Retry uploading pending transcripts")
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
-        .background(Color.pabloHoney.opacity(0.12))
-    }
-
-    var awaitingModelBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.down.circle")
-                .foregroundStyle(Color.pabloHoney)
-                .accessibilityHidden(true)
-            Text("\(awaitingModelCount) session\(awaitingModelCount == 1 ? "" : "s") awaiting model download")
-                .font(.pabloBody(13))
-                .foregroundStyle(Color.pabloBrownDeep)
-            Spacer()
-            Button("Go to Settings") { onSwitchToSettings?() }
-                .font(.pabloBody(12))
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityLabel("Go to Settings to download transcription model")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)

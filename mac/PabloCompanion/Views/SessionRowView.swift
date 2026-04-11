@@ -157,13 +157,6 @@ struct SessionRowView: View {
                     .font(.pabloBody(11))
                     .foregroundStyle(.secondary)
             }
-        case .awaitingModel:
-            HStack(spacing: 4) {
-                ProgressView().controlSize(.mini)
-                Text("Awaiting model…")
-                    .font(.pabloBody(11))
-                    .foregroundStyle(.secondary)
-            }
         case .done, .pendingUpload:
             if let onViewTranscript {
                 Button("View") { onViewTranscript() }

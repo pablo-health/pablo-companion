@@ -3,7 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
 using PabloCompanion.Helpers;
 using PabloCompanion.Services;
-using uniffi.pablo_core;
+using PabloCompanion.Models;
 
 namespace PabloCompanion.ViewModels;
 
