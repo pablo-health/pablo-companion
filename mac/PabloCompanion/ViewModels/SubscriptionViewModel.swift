@@ -68,9 +68,16 @@ final class SubscriptionViewModel {
         do {
             subscriptionInfo = try await apiClient.extendSubscription()
             logger.info("Grace extension granted")
+        } catch let error as APIError {
+            // Use safe, non-PII message — raw API body may contain patient data.
+            extensionError = switch error {
+            case .serverError(statusCode: 409, _): "Extension already used"
+            default: "Something went wrong. Please contact support@pablo.health"
+            }
+            logger.error("Failed to request extension: HTTP error")
         } catch {
-            extensionError = error.localizedDescription
-            logger.error("Failed to request extension: \(error.localizedDescription)")
+            extensionError = "Network error — check your connection and try again"
+            logger.error("Failed to request extension: \(error)")
         }
 
         isExtending = false

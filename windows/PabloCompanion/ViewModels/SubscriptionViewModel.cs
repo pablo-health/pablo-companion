@@ -1,3 +1,4 @@
+using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
@@ -38,7 +39,7 @@ public partial class SubscriptionViewModel : ObservableObject
         {
             Info = await _apiClient.FetchSubscriptionStatusAsync();
         }
-        catch
+        catch (Exception)
         {
             // Non-fatal — subscription banner is informational, not blocking.
         }
@@ -56,9 +57,16 @@ public partial class SubscriptionViewModel : ObservableObject
         {
             Info = await _apiClient.ExtendSubscriptionAsync();
         }
-        catch (Exception ex)
+        catch (PabloException ex)
         {
-            ExtensionError = ex.Message;
+            // Use safe, non-PII message — raw API body may contain patient data.
+            ExtensionError = ex.StatusCode == 409
+                ? "Extension already used"
+                : "Something went wrong. Please contact support@pablo.health";
+        }
+        catch (HttpRequestException)
+        {
+            ExtensionError = "Network error — check your connection and try again";
         }
         finally
         {
