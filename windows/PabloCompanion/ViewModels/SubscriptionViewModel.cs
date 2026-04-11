@@ -41,7 +41,7 @@ public partial class SubscriptionViewModel : ObservableObject
         }
         catch (Exception)
         {
-            // Non-fatal — subscription banner is informational, not blocking.
+            // Non-fatal — banner is informational.
         }
     }
 
@@ -89,7 +89,6 @@ public partial class SubscriptionViewModel : ObservableObject
         {
             if (Info == null) return "hidden";
 
-            // Check for active grace extension first.
             if (Info.GraceExtensionExpiresAt is { } expiresStr &&
                 DateTimeOffset.TryParse(expiresStr, out var expires) &&
                 expires > DateTimeOffset.UtcNow)

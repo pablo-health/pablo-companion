@@ -53,7 +53,6 @@ final class SubscriptionViewModel {
             subscriptionInfo = try await apiClient.fetchSubscriptionStatus()
             logger.info("Subscription status: \(self.subscriptionInfo?.status.rawValue ?? "nil")")
         } catch {
-            // Non-fatal — the banner is informational. Don't surface errors for this.
             logger.warning("Failed to fetch subscription status: \(error.localizedDescription)")
         }
     }
@@ -88,7 +87,6 @@ final class SubscriptionViewModel {
     var bannerState: SubscriptionBannerState {
         guard let info = subscriptionInfo else { return .hidden }
 
-        // Check for active grace extension first (overrides past_due/canceled display).
         if let expiresDate = activeGraceExpiry(info) {
             return .graceActive(expiresAt: expiresDate)
         }

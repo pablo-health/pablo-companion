@@ -1,10 +1,7 @@
 import Foundation
 
 /// Subscription status and grace extension endpoints.
-/// Separated from APIClient.swift to stay within the 500-line file limit.
 extension APIClient {
-    /// Fetches the current subscription status from the backend.
-    /// Uses native URLSession since this endpoint is not in pablo-core.
     func fetchSubscriptionStatus() async throws -> SubscriptionInfo {
         let token = try await requireToken()
 
@@ -39,7 +36,6 @@ extension APIClient {
     }
 
     /// Requests a one-time 1-day grace extension for a lapsed subscription.
-    /// Uses native URLSession since this endpoint is not in pablo-core.
     func extendSubscription() async throws -> SubscriptionInfo {
         let token = try await requireToken()
 

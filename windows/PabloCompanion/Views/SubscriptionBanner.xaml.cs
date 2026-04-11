@@ -38,7 +38,6 @@ public sealed partial class SubscriptionBanner : UserControl
         LapsedBanner.Visibility = kind is "past_due" or "canceled" ? Visibility.Visible : Visibility.Collapsed;
         GraceActiveBanner.Visibility = kind == "grace_active" ? Visibility.Visible : Visibility.Collapsed;
 
-        // Background color based on state
         BannerPanel.Background = kind switch
         {
             "trial" => new SolidColorBrush(ColorHelper.FromArgb(30, 212, 146, 46)),       // Honey 12%
@@ -47,7 +46,6 @@ public sealed partial class SubscriptionBanner : UserControl
             _ => null,
         };
 
-        // Trial text
         if (kind == "trial")
         {
             var parts = new List<string>();
@@ -60,7 +58,6 @@ public sealed partial class SubscriptionBanner : UserControl
                 : "You're on a free trial";
         }
 
-        // Lapsed heading
         if (kind is "past_due" or "canceled")
         {
             LapsedHeading.Text = kind == "past_due"
@@ -71,7 +68,6 @@ public sealed partial class SubscriptionBanner : UserControl
                 : Visibility.Collapsed;
         }
 
-        // Extension state
         ExtendingRing.IsActive = _vm.IsExtending;
         ExtendingRing.Visibility = _vm.IsExtending ? Visibility.Visible : Visibility.Collapsed;
         ExtensionButton.IsEnabled = !_vm.IsExtending;
@@ -86,7 +82,6 @@ public sealed partial class SubscriptionBanner : UserControl
             ExtensionErrorText.Visibility = Visibility.Collapsed;
         }
 
-        // Grace active text
         if (kind == "grace_active" && _vm.GraceExpiresAt is { } expires)
         {
             var remaining = expires - DateTimeOffset.Now;
