@@ -50,10 +50,22 @@ impl ApiClient {
     /// Create a new `ApiClient` pointing at the given base URL
     /// (e.g. `"https://api.pablo.health"`).
     pub fn new(base_url: String) -> Self {
-        Self {
-            client: Client::new(),
-            base_url,
-        }
+        let client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+        Self { client, base_url }
+    }
+
+    /// Create an `ApiClient` with a longer timeout suitable for file uploads.
+    pub fn new_for_upload(base_url: String) -> Self {
+        let client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(300))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+        Self { client, base_url }
     }
 
     /// The base URL this client was configured with.
@@ -124,11 +136,15 @@ pub(crate) async fn handle_error_response(response: reqwest::Response) -> PabloE
         403 => PabloError::Forbidden,
         404 => {
             let body = response.text().await.unwrap_or_default();
-            PabloError::NotFound { resource: body }
+            PabloError::NotFound {
+                resource: truncate_for_error(&body),
+            }
         }
         409 => {
             let body = response.text().await.unwrap_or_default();
-            PabloError::ConflictState { message: body }
+            PabloError::ConflictState {
+                message: truncate_for_error(&body),
+            }
         }
         426 => {
             let body = response.text().await.unwrap_or_default();
@@ -148,9 +164,25 @@ pub(crate) async fn handle_error_response(response: reqwest::Response) -> PabloE
             let body = response.text().await.unwrap_or_default();
             PabloError::ApiClient {
                 status_code: status,
-                message: body,
+                message: truncate_for_error(&body),
             }
         }
+    }
+}
+
+/// Truncates an error message body to prevent PHI from leaking into logs
+/// or crash reports. Response bodies may contain patient names, session
+/// details, or other protected health information.
+fn truncate_for_error(body: &str) -> String {
+    const MAX_ERROR_LEN: usize = 200;
+    if body.len() <= MAX_ERROR_LEN {
+        body.to_string()
+    } else {
+        format!(
+            "{}… (truncated, {} bytes total)",
+            &body[..MAX_ERROR_LEN],
+            body.len()
+        )
     }
 }
 
@@ -175,6 +207,10 @@ fn format_json_error(err: &serde_json::Error, body: &str) -> String {
 /// The backend may store transcript content with Python-style `\'` escapes
 /// which are not valid JSON (JSON only allows `\"`, `\\`, `\/`, `\b`, `\f`,
 /// `\n`, `\r`, `\t`, `\uXXXX`). This replaces `\'` with `'` before parsing.
+///
+/// TODO: This is a client-side workaround for a backend issue — the backend
+/// should emit valid JSON. Remove this once the backend normalizes stored
+/// transcript content. See: https://github.com/pablo-health/pablo/issues/TBD
 fn sanitize_json(input: &str) -> String {
     input.replace("\\'", "'")
 }
@@ -312,7 +348,7 @@ pub async fn upload_recording(
     file_path: String,
 ) -> Result<UploadResponse, PabloError> {
     Compat::new(async move {
-        let client = ApiClient::new(base_url);
+        let client = ApiClient::new_for_upload(base_url);
         let token = SecretString::from(token);
 
         let file_bytes = tokio::fs::read(&file_path)
@@ -1470,5 +1506,26 @@ mod tests {
         let sanitized = sanitize_json(input);
         assert_eq!(sanitized, input); // No change — all escapes are valid
         let _: serde_json::Value = serde_json::from_str(&sanitized).unwrap();
+    }
+
+    #[test]
+    fn truncate_for_error_preserves_short_messages() {
+        let msg = "Not found";
+        assert_eq!(truncate_for_error(msg), "Not found");
+    }
+
+    #[test]
+    fn truncate_for_error_truncates_long_messages() {
+        let msg = "a".repeat(500);
+        let result = truncate_for_error(&msg);
+        assert!(result.len() < 500);
+        assert!(result.contains("truncated"));
+        assert!(result.contains("500 bytes total"));
+    }
+
+    #[test]
+    fn truncate_for_error_at_boundary() {
+        let msg = "a".repeat(200);
+        assert_eq!(truncate_for_error(&msg), msg);
     }
 }
