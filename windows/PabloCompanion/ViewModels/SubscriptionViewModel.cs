@@ -59,7 +59,6 @@ public partial class SubscriptionViewModel : ObservableObject
         }
         catch (PabloException ex)
         {
-            // Use safe, non-PII message — raw API body may contain patient data.
             ExtensionError = ex.StatusCode == 409
                 ? "Extension already used"
                 : "Something went wrong. Please contact support@pablo.health";
