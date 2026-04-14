@@ -59,9 +59,8 @@ jobs:
             -archivePath $RUNNER_TEMP/Pablo.xcarchive \
             -destination 'generic/platform=macOS' \
             -clonedSourcePackagesDirPath mac/SourcePackages \
-            CODE_SIGN_STYLE=manual \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
-            DEVELOPMENT_TEAM=L8KG4FA2R9
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Export
         run: |
