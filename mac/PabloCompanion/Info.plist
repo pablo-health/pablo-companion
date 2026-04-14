@@ -10,7 +10,7 @@
 	<key>SUFeedURL</key>
 	<string>https://pablo-health.github.io/pablo-companion/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>ylACcBNjNeEuRHzwMEBNaXnFLdwmQrxf9Ogx9E1rJ2g=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUScheduledCheckInterval</key>
