@@ -59,10 +59,8 @@ jobs:
             -archivePath $RUNNER_TEMP/Pablo.xcarchive \
             -destination 'generic/platform=macOS' \
             -clonedSourcePackagesDirPath mac/SourcePackages \
-            CODE_SIGN_STYLE=manual \
-            CODE_SIGN_IDENTITY="Developer ID Application: LLL Solutions, LLC (L8KG4FA2R9)" \
-            DEVELOPMENT_TEAM=L8KG4FA2R9 \
-            PROVISIONING_PROFILE_SPECIFIER=""
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Export
         run: |
@@ -70,6 +68,20 @@ jobs:
             -archivePath $RUNNER_TEMP/Pablo.xcarchive \
             -exportOptionsPlist mac/ExportOptions.plist \
             -exportPath $RUNNER_TEMP/export
+
+      - name: Sign app with Developer ID
+        env:
+          IDENTITY: "Developer ID Application: LLL Solutions, LLC (L8KG4FA2R9)"
+        run: |
+          APP="$RUNNER_TEMP/export/Pablo.app"
+          # Sign all nested frameworks and bundles first
+          find "$APP/Contents/Frameworks" -type d \( -name "*.framework" -o -name "*.bundle" \) | while read fw; do
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$fw"
+          done
+          # Sign the main app
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+          # Verify
+          codesign --verify --deep --strict "$APP"
 
       - name: Create DMG
         run: |
