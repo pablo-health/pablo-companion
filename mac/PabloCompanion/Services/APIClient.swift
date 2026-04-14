@@ -13,7 +13,7 @@ final class APIClient {
     /// Optional closure to provide a Bearer token for authenticated requests.
     var getToken: (@Sendable () async throws -> String)?
 
-    private static let clientVersion = "1.0.0"
+    private static let clientVersion = "0.9.0"
     private static let minServerVersion = "1.0.0"
 
     private static let fallbackURL: URL = {

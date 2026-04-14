@@ -1,5 +1,5 @@
 {
-  "originHash" : "e71ea9f2650b31f95daa0954c1ed5f9e34ccd898b920b8b1da1a47509e653963",
+  "originHash" : "9a5d6729301710745f7bda66700ebe2afd53e9d9300cd5645f0e8f618f653b6f",
   "pins" : [
     {
       "identity" : "audiocapturekit",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "84d1ac7225f3457302d42f7da2dd1dc87b14b594",
         "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle.git",
+      "state" : {
+        "revision" : "066e75a8b3e99962685d6a90cdd5293ebffd9261",
+        "version" : "2.9.1"
       }
     },
     {
