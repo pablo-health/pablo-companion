@@ -382,7 +382,10 @@ struct ContentView: View {
                 }
             },
             activeSessionId: activeSessionId,
-            onSessionTapped: { detailSession = $0 }
+            onSessionTapped: { appointment in
+                guard let sessionId = appointment.sessionId else { return }
+                detailSession = sessionVM.todaySessions.first { $0.id == sessionId }
+            }
         )
         .toolbar {
             ToolbarItem(placement: .automatic) {

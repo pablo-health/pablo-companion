@@ -4,7 +4,7 @@ import SwiftUI
 struct AppointmentRowView: View {
     let appointment: Appointment
     var patientLookup: ((String) -> Patient?)?
-    var isActiveSession: Bool = false
+    var isActiveSession = false
     var onStartSession: (() -> Void)?
 
     var body: some View {
