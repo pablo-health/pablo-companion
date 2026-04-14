@@ -1,3 +1,4 @@
+using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
@@ -113,7 +114,7 @@ public partial class SessionViewModel : ObservableObject
         {
             ErrorMessage = "Failed to load today's appointments.";
         }
-        catch (Exception)
+        catch (HttpRequestException)
         {
             ErrorMessage = "Failed to load appointments. Check your connection.";
         }
@@ -138,7 +139,12 @@ public partial class SessionViewModel : ObservableObject
             ErrorMessage = "Subscription required to start sessions.";
             return null;
         }
-        catch (Exception)
+        catch (PabloException)
+        {
+            ErrorMessage = "Failed to start session from appointment.";
+            return null;
+        }
+        catch (HttpRequestException)
         {
             ErrorMessage = "Failed to start session from appointment.";
             return null;

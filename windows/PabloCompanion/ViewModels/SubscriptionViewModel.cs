@@ -39,7 +39,11 @@ public partial class SubscriptionViewModel : ObservableObject
         {
             Info = await _apiClient.FetchSubscriptionStatusAsync();
         }
-        catch (Exception)
+        catch (PabloException)
+        {
+            // Non-fatal — banner is informational.
+        }
+        catch (HttpRequestException)
         {
             // Non-fatal — banner is informational.
         }
