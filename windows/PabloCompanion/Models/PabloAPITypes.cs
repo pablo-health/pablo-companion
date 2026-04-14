@@ -251,7 +251,8 @@ public sealed record SessionListResponse(
     [property: JsonPropertyName("total")] uint Total,
     [property: JsonPropertyName("page")] uint Page,
     [property: JsonPropertyName("page_size")] uint PageSize
-) {
+)
+{
     public bool HasMore => (Page * PageSize) < Total;
 }
 
@@ -265,7 +266,8 @@ public sealed record PatientListResponse(
     [property: JsonPropertyName("total")] uint Total,
     [property: JsonPropertyName("page")] uint Page,
     [property: JsonPropertyName("page_size")] uint PageSize
-) {
+)
+{
     public bool HasMore => (Page * PageSize) < Total;
 }
 

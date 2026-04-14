@@ -424,7 +424,12 @@ struct ContentView: View {
             .tag(2)
     }
 
-    private var settingsTab: some View {
+}
+
+// MARK: - Settings Tab
+
+extension ContentView {
+    var settingsTab: some View {
         SettingsView(
             backendURL: $uploadVM.backendURL,
             authServerURL: Bindable(authVM).authServerURL,
@@ -447,7 +452,6 @@ struct ContentView: View {
         .tabItem { Label("Settings", systemImage: "gear") }
         .tag(3)
     }
-
 }
 
 // MARK: - PHI Cleanup

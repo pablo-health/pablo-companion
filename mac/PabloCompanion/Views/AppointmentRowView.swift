@@ -196,8 +196,7 @@ struct AppointmentRowView: View {
                 endAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(3000)),
                 durationMinutes: 50, status: "confirmed",
                 sessionType: "individual", videoLink: nil, videoPlatform: "zoom",
-                notes: nil, icalSource: "simplepractice", ehrAppointmentUrl: nil,
-                sessionId: nil,
+                notes: nil, icalSource: "simplepractice", ehrAppointmentUrl: nil, sessionId: nil,
                 createdAt: ISO8601DateFormatter().string(from: Date()),
                 updatedAt: nil
             ),
