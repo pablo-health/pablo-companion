@@ -18,7 +18,7 @@ struct DayView: View {
     var transcriptionStateForSession: ((String) -> TranscriptionState?)?
     var hasRecordingForSession: ((String) -> Bool)?
     var playingSessionId: String?
-    var onStartSession: ((Session) -> Void)?
+    var onStartSession: ((Appointment) -> Void)?
     var onQuickStart: ((Patient) -> Void)?
     var onStopRecording: (() -> Void)?
     var recordingStalled = false
@@ -33,7 +33,7 @@ struct DayView: View {
     var onStopPlayback: (() -> Void)?
     var onEndSession: ((Session) -> Void)?
     var activeSessionId: String?
-    var onSessionTapped: ((Session) -> Void)?
+    var onSessionTapped: ((Appointment) -> Void)?
 
     @State private var lastRefreshDate = Date()
     @State private var showingQuickStart = false
@@ -93,8 +93,8 @@ struct DayView: View {
 
     private var sessionCountBadge: some View {
         Group {
-            if !sessionVM.todaySessions.isEmpty {
-                Text("\(sessionVM.todaySessions.count)")
+            if !sessionVM.todayAppointments.isEmpty {
+                Text("\(sessionVM.todayAppointments.count)")
                     .font(.pabloBody(12))
                     .foregroundStyle(Color.pabloBrownDeep)
                     .frame(width: 24, height: 24)
@@ -180,20 +180,20 @@ struct DayView: View {
 
     @ViewBuilder
     private var content: some View {
-        if sessionVM.isLoading, sessionVM.todaySessions.isEmpty {
+        if sessionVM.isLoading, sessionVM.todayAppointments.isEmpty {
             loadingState
-        } else if sessionVM.todaySessions.isEmpty {
+        } else if sessionVM.todayAppointments.isEmpty {
             emptyState
         } else {
-            sessionList
+            appointmentList
         }
     }
 
-    private var sessionList: some View {
+    private var appointmentList: some View {
         VStack(spacing: 0) {
             List {
-                ForEach(sessionVM.todaySessions, id: \.id) { session in
-                    sessionRow(session)
+                ForEach(sessionVM.todayAppointments, id: \.id) { appointment in
+                    appointmentRow(appointment)
                         .pabloListRowStyle()
                         .padding(.vertical, 2)
                 }
@@ -204,32 +204,18 @@ struct DayView: View {
         }
     }
 
-    private func sessionRow(_ session: Session) -> some View {
-        let state = transcriptionStateForSession?(session.id)
-        let hasRecording = hasRecordingForSession?(session.id) ?? false
-        let isPlaying = playingSessionId == session.id
-        let isStaleInProgress = session.status == .inProgress && session.id != activeSessionId
+    private func appointmentRow(_ appointment: Appointment) -> some View {
+        let isActive = appointment.sessionId != nil && appointment.sessionId == activeSessionId
 
-        return SessionRowView(
-            session: session,
+        return AppointmentRowView(
+            appointment: appointment,
             patientLookup: { id in patients.first { $0.id == id } },
-            transcriptionState: state,
-            hasRecording: hasRecording,
-            isPlaying: isPlaying,
-            onStart: { onStartSession?(session) },
-            onViewTranscript: state?.transcript != nil
-                ? { onViewTranscript?(session) } : nil,
-            onTranscribe: hasRecording
-                ? { onTranscribeSession?(session) } : nil,
-            onPlay: hasRecording
-                ? { onPlaySession?(session) } : nil,
-            onStopPlayback: isPlaying
-                ? { onStopPlayback?() } : nil,
-            onEndSession: isStaleInProgress
-                ? { onEndSession?(session) } : nil
+            isActiveSession: isActive,
+            onStartSession: appointment.sessionId == nil
+                ? { onStartSession?(appointment) } : nil
         )
         .contentShape(Rectangle())
-        .onTapGesture { onSessionTapped?(session) }
+        .onTapGesture { onSessionTapped?(appointment) }
     }
 
     private var lastUpdatedLabel: some View {
@@ -365,7 +351,7 @@ extension DayView {
             try? await Task.sleep(for: .seconds(30))
             guard !Task.isCancelled else { break }
             guard recordingState == .idle else { continue }
-            await sessionVM.loadTodaySessions()
+            await sessionVM.loadTodayAppointments()
             lastRefreshDate = Date()
         }
     }
@@ -388,11 +374,23 @@ extension DayView {
 
 // MARK: - Preview
 
-#Preview("With sessions") {
+#Preview("With appointments") {
     DayView(
         sessionVM: {
             let vm = SessionViewModel()
-            vm.todaySessions = [PreviewData.scheduled, PreviewData.inProgress]
+            vm.todayAppointments = [
+                Appointment(
+                    id: "1", patientId: "p1", title: "Session",
+                    startAt: ISO8601DateFormatter().string(from: Date()),
+                    endAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(3000)),
+                    durationMinutes: 50, status: "confirmed",
+                    sessionType: "individual", videoLink: nil, videoPlatform: "zoom",
+                    notes: nil, icalSource: "simplepractice", ehrAppointmentUrl: nil,
+                    sessionId: nil,
+                    createdAt: ISO8601DateFormatter().string(from: Date()),
+                    updatedAt: nil
+                ),
+            ]
             return vm
         }(),
         patients: [],

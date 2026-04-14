@@ -167,7 +167,7 @@ struct ContentView: View {
         }
 
         recordingVM.restorePersistedRecordings()
-        await sessionVM.loadTodaySessions()
+        await sessionVM.loadTodayAppointments()
         await patientVM.loadPatients()
         await recordingVM.loadAudioSources()
         await uploadVM.checkBackendHealth()
@@ -204,6 +204,21 @@ struct ContentView: View {
     }
 
     // MARK: - Session orchestration
+
+    private func startSessionFromAppointment(_ appointment: Appointment) {
+        Task {
+            // Create a session linked to this appointment
+            guard let session = await sessionVM.startSessionFromAppointment(
+                appointmentId: appointment.id
+            ) else { return }
+            // Transition session to in_progress
+            guard await sessionVM.startSession(session.id) != nil else { return }
+            activeSessionId = session.id
+            recordingVM.activeSessionId = session.id
+            await recordingVM.startRecording()
+            VideoLaunchService.launch(session: session)
+        }
+    }
 
     private func startSession(_ session: Session) {
         Task {
@@ -268,7 +283,7 @@ struct ContentView: View {
         let recId = recordingVM.recordingForSession(session.id)?.id ?? UUID()
         Task {
             await transcriptionVM.reuploadTranscript(recordingId: recId, sessionId: session.id)
-            await sessionVM.loadTodaySessions()
+            await sessionVM.loadTodayAppointments()
         }
     }
 
@@ -298,7 +313,7 @@ struct ContentView: View {
             onEndSession: isStaleInProgress ? {
                 Task {
                     _ = await sessionVM.endSession(session.id)
-                    await sessionVM.loadTodaySessions()
+                    await sessionVM.loadTodayAppointments()
                     detailSession = nil
                 }
             } : nil,
@@ -331,7 +346,7 @@ struct ContentView: View {
             transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
-            onStartSession: { startSession($0) },
+            onStartSession: { startSessionFromAppointment($0) },
             onQuickStart: { handleQuickStart($0) },
             onStopRecording: {
                 Task {
@@ -347,7 +362,7 @@ struct ContentView: View {
                         }
                         recordingVM.clearSessionSegments(sessionId)
                     }
-                    await sessionVM.loadTodaySessions()
+                    await sessionVM.loadTodayAppointments()
                 }
             },
             recordingStalled: recordingVM.recordingStalled,
@@ -363,7 +378,7 @@ struct ContentView: View {
             onEndSession: { session in
                 Task {
                     _ = await sessionVM.endSession(session.id)
-                    await sessionVM.loadTodaySessions()
+                    await sessionVM.loadTodayAppointments()
                 }
             },
             activeSessionId: activeSessionId,

@@ -193,8 +193,6 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* (Rust build phase removed — pablo-core no longer used) */
-
 /* Begin PBXSourcesBuildPhase section */
 		9588F2862F46BC910052AF8F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;

@@ -21,6 +21,11 @@ public partial class SessionViewModel : ObservableObject
     private readonly PendingTranscriptionStore _pendingStore;
     private DispatcherTimer? _pollingTimer;
 
+    // --- Today's appointments ---
+
+    [ObservableProperty]
+    public partial Appointment[] TodayAppointments { get; set; } = [];
+
     // --- Today's sessions ---
 
     [ObservableProperty]
@@ -92,7 +97,55 @@ public partial class SessionViewModel : ObservableObject
         HistoryErrorMessage = null;
     }
 
-    // --- Today ---
+    // --- Today (appointments) ---
+
+    [RelayCommand]
+    public async Task LoadTodayAppointmentsAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = null;
+
+        try
+        {
+            TodayAppointments = await _apiClient.FetchTodayAppointmentsAsync();
+        }
+        catch (PabloException)
+        {
+            ErrorMessage = "Failed to load today's appointments.";
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "Failed to load appointments. Check your connection.";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task<Session?> StartSessionFromAppointmentAsync(string appointmentId)
+    {
+        try
+        {
+            var session = await _apiClient.StartSessionFromAppointmentAsync(appointmentId);
+            await LoadTodayAppointmentsAsync();
+            return session;
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("(403)"))
+        {
+            SubscriptionBlocked = true;
+            ErrorMessage = "Subscription required to start sessions.";
+            return null;
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "Failed to start session from appointment.";
+            return null;
+        }
+    }
+
+    // --- Today (sessions, legacy) ---
 
     [RelayCommand]
     public async Task LoadTodaySessionsAsync()
