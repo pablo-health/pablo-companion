@@ -59,8 +59,10 @@ jobs:
             -archivePath $RUNNER_TEMP/Pablo.xcarchive \
             -destination 'generic/platform=macOS' \
             -clonedSourcePackagesDirPath mac/SourcePackages \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGN_STYLE=manual \
+            CODE_SIGN_IDENTITY="Developer ID Application: LLL Solutions, LLC (L8KG4FA2R9)" \
+            DEVELOPMENT_TEAM=L8KG4FA2R9 \
+            PROVISIONING_PROFILE_SPECIFIER=""
 
       - name: Export
         run: |
