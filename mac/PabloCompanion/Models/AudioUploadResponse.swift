@@ -5,6 +5,6 @@ import Foundation
 struct AudioUploadResponse: Codable, Sendable {
     let id: String
     let status: String
-    let queue: String
-    let message: String
+    let queue: String?
+    let message: String?
 }

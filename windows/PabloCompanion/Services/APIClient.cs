@@ -19,7 +19,7 @@ public sealed class APIClient
     };
 
     private const string ClientVersion = "1.0.0";
-    private const string MinServerVersion = "1.0.0";
+    private const string MinServerVersion = "0.9.0";
     private const string ClientPlatform = "windows";
     private const string ClientTypeHeader = "pablo-companion-windows/1.0";
 
