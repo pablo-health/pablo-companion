@@ -1,12 +1,20 @@
 import CoreText
 import ScreenCaptureKit
+import Sparkle
 import SwiftUI
 
 @main
 struct PabloCompanionApp: App {
     @State private var authVM = AuthViewModel()
 
+    private let updaterController: SPUStandardUpdaterController
+
     init() {
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
         registerFonts()
     }
 
@@ -18,6 +26,11 @@ struct PabloCompanionApp: App {
                 }
         }
         .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterController.updater)
+            }
+        }
     }
 
     /// Registers bundled variable fonts (DM Sans, Fraunces) so SwiftUI

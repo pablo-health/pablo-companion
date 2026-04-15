@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		9588F2B82F46BE5B0052AF8F /* AudioCaptureKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9588F2B12F46BD500052AF8F /* AudioCaptureKit */; };
+		AA00000000000011000000 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000012000000 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,6 +46,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9588F2B82F46BE5B0052AF8F /* AudioCaptureKit in Frameworks */,
+				AA00000000000011000000 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -102,6 +104,7 @@
 			name = Pablo;
 			packageProductDependencies = (
 				9588F2B12F46BD500052AF8F /* AudioCaptureKit */,
+				AA00000000000012000000 /* Sparkle */,
 			);
 			productName = Pablo;
 			productReference = 9588F28A2F46BC910052AF8F /* Pablo.app */;
@@ -158,6 +161,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				9588F2B02F46BD500052AF8F /* XCRemoteSwiftPackageReference "AudioCaptureKit" */,
+				AA00000000000010000000 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9588F28B2F46BC910052AF8F /* Products */;
@@ -367,7 +371,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 0.9.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -418,7 +422,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 0.9.0;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -446,7 +450,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = L8KG4FA2R9;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 0.9.0;
 				OTHER_SWIFT_FLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -466,7 +470,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = L8KG4FA2R9;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 0.9.0;
 				OTHER_SWIFT_FLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = health.pablo.companion.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -519,6 +523,14 @@
 				minimumVersion = 1.0.0;
 			};
 		};
+		AA00000000000010000000 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -526,6 +538,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 9588F2B02F46BD500052AF8F /* XCRemoteSwiftPackageReference "AudioCaptureKit" */;
 			productName = AudioCaptureKit;
+		};
+		AA00000000000012000000 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA00000000000010000000 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

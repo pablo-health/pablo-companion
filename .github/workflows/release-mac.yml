@@ -1,0 +1,131 @@
+name: Release macOS
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: release-mac
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "DMG_NAME=Pablo-${VERSION}.dmg" >> $GITHUB_ENV
+          BUILD=${{ github.run_number }}
+          sed -i '' "s/MARKETING_VERSION = .*/MARKETING_VERSION = ${VERSION};/" \
+            mac/PabloCompanion.xcodeproj/project.pbxproj
+          sed -i '' "s/CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = ${BUILD};/" \
+            mac/PabloCompanion.xcodeproj/project.pbxproj
+
+      - name: Import signing certificate
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+          echo $CERTIFICATE | base64 --decode > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -k $KEYCHAIN_PATH \
+            -P "$PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "" $KEYCHAIN_PATH
+          security list-keychains -d user -s $KEYCHAIN_PATH
+
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: mac/SourcePackages
+          key: spm-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project mac/PabloCompanion.xcodeproj \
+            -scheme Pablo \
+            -archivePath $RUNNER_TEMP/Pablo.xcarchive \
+            -destination 'generic/platform=macOS' \
+            -clonedSourcePackagesDirPath mac/SourcePackages \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Export
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Pablo.xcarchive \
+            -exportOptionsPlist mac/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/export
+
+      - name: Sign app with Developer ID
+        env:
+          IDENTITY: "Developer ID Application: LLL Solutions, LLC (L8KG4FA2R9)"
+        run: |
+          APP="$RUNNER_TEMP/export/Pablo.app"
+          # Sign all nested frameworks and bundles first
+          find "$APP/Contents/Frameworks" -type d \( -name "*.framework" -o -name "*.bundle" \) | while read fw; do
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$fw"
+          done
+          # Sign the main app
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+          # Verify
+          codesign --verify --deep --strict "$APP"
+
+      - name: Create DMG
+        run: |
+          mkdir -p $RUNNER_TEMP/dmg-contents
+          cp -R $RUNNER_TEMP/export/Pablo.app $RUNNER_TEMP/dmg-contents/
+          ln -s /Applications $RUNNER_TEMP/dmg-contents/Applications
+          hdiutil create -volname "Pablo" \
+            -srcfolder $RUNNER_TEMP/dmg-contents \
+            -ov -format UDZO \
+            $RUNNER_TEMP/$DMG_NAME
+
+      - name: Notarize
+        env:
+          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+        run: |
+          echo $NOTARY_KEY | base64 --decode > $RUNNER_TEMP/notary.p8
+          xcrun notarytool submit $RUNNER_TEMP/$DMG_NAME \
+            --key $RUNNER_TEMP/notary.p8 \
+            --key-id ${{ secrets.APPLE_NOTARY_KEY_ID }} \
+            --issuer ${{ secrets.APPLE_NOTARY_ISSUER_ID }} \
+            --wait --timeout 30m
+          xcrun stapler staple $RUNNER_TEMP/$DMG_NAME
+
+      - name: Generate appcast
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_EDDSA_KEY }}
+        run: |
+          SPARKLE_TOOLS="mac/SourcePackages/artifacts/sparkle/Sparkle/bin"
+          mkdir -p $RUNNER_TEMP/releases
+          cp $RUNNER_TEMP/$DMG_NAME $RUNNER_TEMP/releases/
+          echo "$SPARKLE_KEY" | $SPARKLE_TOOLS/generate_appcast \
+            --ed-key-file /dev/stdin \
+            --download-url-prefix "https://github.com/pablo-health/pablo-companion/releases/download/v${VERSION}/" \
+            $RUNNER_TEMP/releases
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ runner.temp }}/${{ env.DMG_NAME }}
+          generate_release_notes: true
+
+      - name: Publish appcast
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ${{ runner.temp }}/releases
+          keep_files: true
