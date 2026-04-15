@@ -19,7 +19,7 @@ public sealed class APIClient
     };
 
     private const string ClientVersion = "1.0.0";
-    private const string MinServerVersion = "1.0.0";
+    private const string MinServerVersion = "0.9.0";
     private const string ClientPlatform = "windows";
     private const string ClientTypeHeader = "pablo-companion-windows/1.0";
 
@@ -138,13 +138,34 @@ public sealed class APIClient
         );
     }
 
+    // ── Appointments ───────────────────────────────────────────────────────
+
+    public async Task<Appointment[]> FetchTodayAppointmentsAsync()
+    {
+        var start = DateTime.UtcNow.Date;
+        var end = start.AddDays(1);
+        var startStr = Uri.EscapeDataString(start.ToString("O"));
+        var endStr = Uri.EscapeDataString(end.ToString("O"));
+        using var request = CreateRequest(HttpMethod.Get,
+            $"/api/appointments?start={startStr}&end={endStr}");
+        var result = await SendAsync<AppointmentListResponse>(request);
+        return result.Data;
+    }
+
+    public async Task<Session> StartSessionFromAppointmentAsync(string appointmentId)
+    {
+        using var request = CreateRequest(HttpMethod.Post,
+            $"/api/appointments/{appointmentId}/start-session");
+        return await SendAsync<Session>(request);
+    }
+
     // ── Sessions ────────────────────────────────────────────────────────────
 
     public async Task<Session[]> FetchTodaySessionsAsync(string timezone)
     {
         using var request = CreateRequest(HttpMethod.Get,
             $"/api/sessions/today?timezone={Uri.EscapeDataString(timezone)}");
-        var result = await SendAsync<SessionListResponse>(request);
+        var result = await SendAsync<TodaySessionListResponse>(request);
         return result.Data;
     }
 
@@ -267,6 +288,22 @@ public sealed class APIClient
         return await SendAsync<UserPreferences>(request);
     }
 
+    // ── Subscription ──────────────────────────────────────────────────────
+
+    public async Task<SubscriptionInfo> FetchSubscriptionStatusAsync()
+    {
+        using var request = CreateRequest(HttpMethod.Get, "/api/users/me/status");
+        var wrapper = await SendAsync<SubscriptionResponse>(request);
+        return wrapper.Subscription
+            ?? throw new InvalidOperationException("No subscription data in response");
+    }
+
+    public async Task<SubscriptionInfo> ExtendSubscriptionAsync()
+    {
+        using var request = CreateRequest(HttpMethod.Post, "/api/users/me/subscription/extend");
+        return await SendAsync<SubscriptionInfo>(request);
+    }
+
     // ── Transcripts ─────────────────────────────────────────────────────────
 
     public async Task<TranscriptUploadResponse> UploadTranscriptAsync(string sessionId, string format, string content)
@@ -291,7 +328,7 @@ public sealed class APIClient
         return await SendAsync<UploadResponse>(request);
     }
 
-    // ── Audio Upload (native HttpClient) ────────────────────────────────────
+    // ── Audio Upload ────────────────────────────────────────────────────────
 
     /// <summary>
     /// Uploads therapist and client audio files to the backend for server-side transcription.

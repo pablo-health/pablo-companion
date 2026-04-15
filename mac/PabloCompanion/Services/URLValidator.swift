@@ -8,8 +8,8 @@ enum URLValidator {
         guard let url = URL(string: trimmed) else { return "Invalid URL format" }
         #if DEBUG
         if url.scheme == "https" { return nil }
-        if url.scheme == "http", url.host == "localhost" { return nil }
-        return "URL must use HTTPS (or http://localhost in debug builds)"
+        if url.scheme == "http", let host = url.host, host == "localhost" || host == "127.0.0.1" { return nil }
+        return "URL must use HTTPS (or http://localhost / http://127.0.0.1 in debug builds)"
         #else
         if url.scheme == "https" { return nil }
         return "URL must use HTTPS"

@@ -1,0 +1,84 @@
+<UserControl
+    x:Class="PabloCompanion.Views.SubscriptionBanner"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel x:Name="BannerPanel"
+                Visibility="Collapsed"
+                Spacing="8"
+                Padding="20,10">
+
+        <!-- Trial banner -->
+        <StackPanel x:Name="TrialBanner"
+                    Visibility="Collapsed"
+                    Orientation="Horizontal"
+                    Spacing="8">
+            <FontIcon Glyph="&#xE734;"
+                      Foreground="{StaticResource PabloHoney}"
+                      FontSize="14" />
+            <TextBlock x:Name="TrialText"
+                       Foreground="{StaticResource PabloBrownDeep}"
+                       Style="{StaticResource PabloBodyMedium}" />
+        </StackPanel>
+
+        <!-- Lapsed (past_due / canceled) banner -->
+        <StackPanel x:Name="LapsedBanner"
+                    Visibility="Collapsed"
+                    Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Image Source="/Assets/PabloBear.jpg"
+                       Width="36" Height="36"
+                       Stretch="UniformToFill"
+                       AutomationProperties.Name="Pablo Bear mascot">
+                    <Image.Clip>
+                        <RectangleGeometry Rect="0,0,36,36" />
+                    </Image.Clip>
+                </Image>
+                <StackPanel Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="Pablo doesn't want billing to get in the way of therapy"
+                               Foreground="{StaticResource PabloBrownDeep}"
+                               Style="{StaticResource PabloBodyMedium}"
+                               FontWeight="Medium" />
+                    <TextBlock x:Name="LapsedHeading"
+                               Foreground="{StaticResource PabloBrownSoft}"
+                               Style="{StaticResource PabloBodyMedium}"
+                               FontSize="12" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <HyperlinkButton Content="Contact Support"
+                                 NavigateUri="mailto:support@pablo.health"
+                                 AutomationProperties.Name="Email Pablo support at support@pablo.health" />
+                <Button x:Name="ExtensionButton"
+                        Content="Get 1 More Day"
+                        Style="{StaticResource PabloPrimaryButton}"
+                        Click="ExtensionButton_Click"
+                        Visibility="Collapsed"
+                        AutomationProperties.Name="Request one-day billing extension" />
+                <ProgressRing x:Name="ExtendingRing"
+                              IsActive="False"
+                              Width="16" Height="16"
+                              Visibility="Collapsed" />
+                <TextBlock x:Name="ExtensionErrorText"
+                           Foreground="{StaticResource PabloError}"
+                           Style="{StaticResource PabloBodyMedium}"
+                           FontSize="11"
+                           Visibility="Collapsed" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Grace active banner -->
+        <StackPanel x:Name="GraceActiveBanner"
+                    Visibility="Collapsed"
+                    Orientation="Horizontal"
+                    Spacing="8">
+            <FontIcon Glyph="&#xE73E;"
+                      Foreground="{StaticResource PabloSage}"
+                      FontSize="14" />
+            <TextBlock x:Name="GraceText"
+                       Foreground="{StaticResource PabloBrownDeep}"
+                       Style="{StaticResource PabloBodyMedium}" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

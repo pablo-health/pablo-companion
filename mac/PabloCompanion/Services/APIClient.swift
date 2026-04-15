@@ -14,7 +14,7 @@ final class APIClient {
     var getToken: (@Sendable () async throws -> String)?
 
     private static let clientVersion = "1.0.0"
-    private static let minServerVersion = "1.0.0"
+    private static let minServerVersion = "0.9.0"
 
     private static let fallbackURL: URL = {
         // Static string — guaranteed to parse. Extracted to avoid force-unwrap at call site.
@@ -24,17 +24,8 @@ final class APIClient {
         return url
     }()
 
-    nonisolated private let jsonDecoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return decoder
-    }()
-
-    nonisolated private let jsonEncoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        return encoder
-    }()
+    nonisolated private let jsonDecoder = JSONDecoder()
+    nonisolated private let jsonEncoder = JSONEncoder()
 
     init(baseURL: String = "https://api.pablo.health") {
         guard URLValidator.validateScheme(baseURL) == nil,
@@ -201,6 +192,45 @@ final class APIClient {
         return patient
     }
 
+    // MARK: - Appointments
+
+    /// Fetches today's appointments for the day view.
+    func fetchTodayAppointments() async throws -> [Appointment] {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        guard let end = cal.date(byAdding: .day, value: 1, to: start) else {
+            return []
+        }
+        let fmt = ISO8601DateFormatter()
+        let startStr = fmt.string(from: start)
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let endStr = fmt.string(from: end)
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let path = "/api/appointments?start=\(startStr)&end=\(endStr)"
+
+        let request = try await buildRequest("GET", path: path)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let listResponse: AppointmentListResponse = try handleResponse(data, response)
+        logger.info("Fetched today's appointments: \(listResponse.data.count)")
+        return listResponse.data
+    }
+
+    /// Creates a therapy session linked to a calendar appointment.
+    func startSessionFromAppointment(appointmentId: String) async throws -> Session {
+        let request = try await buildRequest(
+            "POST",
+            path: "/api/appointments/\(appointmentId)/start-session"
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let session: Session = try handleResponse(data, response)
+        logger.info("Started session from appointment")
+        return session
+    }
+
     // MARK: - Sessions
 
     /// Fetches today's sessions for the given timezone.
@@ -212,7 +242,7 @@ final class APIClient {
         let (data, response) = try await URLSession.shared.data(for: request)
         try mapHTTPErrors(data: data, response: response)
 
-        let listResponse: SessionListResponse = try handleResponse(data, response)
+        let listResponse: TodaySessionListResponse = try handleResponse(data, response)
         logger.info("Fetched today's sessions")
         return listResponse.data
     }
@@ -429,52 +459,19 @@ final class APIClient {
     private func handleResponse<T: Decodable>(_ data: Data, _: URLResponse) throws -> T {
         do {
             return try jsonDecoder.decode(T.self, from: data)
+        } catch let DecodingError.keyNotFound(key, context) {
+            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+            throw PabloError.jsonParse(
+                message: "Missing key '\(key.stringValue)' at \(path.isEmpty ? "root" : path)"
+            )
+        } catch let DecodingError.typeMismatch(type, context) {
+            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+            throw PabloError.jsonParse(
+                message: "Type mismatch for \(type) at \(path.isEmpty ? "root" : path)"
+            )
         } catch {
             throw PabloError.jsonParse(message: "\(error.localizedDescription)")
         }
     }
 
-    /// Maps non-2xx HTTP status codes to typed `PabloError` values.
-    private func mapHTTPErrors(data: Data, response: URLResponse) throws {
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-
-        let statusCode = httpResponse.statusCode
-
-        guard !(200 ... 299).contains(statusCode) else { return }
-
-        let message = String(data: data, encoding: .utf8) ?? "Unknown error"
-
-        switch statusCode {
-        case 401:
-            throw PabloError.unauthenticated
-        case 403:
-            throw PabloError.forbidden
-        case 404:
-            throw PabloError.notFound(resource: message)
-        case 409:
-            throw PabloError.conflictState(message: message)
-        case 426:
-            throw PabloError.updateRequired(message: message)
-        default:
-            throw PabloError.apiClient(statusCode: UInt16(statusCode), message: message)
-        }
-    }
-
-    // MARK: - Version Comparison
-
-    /// Semver comparison: returns `true` if `lhs` is strictly less than `rhs`.
-    private static func isVersion(_ lhs: String, lessThan rhs: String) -> Bool {
-        let lhsParts = lhs.split(separator: ".").compactMap { Int($0) }
-        let rhsParts = rhs.split(separator: ".").compactMap { Int($0) }
-
-        for i in 0 ..< max(lhsParts.count, rhsParts.count) {
-            let left = i < lhsParts.count ? lhsParts[i] : 0
-            let right = i < rhsParts.count ? rhsParts[i] : 0
-            if left < right { return true }
-            if left > right { return false }
-        }
-        return false
-    }
 }

@@ -142,7 +142,7 @@ final class TranscriptionViewModel {
             }
 
             states[recording.id] = .done(transcript: "")
-            logger.info("Audio upload succeeded: \(response.message)")
+            logger.info("Audio upload succeeded: \(response.message ?? "ok")")
         } catch {
             let message = error.localizedDescription
             states[recording.id] = .failed(message: "Audio upload failed: \(message)")

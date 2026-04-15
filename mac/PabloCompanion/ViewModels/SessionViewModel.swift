@@ -9,9 +9,12 @@ import os
 @MainActor
 @Observable
 final class SessionViewModel {
-    // MARK: - Published state (today)
+    // MARK: - Published state (today — appointments)
 
-    /// Today's scheduled sessions, refreshed by `loadTodaySessions()`.
+    /// Today's calendar appointments, refreshed by `loadTodayAppointments()`.
+    var todayAppointments: [Appointment] = []
+
+    /// Today's scheduled sessions (legacy, used by session history).
     var todaySessions: [Session] = []
 
     /// Whether a data load is in progress.
@@ -20,6 +23,10 @@ final class SessionViewModel {
     /// User-facing error message (set on failure, cleared on next success).
     var errorMessage: String?
     var showError = false
+
+    /// Set when a 403 indicates the subscription has lapsed.
+    /// ContentView observes this to trigger a subscription status refresh.
+    var subscriptionBlocked = false
 
     // MARK: - Published state (session history)
 
@@ -70,7 +77,48 @@ final class SessionViewModel {
         apiClient.getToken = getToken
     }
 
-    // MARK: - Today's sessions
+    // MARK: - Today's appointments
+
+    /// Fetches today's calendar appointments from the backend.
+    func loadTodayAppointments() async {
+        let isFirstLoad = todayAppointments.isEmpty
+        if isFirstLoad { isLoading = true }
+        errorMessage = nil
+
+        do {
+            todayAppointments = try await apiClient.fetchTodayAppointments()
+            logger.info("Loaded \(self.todayAppointments.count) today appointments")
+        } catch {
+            errorMessage = error.localizedDescription
+            logger.error("Failed to load today's appointments: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Creates a therapy session from a calendar appointment.
+    /// Returns the created session, or nil on failure.
+    func startSessionFromAppointment(appointmentId: String) async -> Session? {
+        errorMessage = nil
+
+        do {
+            let session = try await apiClient.startSessionFromAppointment(appointmentId: appointmentId)
+            logger.info("Created session from appointment")
+            // Refresh appointments to pick up the linked session_id
+            await loadTodayAppointments()
+            return session
+        } catch {
+            if case let APIError.serverError(statusCode, _) = error, statusCode == 403 {
+                subscriptionBlocked = true
+            }
+            errorMessage = error.localizedDescription
+            showError = true
+            logger.error("Failed to start session from appointment: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    // MARK: - Today's sessions (legacy)
 
     /// Fetches today's sessions from the backend.
     func loadTodaySessions() async {
@@ -81,10 +129,10 @@ final class SessionViewModel {
         do {
             let timezone = TimeZone.current.identifier
             todaySessions = try await apiClient.fetchTodaySessions(timezone: timezone)
-            logger.info("Loaded today's sessions")
+            logger.info("Loaded \(self.todaySessions.count) today sessions")
         } catch {
             errorMessage = error.localizedDescription
-            logger.error("Failed to load today's sessions: \(error.localizedDescription)")
+            logger.error("Failed to load today's sessions: \(error)")
         }
 
         isLoading = false
@@ -118,6 +166,9 @@ final class SessionViewModel {
             isLoading = false
             return session
         } catch {
+            if case let APIError.serverError(statusCode, _) = error, statusCode == 403 {
+                subscriptionBlocked = true
+            }
             errorMessage = error.localizedDescription
             showError = true
             logger.error("Failed to create ad-hoc session: \(error.localizedDescription)")
@@ -139,6 +190,9 @@ final class SessionViewModel {
             logger.info("Started session")
             return session
         } catch {
+            if case let APIError.serverError(statusCode, _) = error, statusCode == 403 {
+                subscriptionBlocked = true
+            }
             errorMessage = error.localizedDescription
             showError = true
             logger.error("Failed to start session: \(error.localizedDescription)")

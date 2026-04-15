@@ -12,6 +12,7 @@ public sealed partial class MainWindow : Window
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     private readonly AuthViewModel _authVm;
+    private readonly SubscriptionViewModel _subscriptionVm;
 
     public MainWindow()
     {
@@ -37,6 +38,20 @@ public sealed partial class MainWindow : Window
 
         _authVm = App.Services.GetRequiredService<AuthViewModel>();
         _authVm.PropertyChanged += AuthVm_PropertyChanged;
+
+        _subscriptionVm = App.Services.GetRequiredService<SubscriptionViewModel>();
+        SubscriptionBannerControl.Bind(_subscriptionVm);
+
+        // Refresh subscription status when a 403 is detected
+        var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+        sessionVm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SessionViewModel.SubscriptionBlocked) && sessionVm.SubscriptionBlocked)
+            {
+                sessionVm.SubscriptionBlocked = false;
+                _ = _subscriptionVm.RefreshStatusAsync();
+            }
+        };
 
         _ = InitAsync();
     }
@@ -66,6 +81,10 @@ public sealed partial class MainWindow : Window
             var patientVm = App.Services.GetRequiredService<PatientViewModel>();
             _ = patientVm.LoadPatientsAsync();
 
+            // Fetch subscription status and start polling
+            _ = _subscriptionVm.RefreshStatusAsync();
+            _subscriptionVm.StartPolling();
+
             if (ContentFrame.Content == null)
             {
                 ContentFrame.Navigate(typeof(DayPage));
@@ -76,6 +95,7 @@ public sealed partial class MainWindow : Window
         {
             LoginPage.Visibility = Visibility.Visible;
             NavView.Visibility = Visibility.Collapsed;
+            _subscriptionVm.ClearAllData();
         }
     }
 

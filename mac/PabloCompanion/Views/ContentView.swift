@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var patientVM = PatientViewModel()
     @State private var transcriptionVM = TranscriptionViewModel()
     @State var practiceVM = PracticeViewModel()
+    @State private var subscriptionVM = SubscriptionViewModel()
     @State var showPractice = false
     @State private var viewingTranscript: TranscriptViewerItem?
     @State private var detailSession: Session?
@@ -38,11 +39,14 @@ struct ContentView: View {
     }
 
     private var authenticatedContent: some View {
-        TabView(selection: $selectedTab) {
-            todayTab
-            sessionsTab
-            patientsTab
-            settingsTab
+        VStack(spacing: 0) {
+            SubscriptionBannerView(viewModel: subscriptionVM)
+            TabView(selection: $selectedTab) {
+                todayTab
+                sessionsTab
+                patientsTab
+                settingsTab
+            }
         }
         .frame(minWidth: 500, minHeight: 600)
         .task { await configureAndLoad() }
@@ -71,6 +75,14 @@ struct ContentView: View {
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { break }
                 await transcriptionVM.retryPendingUploads()
+            }
+        }
+        .task {
+            // Subscription status refresh — every 10 minutes.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(600))
+                guard !Task.isCancelled else { break }
+                await subscriptionVM.refreshStatus()
             }
         }
         .task {
@@ -107,6 +119,13 @@ struct ContentView: View {
             patientVM.backendURL = newURL
             sessionVM.backendURL = newURL
             practiceVM.backendURL = newURL
+            subscriptionVM.backendURL = newURL
+        }
+        .onChange(of: sessionVM.subscriptionBlocked) { _, blocked in
+            if blocked {
+                Task { await subscriptionVM.refreshStatus() }
+                sessionVM.subscriptionBlocked = false
+            }
         }
         .sheet(isPresented: $showPractice) {
             practiceSheet
@@ -122,6 +141,7 @@ struct ContentView: View {
             uploadVM.backendURL = config.apiUrl
             patientVM.backendURL = config.apiUrl
             sessionVM.backendURL = config.apiUrl
+            subscriptionVM.backendURL = config.apiUrl
             if KeychainManager.getToken(forKey: .firebaseAPIKey) == nil {
                 if let key = config.firebaseApiKey, !key.isEmpty {
                     KeychainManager.saveToken(key, forKey: .firebaseAPIKey)
@@ -133,6 +153,7 @@ struct ContentView: View {
         patientVM.configureAuth { [authVM] in try await authVM.getValidToken() }
         sessionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
         practiceVM.configureAuth { [authVM] in try await authVM.getValidToken() }
+        subscriptionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
 
         // Scope encryption keys to the signed-in user
         let email = authVM.authenticatedEmail
@@ -146,7 +167,7 @@ struct ContentView: View {
         }
 
         recordingVM.restorePersistedRecordings()
-        await sessionVM.loadTodaySessions()
+        await sessionVM.loadTodayAppointments()
         await patientVM.loadPatients()
         await recordingVM.loadAudioSources()
         await uploadVM.checkBackendHealth()
@@ -155,6 +176,7 @@ struct ContentView: View {
         transcriptionVM.backendURL = uploadVM.backendURL
         transcriptionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
         await transcriptionVM.retryPendingUploads()
+        await subscriptionVM.refreshStatus()
 
         recordingVM.onRecordingCompleted = { [recordingVM, transcriptionVM] recording in
             // Only auto-transcribe standalone recordings (no active session).
@@ -182,6 +204,21 @@ struct ContentView: View {
     }
 
     // MARK: - Session orchestration
+
+    private func startSessionFromAppointment(_ appointment: Appointment) {
+        Task {
+            // Create a session linked to this appointment
+            guard let session = await sessionVM.startSessionFromAppointment(
+                appointmentId: appointment.id
+            ) else { return }
+            // Transition session to in_progress
+            guard await sessionVM.startSession(session.id) != nil else { return }
+            activeSessionId = session.id
+            recordingVM.activeSessionId = session.id
+            await recordingVM.startRecording()
+            VideoLaunchService.launch(session: session)
+        }
+    }
 
     private func startSession(_ session: Session) {
         Task {
@@ -246,7 +283,7 @@ struct ContentView: View {
         let recId = recordingVM.recordingForSession(session.id)?.id ?? UUID()
         Task {
             await transcriptionVM.reuploadTranscript(recordingId: recId, sessionId: session.id)
-            await sessionVM.loadTodaySessions()
+            await sessionVM.loadTodayAppointments()
         }
     }
 
@@ -276,7 +313,7 @@ struct ContentView: View {
             onEndSession: isStaleInProgress ? {
                 Task {
                     _ = await sessionVM.endSession(session.id)
-                    await sessionVM.loadTodaySessions()
+                    await sessionVM.loadTodayAppointments()
                     detailSession = nil
                 }
             } : nil,
@@ -309,7 +346,7 @@ struct ContentView: View {
             transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
-            onStartSession: { startSession($0) },
+            onStartSession: { startSessionFromAppointment($0) },
             onQuickStart: { handleQuickStart($0) },
             onStopRecording: {
                 Task {
@@ -325,7 +362,7 @@ struct ContentView: View {
                         }
                         recordingVM.clearSessionSegments(sessionId)
                     }
-                    await sessionVM.loadTodaySessions()
+                    await sessionVM.loadTodayAppointments()
                 }
             },
             recordingStalled: recordingVM.recordingStalled,
@@ -341,11 +378,14 @@ struct ContentView: View {
             onEndSession: { session in
                 Task {
                     _ = await sessionVM.endSession(session.id)
-                    await sessionVM.loadTodaySessions()
+                    await sessionVM.loadTodayAppointments()
                 }
             },
             activeSessionId: activeSessionId,
-            onSessionTapped: { detailSession = $0 }
+            onSessionTapped: { appointment in
+                guard let sessionId = appointment.sessionId else { return }
+                detailSession = sessionVM.todaySessions.first { $0.id == sessionId }
+            }
         )
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -387,7 +427,12 @@ struct ContentView: View {
             .tag(2)
     }
 
-    private var settingsTab: some View {
+}
+
+// MARK: - Settings Tab
+
+extension ContentView {
+    var settingsTab: some View {
         SettingsView(
             backendURL: $uploadVM.backendURL,
             authServerURL: Bindable(authVM).authServerURL,
@@ -410,11 +455,13 @@ struct ContentView: View {
         .tabItem { Label("Settings", systemImage: "gear") }
         .tag(3)
     }
+}
 
-    // MARK: - PHI Cleanup
+// MARK: - PHI Cleanup
 
+extension ContentView {
     /// Clears all PHI from in-memory ViewModels on sign-out.
-    private func clearAllPHI() {
+    func clearAllPHI() {
         sessionVM.todaySessions = []
         sessionVM.sessions = []
         sessionVM.totalSessions = 0
@@ -436,6 +483,9 @@ struct ContentView: View {
         patientVM.searchText = ""
 
         practiceVM.dismiss()
+
+        subscriptionVM.subscriptionInfo = nil
+        subscriptionVM.extensionError = nil
 
         activeSessionId = nil
         detailSession = nil

@@ -124,6 +124,32 @@ public enum SpeakerLabel
     Unknown,
 }
 
+// ── Appointment types ────────────────────────────────────────────────────────
+
+public sealed record Appointment(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("patient_id")] string PatientId,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("start_at")] string StartAt,
+    [property: JsonPropertyName("end_at")] string EndAt,
+    [property: JsonPropertyName("duration_minutes")] int DurationMinutes,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("session_type")] string? SessionType = null,
+    [property: JsonPropertyName("video_link")] string? VideoLink = null,
+    [property: JsonPropertyName("video_platform")] string? VideoPlatform = null,
+    [property: JsonPropertyName("notes")] string? Notes = null,
+    [property: JsonPropertyName("ical_source")] string? ICalSource = null,
+    [property: JsonPropertyName("ehr_appointment_url")] string? EhrAppointmentUrl = null,
+    [property: JsonPropertyName("session_id")] string? SessionId = null,
+    [property: JsonPropertyName("created_at")] string? CreatedAt = null,
+    [property: JsonPropertyName("updated_at")] string? UpdatedAt = null
+);
+
+public sealed record AppointmentListResponse(
+    [property: JsonPropertyName("data")] Appointment[] Data,
+    [property: JsonPropertyName("total")] uint Total
+);
+
 // ── Records / Classes ────────────────────────────────────────────────────────
 
 public sealed record PatientSummary(
@@ -224,17 +250,26 @@ public sealed record SessionListResponse(
     [property: JsonPropertyName("data")] Session[] Data,
     [property: JsonPropertyName("total")] uint Total,
     [property: JsonPropertyName("page")] uint Page,
-    [property: JsonPropertyName("page_size")] uint PageSize,
-    [property: JsonPropertyName("has_more")] bool HasMore
+    [property: JsonPropertyName("page_size")] uint PageSize
+)
+{
+    public bool HasMore => (Page * PageSize) < Total;
+}
+
+public sealed record TodaySessionListResponse(
+    [property: JsonPropertyName("data")] Session[] Data,
+    [property: JsonPropertyName("total")] uint Total
 );
 
 public sealed record PatientListResponse(
     [property: JsonPropertyName("data")] Patient[] Data,
     [property: JsonPropertyName("total")] uint Total,
     [property: JsonPropertyName("page")] uint Page,
-    [property: JsonPropertyName("page_size")] uint PageSize,
-    [property: JsonPropertyName("has_more")] bool HasMore
-);
+    [property: JsonPropertyName("page_size")] uint PageSize
+)
+{
+    public bool HasMore => (Page * PageSize) < Total;
+}
 
 public sealed record TranscriptUploadResponse(
     [property: JsonPropertyName("id")] string Id,

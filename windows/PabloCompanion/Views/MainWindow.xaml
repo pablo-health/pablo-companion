@@ -6,12 +6,23 @@
     Title="Pablo Companion">
 
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Subscription banner — visible across all pages when authenticated -->
+        <local:SubscriptionBanner x:Name="SubscriptionBannerControl"
+                                  Grid.Row="0" />
+
         <!-- Login page shown when unauthenticated -->
         <local:LoginPage x:Name="LoginPage"
+                         Grid.RowSpan="2"
                          Visibility="Collapsed" />
 
         <!-- Main navigation shown when authenticated -->
         <NavigationView x:Name="NavView"
+                        Grid.Row="1"
                         x:FieldModifier="internal"
                         Visibility="Collapsed"
                         PaneDisplayMode="LeftCompact"

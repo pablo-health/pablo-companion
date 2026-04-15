@@ -42,7 +42,7 @@ extension ContentView {
                 onDismiss: {
                     practiceVM.dismiss()
                     showPractice = false
-                    Task { await sessionVM.loadTodaySessions() }
+                    Task { await sessionVM.loadTodayAppointments() }
                 }
             )
 
