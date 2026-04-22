@@ -3,18 +3,35 @@ name: Windows CI
 on:
   push:
     branches: [main]
-    paths:
-      - 'windows/**'
   pull_request:
-    paths:
-      - 'windows/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      windows: ${{ github.event_name == 'push' || steps.filter.outputs.windows }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            windows:
+              - 'windows/**'
+              - '.github/workflows/windows.yml'
+
   build-and-test:
+    name: Build and Test
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
 
     steps:
@@ -45,3 +62,21 @@ jobs:
 
       - name: Run tests
         run: dotnet test windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj --no-build -c Debug -p:Platform=x64
+
+  gate:
+    name: Windows CI
+    needs: [changes, build-and-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Windows CI result
+        run: |
+          changed="${{ needs.changes.outputs.windows }}"
+          result="${{ needs.build-and-test.result }}"
+          echo "windows changed: $changed"
+          echo "build-and-test result: $result"
+          if [ "$changed" = "true" ] && [ "$result" != "success" ]; then
+            echo "::error::Windows code changed and build-and-test did not succeed ($result)"
+            exit 1
+          fi
+          echo "Gate passed"
