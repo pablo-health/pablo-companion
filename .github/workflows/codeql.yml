@@ -52,7 +52,7 @@ jobs:
 
       - name: Cache SPM dependencies
         id: spm-cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: mac/SourcePackages
           key: ${{ runner.os }}-spm-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v5.0.0
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.0.0
         with:
           dotnet-version: '10.0.x'
 
