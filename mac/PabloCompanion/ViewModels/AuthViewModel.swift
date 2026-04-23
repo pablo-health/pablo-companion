@@ -103,29 +103,7 @@ final class AuthViewModel {
 
             let callbackURL = try await server.waitForCallback(timeout: 120)
 
-            guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-                  let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
-                  Self.isValidAuthCode(code)
-            else {
-                errorMessage = "Invalid or missing authorization code in callback."
-                authState = .unauthenticated
-                return
-            }
-
-            // Verify state matches the one we generated. Constant-time compare to
-            // avoid leaking information via timing.
-            let returnedState = components.queryItems?.first(where: { $0.name == "state" })?.value
-            guard let expectedState = oauthState,
-                  let returnedState,
-                  PKCEHelper.constantTimeEquals(expectedState, returnedState)
-            else {
-                oauthState = nil
-                errorMessage = "Sign-in failed. Please try again."
-                authState = .unauthenticated
-                logger.error("OAuth state mismatch on callback")
-                return
-            }
-            oauthState = nil
+            guard let code = extractValidatedAuthCode(from: callbackURL) else { return }
 
             await exchangeCodeForTokens(code: code, redirectURI: server.redirectURI)
         } catch let error as LoopbackServer.ServerError {
@@ -139,6 +117,33 @@ final class AuthViewModel {
 
         server.stop()
         loopbackServer = nil
+    }
+
+    /// Validates the callback URL: extracts the authorization code and verifies the
+    /// `state` parameter matches the one we generated (constant-time compare). On any
+    /// failure, sets `errorMessage` / `authState` and returns nil.
+    private func extractValidatedAuthCode(from callbackURL: URL) -> String? {
+        guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+              let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
+              Self.isValidAuthCode(code)
+        else {
+            errorMessage = "Invalid or missing authorization code in callback."
+            authState = .unauthenticated
+            return nil
+        }
+
+        let returnedState = components.queryItems?.first(where: { $0.name == "state" })?.value
+        defer { oauthState = nil }
+        guard let expectedState = oauthState,
+              let returnedState,
+              PKCEHelper.constantTimeEquals(expectedState, returnedState)
+        else {
+            errorMessage = "Sign-in failed. Please try again."
+            authState = .unauthenticated
+            logger.error("OAuth state mismatch on callback")
+            return nil
+        }
+        return code
     }
 
     // MARK: - Sign Out
@@ -454,13 +459,13 @@ enum PKCEHelper {
 
     /// Length-preserving, constant-time string comparison.
     /// Returns false if lengths differ (leaking only length, which is public).
-    static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
-        let ab = Array(a.utf8)
-        let bb = Array(b.utf8)
-        guard ab.count == bb.count else { return false }
+    static func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
+        let lhsBytes = Array(lhs.utf8)
+        let rhsBytes = Array(rhs.utf8)
+        guard lhsBytes.count == rhsBytes.count else { return false }
         var diff: UInt8 = 0
-        for i in 0 ..< ab.count {
-            diff |= ab[i] ^ bb[i]
+        for i in 0 ..< lhsBytes.count {
+            diff |= lhsBytes[i] ^ rhsBytes[i]
         }
         return diff == 0
     }

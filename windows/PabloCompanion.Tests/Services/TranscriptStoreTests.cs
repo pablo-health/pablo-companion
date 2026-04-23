@@ -4,12 +4,15 @@ namespace PabloCompanion.Tests.Services;
 
 public class TranscriptStoreTests : IDisposable
 {
-    private readonly CredentialManager _credentials = new();
+    private readonly CredentialManager _credentials;
     private readonly TranscriptStore _store;
     private readonly string _testSessionId = $"test-{Guid.NewGuid()}";
 
     public TranscriptStoreTests()
     {
+        // Per-user encryption key requires an ActiveUserEmail; use a unique test email
+        // so concurrent test runs don't share keyring entries.
+        _credentials = new CredentialManager { ActiveUserEmail = $"test-{Guid.NewGuid()}@pablo.test" };
         _store = new TranscriptStore(_credentials);
     }
 
