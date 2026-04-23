@@ -109,11 +109,16 @@ public sealed class CredentialManager
     }
 
     /// <summary>
-    /// Returns the encryption key for the active user. Convenience wrapper used by all services.
+    /// Returns the per-user encryption key for <see cref="ActiveUserEmail"/>, creating one
+    /// if it doesn't exist. Returns null if no user is signed in — callers must treat a null
+    /// return as "no key available" (skip encryption / error). We deliberately refuse to
+    /// create a key scoped to an empty email, which would otherwise be shared across users.
     /// </summary>
-    public byte[]? GetOrCreateDeviceEncryptionKey()
+    public byte[]? GetOrCreateUserEncryptionKey()
     {
-        return GetOrCreateEncryptionKey(ActiveUserEmail ?? "");
+        var email = ActiveUserEmail;
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        return GetOrCreateEncryptionKey(email);
     }
 
     /// <summary>
@@ -122,6 +127,7 @@ public sealed class CredentialManager
     /// </summary>
     public byte[]? GetOrCreateEncryptionKey(string userEmail)
     {
+        if (string.IsNullOrWhiteSpace(userEmail)) return null;
         var userKeyName = $"encryptionKey_{userEmail}";
 
         // 1. Check for existing per-user key

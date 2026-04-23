@@ -83,7 +83,8 @@ internal sealed class LoopbackServer : IDisposable
         if (parts.Length < 2 || parts[0] != "GET") return null;
 
         var path = parts[1];
-        if (!path.StartsWith("/callback", StringComparison.Ordinal)) return null;
+        // Accept exactly /callback, or /callback?... (query string) — not /callbackx or /callback/extra.
+        if (path != "/callback" && !path.StartsWith("/callback?", StringComparison.Ordinal)) return null;
 
         return new Uri($"http://127.0.0.1:{Port}{path}");
     }

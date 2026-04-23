@@ -33,7 +33,7 @@ public sealed class SessionTranscriptionPipeline
 
         // Create encryptor for decrypting .enc.pcm files
         AesGcmEncryptor? encryptor = null;
-        var keyBytes = _credentials.GetOrCreateDeviceEncryptionKey();
+        var keyBytes = _credentials.GetOrCreateUserEncryptionKey();
         if (keyBytes != null)
             encryptor = new AesGcmEncryptor(keyBytes, "device-key");
 

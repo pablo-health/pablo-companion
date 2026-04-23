@@ -36,6 +36,7 @@ public partial class AuthViewModel : ObservableObject
     private readonly InactivityMonitor _inactivityMonitor;
     private System.Threading.Timer? _refreshTimer;
     private string? _pkceCodeVerifier;
+    private string? _oauthState;
     private static readonly HttpClient s_httpClient = new();
 
     [ObservableProperty]
@@ -164,6 +165,10 @@ public partial class AuthViewModel : ObservableObject
             var challenge = PkceHelper.CodeChallenge(_pkceCodeVerifier);
             loginUrl += $"&code_challenge={Uri.EscapeDataString(challenge)}&code_challenge_method=S256";
 
+            // OAuth state (RFC 6749 §10.12) — CSRF / cross-flow protection
+            _oauthState = PkceHelper.GenerateState();
+            loginUrl += $"&state={Uri.EscapeDataString(_oauthState)}";
+
             Process.Start(new ProcessStartInfo
             {
                 FileName = loginUrl,
@@ -179,6 +184,18 @@ public partial class AuthViewModel : ObservableObject
             if (string.IsNullOrEmpty(code) || !Regex.IsMatch(code, @"^[a-zA-Z0-9_\-\.]{10,2000}$"))
             {
                 ErrorMessage = "Invalid authorization code.";
+                AuthState = AuthState.Unauthenticated;
+                return;
+            }
+
+            // Verify state matches the one we generated (constant-time compare).
+            var returnedState = query["state"];
+            var expectedState = _oauthState;
+            _oauthState = null;
+            if (expectedState == null || returnedState == null ||
+                !PkceHelper.ConstantTimeEquals(expectedState, returnedState))
+            {
+                ErrorMessage = "Sign-in failed. Please try again.";
                 AuthState = AuthState.Unauthenticated;
                 return;
             }
@@ -395,5 +412,21 @@ internal static class PkceHelper
             .Replace("+", "-")
             .Replace("/", "_")
             .TrimEnd('=');
+    }
+
+    /// <summary>
+    /// Generates a cryptographically random OAuth 2.0 state value (RFC 6749 §10.12).
+    /// </summary>
+    public static string GenerateState() => GenerateCodeVerifier();
+
+    /// <summary>
+    /// Constant-time string comparison. Returns false if lengths differ
+    /// (leaking only length, which is not sensitive here).
+    /// </summary>
+    public static bool ConstantTimeEquals(string a, string b)
+    {
+        var ab = Encoding.UTF8.GetBytes(a);
+        var bb = Encoding.UTF8.GetBytes(b);
+        return CryptographicOperations.FixedTimeEquals(ab, bb);
     }
 }

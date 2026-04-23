@@ -8,9 +8,9 @@ updates:
       interval: weekly
       day: monday
 
-  # Rust core (core/ — when it exists)
-  - package-ecosystem: cargo
-    directory: /core
+  # NuGet (.NET — windows/)
+  - package-ecosystem: nuget
+    directory: /windows
     schedule:
       interval: weekly
       day: monday

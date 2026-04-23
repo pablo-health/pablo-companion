@@ -115,7 +115,7 @@ public sealed class PendingTranscriptionStore
 
         try
         {
-            var key = _credentials.GetOrCreateDeviceEncryptionKey();
+            var key = _credentials.GetOrCreateUserEncryptionKey();
             if (key == null)
             {
                 _cache = [];
@@ -144,7 +144,7 @@ public sealed class PendingTranscriptionStore
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        var key = _credentials.GetOrCreateDeviceEncryptionKey();
+        var key = _credentials.GetOrCreateUserEncryptionKey();
         if (key == null) return;
 
         var json = JsonSerializer.Serialize(store, JsonOptions);

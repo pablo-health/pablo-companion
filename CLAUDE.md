@@ -75,8 +75,8 @@ pablo-health/pablo-companion/
 | Windows networking | HttpClient, System.Text.Json |
 | Audio (macOS) | AudioCaptureKit (from `audiotake2`) |
 | Audio (Windows) | AudioCaptureKit C# (WASAPI) |
-| Transcription (macOS) | Apple Speech / server-side |
-| Transcription (Windows) | Whisper.net / server-side |
+| Transcription (macOS) | Cloud (backend) |
+| Transcription (Windows) | Local Whisper.net (transitional — migrating to cloud, see PABLO-D-106) |
 | Auth (macOS) | Inherited from `audiotake2` |
 | Auth (Windows) | CredentialManager / loopback OAuth |
 | Calendar | Pablo backend owns the schedule — no client-side calendar sync |
@@ -131,7 +131,7 @@ Pablo Bear guides new therapists through first-time setup before reaching the da
 
 Steps: account login → mic permission → screen recording permission → video platform detection → test recording → "You're ready" celebration
 
-Beads tasks: `PABLO-D-050` through `PABLO-D-057`. See `docs/repo-setup-questions.md`.
+Beads epic: `PABLO-D-112` (`bd show PABLO-D-112`). Legacy notes in `docs/repo-setup-questions.md`.
 
 ---
 
@@ -270,6 +270,14 @@ A task is NOT complete until:
 **For all:**
 5. PR created and linked to the beads task
 6. `make check` passes (lint + xcodebuild) or `make check-windows` (dotnet build + test)
+
+**Accessibility (macOS):**
+7. Every `Button` has an explicit `.accessibilityLabel()` (not only `.help()`)
+8. Every decorative `Image` has `.accessibilityHidden(true)`
+9. Run `/a11y` before opening the PR — any Critical findings must be fixed or explicitly waived in the PR description
+
+**Docs:**
+10. If your change removes or materially alters a feature (architecture shift, removed subsystem, new cross-cutting dependency), update `CLAUDE.md`, `SECURITY.md`, and relevant `docs/*.md` in the same PR. Run `/check-docs` to catch stale references.
 
 ---
 
