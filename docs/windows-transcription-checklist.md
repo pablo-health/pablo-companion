@@ -2,6 +2,8 @@
 
 Bugs found on macOS that the Windows (C# / WinUI 3) implementation must avoid. These were discovered during real therapist recording sessions and caused silent failures — no errors, just bad output.
 
+> **Note (2026):** this doc was written when both platforms shared a Rust core via UniFFI. That core has since been removed (commit `5f05c87`). macOS now transcribes in the cloud; Windows still uses local Whisper.net (see `PABLO-D-106` for the migration to cloud). The **principles** below (decrypt before transcribe, let sample rate flow, don't hardcode 48 kHz) still apply — only the "Rust via UniFFI" references are outdated; read them as "the current native implementation".
+
 ---
 
 ## 1. Encrypted PCM Sidecars Must Be Decrypted Before Transcription

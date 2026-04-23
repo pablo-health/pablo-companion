@@ -2,6 +2,8 @@
 
 _Created: 2026-02-24_
 
+> **Status: HISTORICAL.** This is the original brainstorming doc from before repo setup. Some details are now out of date — the repo uses native Swift + C# (the Rust core discussed here was removed in commit `5f05c87`) and beads issue IDs have been reassigned (onboarding is now tracked under `PABLO-D-112`, not `PABLO-D-050-057`). Kept for historical context; not authoritative.
+
 ---
 
 ## 1. Repo Name

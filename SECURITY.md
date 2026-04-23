@@ -5,7 +5,7 @@
 | Platform | Version | Supported |
 |----------|---------|-----------|
 | macOS (Swift) | latest main | ✅ |
-| Windows (Rust) | latest main | ✅ |
+| Windows (C#) | latest main | ✅ |
 
 ## Reporting a Vulnerability
 
@@ -46,8 +46,37 @@ We follow a [coordinated vulnerability disclosure](https://en.wikipedia.org/wiki
 
 This project handles sensitive audio data and follows these security practices:
 
-- **Encryption**: All captured audio is encrypted with AES-256-GCM before reaching disk. No plaintext audio is stored.
-- **HIPAA-aware logging**: `print()` is forbidden in production code; all logging uses `os.log` / `Logger` with appropriate privacy levels.
-- **Dependency scanning**: Automated via [Trivy](https://github.com/aquasecurity/trivy), cargo audit, cargo deny, npm audit, and [Dependabot](https://github.com/pablo-health/pablo-companion/security/dependabot).
-- **Static analysis**: SwiftLint (strict mode), Clippy (deny warnings), [CodeQL](https://github.com/pablo-health/pablo-companion/security/code-scanning), and Trivy misconfiguration scanning.
-- **CI enforcement**: All security checks run on every PR and on a weekly schedule.
+### Encryption at rest
+
+- All captured audio is encrypted with **AES-256-GCM** before reaching disk — no plaintext audio is stored.
+- Each file uses a fresh random 96-bit nonce (via `AES.GCM.seal()` on macOS, `AesGcm` on Windows).
+- The 32-byte master key is **per-user**, keyed by the signed-in account's email (`encryptionKey_<email>` in Keychain / Credential Manager). Signing out does not delete the key so pending uploads can resume; explicit "purge" removes it.
+- Keychain access uses `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+
+### Authentication
+
+- OAuth 2.0 authorization code flow with **PKCE (RFC 7636, S256)** and **loopback redirect (RFC 8252 §7.3)**.
+- The loopback server binds to `127.0.0.1` IPv4 only on an OS-assigned ephemeral port; port is bound before the browser opens to prevent hijack races.
+- A cryptographically random `state` parameter is generated per flow and verified on callback to protect against CSRF / cross-flow contamination.
+- The backend is the authority for JWT signature verification on every API call. The client decodes the ID token only for UI (email display, local expiry check) and never grants trust on decoded claims beyond local session scoping.
+
+### PHI handling
+
+- `print()` / `Console.WriteLine` are forbidden in production code; logging uses `os.Logger` (Swift) and structured logging (C#).
+- SwiftLint enforces this via a custom `no_print_statements` rule with severity `error`.
+- All DOM / prompt content sent to the backend LLM is run through `PHISanitizer` (Swift) / `PhiSanitizer` (C#) to strip names, phones, emails, DOBs, SSNs, MRNs, and ICD-10 codes.
+- CSS selectors driven by the LLM are validated by `SelectorValidator` before being executed in a browser context.
+- 15-minute inactivity timer (+ screen-lock hook) signs the user out when not actively recording.
+
+### Dependency & supply chain
+
+- Dependabot — weekly SPM (macOS), weekly NuGet/audit (Windows), weekly GitHub Actions.
+- Trivy — vulnerability, misconfiguration, and secret scanning.
+- `dotnet restore /p:NuGetAudit=true /p:NuGetAuditLevel=moderate` on every Windows build.
+- GitHub Actions: SHA-pinned (not tag-pinned); least-privilege `permissions:` declared per job.
+
+### Static analysis & CI gates
+
+- SwiftLint `--strict` (force-unwrap/cast/try treated as error), SwiftFormat `--lint`, `dotnet format --verify-no-changes`.
+- CodeQL (Swift + C#), OpenSSF Scorecard (weekly), weekly security workflow.
+- Pre-commit: `detect-secrets` with a maintained baseline, trailing whitespace, large-file rejection.

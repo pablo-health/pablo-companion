@@ -157,9 +157,9 @@ After UDL changes, run `cargo run --bin uniffi-bindgen generate ...` to regenera
 ### Modified files
 
 **`windows/PabloCompanion/Services/CredentialManager.cs`**
-- Add `DeviceEncryptionKey` property (get/set Base64-encoded 32-byte key)
-- Add `GetOrCreateDeviceEncryptionKey()` — generates random key if none exists
-- Add `"deviceEncryptionKey"` to `TokenKeys` array for sign-out cleanup
+- Add per-user encryption key scoped to `ActiveUserEmail` (`encryptionKey_<email>` in Credential Manager)
+- Add `GetOrCreateUserEncryptionKey()` — returns null if no user is signed in; generates a random 32-byte key on first use per user
+- Add legacy key migration from the original device-wide entry
 
 ---
 
