@@ -24,7 +24,7 @@ public static class PcmDecryptor
         if (!isEncrypted || encryptor == null)
             return new DecryptedPcm(path, null);
 
-        var tempPath = Path.Combine(
+        var tempPath = Path.Join(
             Path.GetTempPath(),
             $"pablo-upload-{Guid.NewGuid():N}.pcm");
 
@@ -66,7 +66,8 @@ public static class PcmDecryptor
     internal static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
-        catch { /* best-effort */ }
+        catch (IOException) { /* best-effort cleanup */ }
+        catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
     }
 }
 

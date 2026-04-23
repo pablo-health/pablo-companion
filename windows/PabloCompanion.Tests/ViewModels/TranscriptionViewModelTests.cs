@@ -20,9 +20,9 @@ namespace PabloCompanion.Tests.ViewModels;
 [Collection("SessionRecordingStore")]
 public sealed class TranscriptionViewModelTests : IDisposable
 {
-    private readonly string _pendingPath = Path.Combine(
+    private readonly string _pendingPath = Path.Join(
         Path.GetTempPath(), $"pending-{Guid.NewGuid():N}.enc.json");
-    private readonly string _audioPath = Path.Combine(
+    private readonly string _audioPath = Path.Join(
         Path.GetTempPath(), $"audio-{Guid.NewGuid():N}.pcm");
 
     private readonly StubCredentialManager _credentials = new();
@@ -135,10 +135,15 @@ public sealed class TranscriptionViewModelTests : IDisposable
     public void Dispose()
     {
         _recordingStore.Clear();
-        try { if (File.Exists(_pendingPath)) File.Delete(_pendingPath); }
-        catch { /* best-effort */ }
-        try { if (File.Exists(_audioPath)) File.Delete(_audioPath); }
-        catch { /* best-effort */ }
+        TryDelete(_pendingPath);
+        TryDelete(_audioPath);
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (IOException) { /* best-effort cleanup */ }
+        catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
     }
 
     // --- stubs ---

@@ -5,7 +5,7 @@ namespace PabloCompanion.Tests.Services;
 
 public class PendingTranscriptionStoreTests : IDisposable
 {
-    private readonly string _tempPath = Path.Combine(
+    private readonly string _tempPath = Path.Join(
         Path.GetTempPath(), $"pending-store-{Guid.NewGuid():N}.enc.json");
 
     private readonly CredentialManager _credentials = new StubCredentialManager();
@@ -98,6 +98,7 @@ public class PendingTranscriptionStoreTests : IDisposable
     public void Dispose()
     {
         try { if (File.Exists(_tempPath)) File.Delete(_tempPath); }
-        catch { /* best-effort */ }
+        catch (IOException) { /* best-effort cleanup */ }
+        catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
     }
 }

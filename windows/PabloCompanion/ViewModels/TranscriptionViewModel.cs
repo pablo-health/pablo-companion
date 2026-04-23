@@ -202,12 +202,12 @@ public partial class TranscriptionViewModel : ObservableObject
         }
 
         using var mic = await PcmDecryptor.PrepareForUploadAsync(item.MicPath, encryptor);
-        DecryptedPcm? sys = null;
+        using DecryptedPcm? sys = item.SystemPath != null && File.Exists(item.SystemPath)
+            ? await PcmDecryptor.PrepareForUploadAsync(item.SystemPath, encryptor)
+            : null;
+
         try
         {
-            if (item.SystemPath != null && File.Exists(item.SystemPath))
-                sys = await PcmDecryptor.PrepareForUploadAsync(item.SystemPath, encryptor);
-
             await _apiClient.UploadAudioAsync(item.SessionId, mic.Path, sys?.Path);
             _pendingStore.Remove(item.SessionId);
             PendingUploadCount = _pendingStore.GetAll().Length;
@@ -218,10 +218,6 @@ public partial class TranscriptionViewModel : ObservableObject
             _pendingStore.IncrementRetry(item.SessionId);
             ErrorMessage = $"Audio upload failed: {ex.Message}";
             return false;
-        }
-        finally
-        {
-            sys?.Dispose();
         }
     }
 
