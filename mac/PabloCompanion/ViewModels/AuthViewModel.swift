@@ -59,6 +59,10 @@ final class AuthViewModel {
     /// PKCE code verifier for the current auth flow (RFC 7636).
     private var pkceCodeVerifier: String?
 
+    /// OAuth 2.0 `state` for the current flow (RFC 6749 §10.12 — CSRF protection).
+    /// Generated at flow start, echoed by the authz server, verified on callback.
+    private var oauthState: String?
+
     /// Active loopback server for the current sign-in attempt (if any).
     private var loopbackServer: LoopbackServer?
 
@@ -107,6 +111,21 @@ final class AuthViewModel {
                 authState = .unauthenticated
                 return
             }
+
+            // Verify state matches the one we generated. Constant-time compare to
+            // avoid leaking information via timing.
+            let returnedState = components.queryItems?.first(where: { $0.name == "state" })?.value
+            guard let expectedState = oauthState,
+                  let returnedState,
+                  PKCEHelper.constantTimeEquals(expectedState, returnedState)
+            else {
+                oauthState = nil
+                errorMessage = "Sign-in failed. Please try again."
+                authState = .unauthenticated
+                logger.error("OAuth state mismatch on callback")
+                return
+            }
+            oauthState = nil
 
             await exchangeCodeForTokens(code: code, redirectURI: server.redirectURI)
         } catch let error as LoopbackServer.ServerError {
@@ -198,6 +217,11 @@ final class AuthViewModel {
         pkceCodeVerifier = verifier
         queryItems.append(URLQueryItem(name: "code_challenge", value: PKCEHelper.codeChallenge(for: verifier)))
         queryItems.append(URLQueryItem(name: "code_challenge_method", value: "S256"))
+
+        // OAuth state (RFC 6749 §10.12) — CSRF / cross-flow protection
+        let state = PKCEHelper.generateState()
+        oauthState = state
+        queryItems.append(URLQueryItem(name: "state", value: state))
 
         components?.queryItems = queryItems
         return components?.url
@@ -420,5 +444,24 @@ enum PKCEHelper {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+    }
+
+    /// Generates a cryptographically random OAuth 2.0 `state` value (RFC 6749 §10.12).
+    /// Same entropy profile as the PKCE verifier.
+    static func generateState() -> String {
+        generateCodeVerifier()
+    }
+
+    /// Length-preserving, constant-time string comparison.
+    /// Returns false if lengths differ (leaking only length, which is public).
+    static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
+        let ab = Array(a.utf8)
+        let bb = Array(b.utf8)
+        guard ab.count == bb.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0 ..< ab.count {
+            diff |= ab[i] ^ bb[i]
+        }
+        return diff == 0
     }
 }

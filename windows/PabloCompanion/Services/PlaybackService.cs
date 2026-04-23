@@ -104,7 +104,7 @@ public sealed class PlaybackService : IDisposable
             return _tempFilePath;
         }
 
-        var key = _credentials.GetOrCreateDeviceEncryptionKey()
+        var key = _credentials.GetOrCreateUserEncryptionKey()
             ?? throw new InvalidOperationException("No encryption key available");
 
         using var encryptor = new AesGcmEncryptor(key, "device-key");

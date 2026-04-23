@@ -153,7 +153,8 @@ final class LoopbackServer: @unchecked Sendable {
         let parts = firstLine.split(separator: " ")
         guard parts.count >= 2, parts[0] == "GET" else { return nil }
         let path = String(parts[1])
-        guard path.hasPrefix("/callback") else { return nil }
+        // Accept exactly /callback, or /callback?... (query string) — not /callbackx or /callback/extra.
+        guard path == "/callback" || path.hasPrefix("/callback?") else { return nil }
         return URL(string: "http://127.0.0.1:\(port)\(path)")
     }
 

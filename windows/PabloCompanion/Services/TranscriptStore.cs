@@ -22,7 +22,7 @@ public sealed class TranscriptStore
 
     public void Save(string sessionId, string text)
     {
-        var key = _credentials.GetOrCreateDeviceEncryptionKey();
+        var key = _credentials.GetOrCreateUserEncryptionKey();
         if (key == null) return;
 
         Directory.CreateDirectory(StoreDir);
@@ -37,7 +37,7 @@ public sealed class TranscriptStore
         var path = GetPath(sessionId);
         if (!File.Exists(path)) return null;
 
-        var key = _credentials.GetOrCreateDeviceEncryptionKey();
+        var key = _credentials.GetOrCreateUserEncryptionKey();
         if (key == null) return null;
 
         try
