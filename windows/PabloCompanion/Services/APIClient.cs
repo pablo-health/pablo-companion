@@ -9,7 +9,7 @@ namespace PabloCompanion.Services;
 /// Native HttpClient-based API client for the Pablo backend.
 /// Mirrors APIClient.swift on macOS.
 /// </summary>
-public sealed class APIClient
+public class APIClient
 {
     private static readonly HttpClient Http = new();
 
@@ -337,7 +337,7 @@ public sealed class APIClient
     /// <param name="sessionId">Backend session UUID (must be in recording_complete status).</param>
     /// <param name="therapistAudioPath">Path to the mic PCM/WAV file.</param>
     /// <param name="clientAudioPath">Path to the system audio PCM/WAV file (optional).</param>
-    public async Task<AudioUploadResponse> UploadAudioAsync(
+    public virtual async Task<AudioUploadResponse> UploadAudioAsync(
         string sessionId,
         string therapistAudioPath,
         string? clientAudioPath = null)

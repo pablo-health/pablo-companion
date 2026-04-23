@@ -104,3 +104,29 @@ jobs:
         with:
           fail-on-severity: high
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
+
+  gate:
+    name: CI
+    needs: [changes, swift-lint, swift-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify CI result
+        run: |
+          changed="${{ needs.changes.outputs.mac }}"
+          lint="${{ needs.swift-lint.result }}"
+          test="${{ needs.swift-test.result }}"
+          echo "mac changed: $changed"
+          echo "swift-lint result: $lint"
+          echo "swift-test result: $test"
+          if [ "$changed" = "true" ]; then
+            if [ "$lint" != "success" ]; then
+              echo "::error::mac code changed and swift-lint did not succeed ($lint)"
+              exit 1
+            fi
+            if [ "$test" != "success" ]; then
+              echo "::error::mac code changed and swift-test did not succeed ($test)"
+              exit 1
+            fi
+          fi
+          echo "Gate passed"

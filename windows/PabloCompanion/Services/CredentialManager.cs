@@ -6,7 +6,7 @@ namespace PabloCompanion.Services;
 /// Stores and retrieves auth tokens using Windows Credential Manager (PasswordVault).
 /// Mirrors KeychainManager.swift on macOS.
 /// </summary>
-public sealed class CredentialManager
+public class CredentialManager
 {
     private const string Resource = "PabloCompanion";
 
@@ -114,7 +114,7 @@ public sealed class CredentialManager
     /// return as "no key available" (skip encryption / error). We deliberately refuse to
     /// create a key scoped to an empty email, which would otherwise be shared across users.
     /// </summary>
-    public byte[]? GetOrCreateUserEncryptionKey()
+    public virtual byte[]? GetOrCreateUserEncryptionKey()
     {
         var email = ActiveUserEmail;
         if (string.IsNullOrWhiteSpace(email)) return null;

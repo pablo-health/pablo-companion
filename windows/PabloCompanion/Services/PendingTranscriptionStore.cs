@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using AudioCapture.Storage;
@@ -6,9 +5,13 @@ using AudioCapture.Storage;
 namespace PabloCompanion.Services;
 
 /// <summary>
-/// Persists pending transcription/upload work as AES-GCM-encrypted JSON.
-/// Survives app restarts so transcription and uploads can resume.
-/// File: %LOCALAPPDATA%\PabloCompanion\PendingTranscriptions.enc.json
+/// Persists sessions whose audio failed to upload so uploads can be retried
+/// after app restart or sign-out / sign-in. Stored as an AES-GCM-encrypted
+/// JSON blob at
+/// <c>%LOCALAPPDATA%\PabloCompanion\PendingTranscriptions.enc.json</c>.
+///
+/// Entries carry the audio file paths directly so retries don't depend on
+/// <see cref="SessionRecordingStore"/>, which is wiped on sign-out.
 /// </summary>
 public sealed class PendingTranscriptionStore
 {
@@ -23,34 +26,32 @@ public sealed class PendingTranscriptionStore
     };
 
     private readonly CredentialManager _credentials;
+    private readonly string _storePath;
     private readonly object _lock = new();
     private Dictionary<string, PendingTranscription>? _cache;
 
-    public PendingTranscriptionStore(CredentialManager credentials)
+    public PendingTranscriptionStore(CredentialManager credentials) : this(credentials, StorePath) { }
+
+    // Test hook — lets tests point at a scratch file.
+    internal PendingTranscriptionStore(CredentialManager credentials, string storePath)
     {
         _credentials = credentials;
+        _storePath = storePath;
     }
 
-    public void Add(string sessionId, QualityPreset preset)
+    public void Add(string sessionId, string micPath, string? systemPath, bool isEncrypted)
     {
         lock (_lock)
         {
             var store = Load();
-            store[sessionId] = new PendingTranscription(sessionId, null, preset, DateTime.UtcNow, 0);
+            store[sessionId] = new PendingTranscription(
+                SessionId: sessionId,
+                MicPath: micPath,
+                SystemPath: systemPath,
+                IsEncrypted: isEncrypted,
+                CreatedAt: DateTime.UtcNow,
+                RetryCount: 0);
             Persist(store);
-        }
-    }
-
-    public void UpdateWithTranscript(string sessionId, string transcriptText)
-    {
-        lock (_lock)
-        {
-            var store = Load();
-            if (store.TryGetValue(sessionId, out var existing))
-            {
-                store[sessionId] = existing with { TranscriptText = transcriptText };
-                Persist(store);
-            }
         }
     }
 
@@ -98,8 +99,8 @@ public sealed class PendingTranscriptionStore
         lock (_lock)
         {
             _cache = [];
-            if (File.Exists(StorePath))
-                File.Delete(StorePath);
+            if (File.Exists(_storePath))
+                File.Delete(_storePath);
         }
     }
 
@@ -107,7 +108,7 @@ public sealed class PendingTranscriptionStore
     {
         if (_cache != null) return _cache;
 
-        if (!File.Exists(StorePath))
+        if (!File.Exists(_storePath))
         {
             _cache = [];
             return _cache;
@@ -122,7 +123,7 @@ public sealed class PendingTranscriptionStore
                 return _cache;
             }
 
-            var fileBytes = File.ReadAllBytes(StorePath);
+            var fileBytes = File.ReadAllBytes(_storePath);
             using var encryptor = new AesGcmEncryptor(key, "device-key");
             var decrypted = encryptor.Decrypt(fileBytes);
             var json = Encoding.UTF8.GetString(decrypted);
@@ -140,7 +141,7 @@ public sealed class PendingTranscriptionStore
     {
         _cache = store;
 
-        var dir = Path.GetDirectoryName(StorePath);
+        var dir = Path.GetDirectoryName(_storePath);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
@@ -151,13 +152,14 @@ public sealed class PendingTranscriptionStore
         var plaintext = Encoding.UTF8.GetBytes(json);
         using var encryptor = new AesGcmEncryptor(key, "device-key");
         var encrypted = encryptor.Encrypt(plaintext);
-        File.WriteAllBytes(StorePath, encrypted);
+        File.WriteAllBytes(_storePath, encrypted);
     }
 }
 
 public sealed record PendingTranscription(
     string SessionId,
-    string? TranscriptText,
-    QualityPreset Preset,
+    string MicPath,
+    string? SystemPath,
+    bool IsEncrypted,
     DateTime CreatedAt,
     int RetryCount);

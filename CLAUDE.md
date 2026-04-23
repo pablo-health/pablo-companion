@@ -76,7 +76,7 @@ pablo-health/pablo-companion/
 | Audio (macOS) | AudioCaptureKit (from `audiotake2`) |
 | Audio (Windows) | AudioCaptureKit C# (WASAPI) |
 | Transcription (macOS) | Cloud (backend) |
-| Transcription (Windows) | Local Whisper.net (transitional — migrating to cloud, see PABLO-D-106) |
+| Transcription (Windows) | Cloud (backend) |
 | Auth (macOS) | Inherited from `audiotake2` |
 | Auth (Windows) | CredentialManager / loopback OAuth |
 | Calendar | Pablo backend owns the schedule — no client-side calendar sync |
