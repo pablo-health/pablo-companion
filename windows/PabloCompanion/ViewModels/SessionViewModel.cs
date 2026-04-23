@@ -19,7 +19,6 @@ public partial class SessionViewModel : ObservableObject
     private readonly VideoLaunchService _videoLaunch;
     private readonly RecordingViewModel _recordingVm;
     private readonly TranscriptionViewModel _transcriptionVm;
-    private readonly PendingTranscriptionStore _pendingStore;
     private DispatcherTimer? _pollingTimer;
 
     // --- Today's appointments ---
@@ -72,14 +71,12 @@ public partial class SessionViewModel : ObservableObject
     private const uint HistoryPageSize = 20;
 
     public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch,
-        RecordingViewModel recordingVm, TranscriptionViewModel transcriptionVm,
-        PendingTranscriptionStore pendingStore)
+        RecordingViewModel recordingVm, TranscriptionViewModel transcriptionVm)
     {
         _apiClient = apiClient;
         _videoLaunch = videoLaunch;
         _recordingVm = recordingVm;
         _transcriptionVm = transcriptionVm;
-        _pendingStore = pendingStore;
     }
 
     /// <summary>
@@ -222,13 +219,10 @@ public partial class SessionViewModel : ObservableObject
             await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.RecordingComplete);
             ActiveSession = null;
 
-            // Upload audio to backend for server-side transcription (default on Windows).
-            // Falls back to local transcription if upload fails and auto-transcribe is on.
+            // Upload audio to Pablo for server-side transcription. On failure it
+            // lands in PendingTranscriptionStore and the app retries on next launch.
             if (_transcriptionVm.AutoTranscribe)
-            {
-                _pendingStore.Add(sessionId, _transcriptionVm.QualityPreset);
                 _ = _transcriptionVm.UploadAudioAsync(sessionId);
-            }
 
             await LoadTodaySessionsAsync();
         }

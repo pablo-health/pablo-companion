@@ -30,12 +30,10 @@ public sealed partial class SettingsPage : Page
         EmailText.Text = _authVm.UserEmail ?? "Not signed in";
         BackendUrlText.Text = _apiClient.BaseUrl;
 
-        // Load audio devices
         await _recordingVm.LoadAudioDevicesAsync();
         PopulateMicDropdown();
 
-        // Transcription settings
-        PopulateTranscriptionSettings();
+        AutoTranscribeToggle.IsOn = _transcriptionVm.AutoTranscribe;
 
         VersionText.Text = "Pablo Companion (Windows) v1.0.0";
     }
@@ -71,7 +69,6 @@ public sealed partial class SettingsPage : Page
             });
         }
 
-        // Select the currently chosen mic
         for (int i = 0; i < MicDropdown.Items.Count; i++)
         {
             if (MicDropdown.Items[i] is ComboBoxItem item && item.Tag as string == _recordingVm.SelectedMicId)
@@ -90,72 +87,9 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void PopulateTranscriptionSettings()
-    {
-        // Quality preset
-        int presetIndex = (int)_transcriptionVm.QualityPreset;
-        TranscriptionQualityDropdown.SelectedIndex = presetIndex;
-
-        // Auto-transcribe toggle
-        AutoTranscribeToggle.IsOn = _transcriptionVm.AutoTranscribe;
-
-        UpdateModelStatus();
-    }
-
-    private void UpdateModelStatus()
-    {
-        bool available = _transcriptionVm.IsModelAvailable;
-        ModelStatusText.Text = available ? "Model downloaded" : "Model not downloaded";
-        ModelActionButton.Content = available ? "Delete Model" : "Download Model";
-    }
-
-    private void TranscriptionQuality_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (TranscriptionQualityDropdown.SelectedItem is ComboBoxItem item && item.Tag is string presetStr)
-        {
-            if (Enum.TryParse<QualityPreset>(presetStr, out var preset))
-            {
-                _transcriptionVm.QualityPreset = preset;
-                UpdateModelStatus();
-            }
-        }
-    }
-
     private void AutoTranscribe_Toggled(object sender, RoutedEventArgs e)
     {
         _transcriptionVm.AutoTranscribe = AutoTranscribeToggle.IsOn;
-    }
-
-    private async void ModelAction_Click(object sender, RoutedEventArgs e)
-    {
-        if (_transcriptionVm.IsModelAvailable)
-        {
-            _transcriptionVm.DeleteModelCommand.Execute(null);
-            UpdateModelStatus();
-        }
-        else
-        {
-            ModelDownloadProgress.Visibility = Visibility.Visible;
-            ModelActionButton.IsEnabled = false;
-
-            _transcriptionVm.PropertyChanged += (_, args) =>
-            {
-                if (args.PropertyName is nameof(TranscriptionViewModel.Progress) or
-                    nameof(TranscriptionViewModel.ProgressMessage))
-                {
-                    DispatcherQueue.TryEnqueue(() =>
-                    {
-                        ModelDownloadProgress.Value = _transcriptionVm.Progress * 100;
-                    });
-                }
-            };
-
-            await _transcriptionVm.DownloadModelAsync();
-
-            ModelDownloadProgress.Visibility = Visibility.Collapsed;
-            ModelActionButton.IsEnabled = true;
-            UpdateModelStatus();
-        }
     }
 
     private void SignOut_Click(object sender, RoutedEventArgs e)

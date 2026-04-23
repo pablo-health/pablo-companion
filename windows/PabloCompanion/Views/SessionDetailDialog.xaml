@@ -195,13 +195,12 @@
                 </Border>
             </StackPanel>
 
-            <!-- Local transcription section -->
-            <StackPanel Spacing="8" x:Name="LocalTranscriptSection" Visibility="Collapsed">
+            <!-- Cloud upload status -->
+            <StackPanel Spacing="8" x:Name="UploadStatusSection" Visibility="Collapsed">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="Local Transcription"
+                    <TextBlock Text="Audio Upload"
                                Style="{StaticResource PabloBodyLarge}"
                                FontWeight="SemiBold" />
-                    <!-- Pending upload badge -->
                     <Border x:Name="PendingUploadBadge"
                             Visibility="Collapsed"
                             Background="#FFF3E0"
@@ -213,66 +212,20 @@
                                    Foreground="#E65100" />
                     </Border>
                 </StackPanel>
-
-                <!-- Transcribe button + quality selector -->
-                <StackPanel x:Name="TranscribeControls" Orientation="Horizontal" Spacing="8">
-                    <Button x:Name="TranscribeButton"
-                            Content="Transcribe"
-                            Click="Transcribe_Click"
-                            Style="{StaticResource PabloPrimaryButton}"
-                            Padding="12,6"
-                            AutomationProperties.Name="Transcribe this session locally" />
-                    <ComboBox x:Name="QualityDropdown"
-                              SelectedIndex="0"
-                              AutomationProperties.Name="Transcription quality">
-                        <ComboBoxItem Content="Fast (small)" Tag="Fast" />
-                        <ComboBoxItem Content="Balanced (large-v3-turbo)" Tag="Balanced" />
-                        <ComboBoxItem Content="Accurate (large-v3)" Tag="Accurate" />
-                    </ComboBox>
-                </StackPanel>
-
-                <!-- Progress -->
-                <StackPanel x:Name="TranscriptionProgress" Visibility="Collapsed" Spacing="4">
-                    <ProgressBar x:Name="TranscriptionProgressBar"
-                                 Minimum="0" Maximum="100"
-                                 IsIndeterminate="False" />
-                    <TextBlock x:Name="TranscriptionStatusText"
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="UploadStatusText"
                                Style="{StaticResource PabloBodySmall}"
-                               Foreground="{StaticResource PabloBrownSoft}" />
+                               Foreground="{StaticResource PabloBrownSoft}"
+                               VerticalAlignment="Center" />
+                    <Button x:Name="RetryUploadButton"
+                            Content="Retry Upload"
+                            Click="RetryUpload_Click"
+                            Style="{StaticResource PabloSecondaryButton}"
+                            Padding="8,4"
+                            FontSize="12"
+                            Visibility="Collapsed"
+                            AutomationProperties.Name="Retry uploading audio to Pablo" />
                 </StackPanel>
-
-                <!-- Local transcript preview -->
-                <Border x:Name="LocalTranscriptPreview"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        CornerRadius="8"
-                        Padding="16"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        Visibility="Collapsed">
-                    <StackPanel Spacing="8">
-                        <TextBlock x:Name="LocalTranscriptText"
-                                   Style="{StaticResource PabloBodySmall}"
-                                   Foreground="{StaticResource PabloBrownSoft}"
-                                   MaxLines="5"
-                                   TextTrimming="CharacterEllipsis" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="View Full Transcript"
-                                    Click="ViewLocalTranscript_Click"
-                                    Style="{StaticResource PabloSecondaryButton}"
-                                    Padding="8,4"
-                                    FontSize="12"
-                                    AutomationProperties.Name="View full local transcript" />
-                            <Button x:Name="RetryUploadButton"
-                                    Content="Retry Upload"
-                                    Click="RetryUpload_Click"
-                                    Style="{StaticResource PabloSecondaryButton}"
-                                    Padding="8,4"
-                                    FontSize="12"
-                                    Visibility="Collapsed"
-                                    AutomationProperties.Name="Retry uploading transcript" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
             </StackPanel>
 
         </StackPanel>

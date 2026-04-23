@@ -75,8 +75,8 @@ pablo-health/pablo-companion/
 | Windows networking | HttpClient, System.Text.Json |
 | Audio (macOS) | AudioCaptureKit (from `audiotake2`) |
 | Audio (Windows) | AudioCaptureKit C# (WASAPI) |
-| Transcription (macOS) | Apple Speech / server-side |
-| Transcription (Windows) | Whisper.net / server-side |
+| Transcription (macOS) | Cloud (backend) |
+| Transcription (Windows) | Cloud (backend) |
 | Auth (macOS) | Inherited from `audiotake2` |
 | Auth (Windows) | CredentialManager / loopback OAuth |
 | Calendar | Pablo backend owns the schedule — no client-side calendar sync |

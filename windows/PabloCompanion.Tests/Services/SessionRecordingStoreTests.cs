@@ -5,6 +5,7 @@ using Xunit;
 
 namespace PabloCompanion.Tests.Services;
 
+[Collection("SessionRecordingStore")]
 public class SessionRecordingStoreTests : IDisposable
 {
     private readonly string _tempDir;

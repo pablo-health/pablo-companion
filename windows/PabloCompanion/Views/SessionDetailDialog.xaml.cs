@@ -6,7 +6,6 @@ using PabloCompanion.Helpers;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
 using PabloCompanion.Models;
-using QualityPreset = PabloCompanion.Services.QualityPreset;
 
 namespace PabloCompanion.Views;
 
@@ -33,18 +32,15 @@ public sealed partial class SessionDetailDialog : ContentDialog
 
     private void PopulateDetails()
     {
-        // Patient header
         PatientNameText.Text = SessionFormatting.FormatPatientName(_session, _cachedPatients);
         InitialsText.Text = SessionFormatting.GetPatientInitials(_session, _cachedPatients);
         DateText.Text = SessionFormatting.FormatDate(_session);
         Badge.Status = _session.Status;
 
-        // Session info
         TimeText.Text = SessionFormatting.FormatTime(_session);
         DurationText.Text = SessionFormatting.FormatDuration(_session);
         TypeText.Text = SessionFormatting.FormatSessionType(_session);
 
-        // Platform
         var platform = SessionFormatting.GetPlatformName(_session);
         if (!string.IsNullOrEmpty(platform))
         {
@@ -53,7 +49,6 @@ public sealed partial class SessionDetailDialog : ContentDialog
             PlatformText.Text = platform;
         }
 
-        // Notes
         if (!string.IsNullOrWhiteSpace(_session.Notes))
         {
             NotesLabel.Visibility = Visibility.Visible;
@@ -88,7 +83,7 @@ public sealed partial class SessionDetailDialog : ContentDialog
             };
         }
 
-        // Transcript section — show placeholder for finalized sessions
+        // Transcript — server-side only
         if (_session.Status == SessionStatus.Finalized ||
             _session.Status == SessionStatus.PendingReview)
         {
@@ -97,37 +92,17 @@ public sealed partial class SessionDetailDialog : ContentDialog
             ViewTranscriptButton.Visibility = Visibility.Collapsed;
         }
 
-        // Local transcription — show when we have a local recording with PCM sidecars
-        if (recording?.MicPcmFilePath != null)
+        // Cloud upload status — only shown while an upload is still in flight
+        // or waiting to retry for this specific session.
+        var pendingState = _transcriptionVm.GetSessionTranscriptionState(_session.Id);
+        if (pendingState == TranscriptionState.PendingUpload)
         {
-            LocalTranscriptSection.Visibility = Visibility.Visible;
-
-            // Check transcription state for this session
-            var transcriptState = _transcriptionVm.GetSessionTranscriptionState(_session.Id);
-            var existingTranscript = _transcriptionVm.GetTranscript(_session.Id);
-
-            if (existingTranscript != null)
-            {
-                ShowLocalTranscript(existingTranscript);
-
-                if (transcriptState == TranscriptionState.PendingUpload)
-                {
-                    PendingUploadBadge.Visibility = Visibility.Visible;
-                    RetryUploadButton.Visibility = Visibility.Visible;
-                }
-            }
+            UploadStatusSection.Visibility = Visibility.Visible;
+            PendingUploadBadge.Visibility = Visibility.Visible;
+            UploadStatusText.Text = "Audio hasn't uploaded yet — Pablo will keep trying.";
+            RetryUploadButton.Visibility = Visibility.Visible;
         }
     }
-
-    private void ShowLocalTranscript(string transcript)
-    {
-        TranscribeControls.Visibility = Visibility.Collapsed;
-        TranscriptionProgress.Visibility = Visibility.Collapsed;
-        LocalTranscriptPreview.Visibility = Visibility.Visible;
-        LocalTranscriptText.Text = transcript;
-    }
-
-    // --- Playback ---
 
     private async void PlayPause_Click(object sender, RoutedEventArgs e)
     {
@@ -146,7 +121,6 @@ public sealed partial class SessionDetailDialog : ContentDialog
             return;
         }
 
-        // Start new playback
         var recording = _recordingStore.Get(_session.Id);
         if (recording == null) return;
 
@@ -169,10 +143,7 @@ public sealed partial class SessionDetailDialog : ContentDialog
         }
     }
 
-    private void Stop_Click(object sender, RoutedEventArgs e)
-    {
-        StopPlayback();
-    }
+    private void Stop_Click(object sender, RoutedEventArgs e) => StopPlayback();
 
     private void StopPlayback()
     {
@@ -241,14 +212,7 @@ public sealed partial class SessionDetailDialog : ContentDialog
 
     private void UpdatePlaybackUI()
     {
-        if (_playbackService.IsPlaying)
-        {
-            PlayPauseIcon.Symbol = Symbol.Pause;
-        }
-        else
-        {
-            PlayPauseIcon.Symbol = Symbol.Play;
-        }
+        PlayPauseIcon.Symbol = _playbackService.IsPlaying ? Symbol.Pause : Symbol.Play;
     }
 
     private static string FormatTime(TimeSpan ts)
@@ -256,61 +220,6 @@ public sealed partial class SessionDetailDialog : ContentDialog
         return ts.Hours > 0
             ? $"{ts.Hours}:{ts.Minutes:D2}:{ts.Seconds:D2}"
             : $"{ts.Minutes}:{ts.Seconds:D2}";
-    }
-
-    // --- Transcription ---
-
-    private async void Transcribe_Click(object sender, RoutedEventArgs e)
-    {
-        // Get selected quality
-        if (QualityDropdown.SelectedItem is ComboBoxItem item && item.Tag is string presetStr)
-        {
-            if (Enum.TryParse<QualityPreset>(presetStr, out var preset))
-                _transcriptionVm.QualityPreset = preset;
-        }
-
-        // Add to pending store for resiliency
-        var pendingStore = App.Services.GetRequiredService<PendingTranscriptionStore>();
-        pendingStore.Add(_session.Id, _transcriptionVm.QualityPreset);
-
-        TranscribeControls.Visibility = Visibility.Collapsed;
-        TranscriptionProgress.Visibility = Visibility.Visible;
-
-        _transcriptionVm.PropertyChanged += TranscriptionVm_PropertyChanged;
-
-        try
-        {
-            await _transcriptionVm.TranscribeSessionAsync(_session.Id);
-
-            if (_transcriptionVm.State == TranscriptionState.Complete && _transcriptionVm.TranscriptText != null)
-            {
-                ShowLocalTranscript(_transcriptionVm.TranscriptText);
-            }
-            else if (_transcriptionVm.State == TranscriptionState.PendingUpload && _transcriptionVm.TranscriptText != null)
-            {
-                ShowLocalTranscript(_transcriptionVm.TranscriptText);
-                PendingUploadBadge.Visibility = Visibility.Visible;
-                RetryUploadButton.Visibility = Visibility.Visible;
-            }
-            else if (_transcriptionVm.State == TranscriptionState.Error)
-            {
-                TranscriptionStatusText.Text = $"Error: {_transcriptionVm.ErrorMessage}";
-                TranscribeControls.Visibility = Visibility.Visible;
-            }
-        }
-        finally
-        {
-            _transcriptionVm.PropertyChanged -= TranscriptionVm_PropertyChanged;
-        }
-    }
-
-    private void TranscriptionVm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            TranscriptionProgressBar.Value = _transcriptionVm.Progress * 100;
-            TranscriptionStatusText.Text = _transcriptionVm.ProgressMessage;
-        });
     }
 
     private async void RetryUpload_Click(object sender, RoutedEventArgs e)
@@ -322,11 +231,15 @@ public sealed partial class SessionDetailDialog : ContentDialog
         {
             await _transcriptionVm.ForceRetryPendingUploadsAsync();
 
-            var state = _transcriptionVm.GetSessionTranscriptionState(_session.Id);
-            if (state == TranscriptionState.Complete)
+            if (_transcriptionVm.GetSessionTranscriptionState(_session.Id) != TranscriptionState.PendingUpload)
             {
                 PendingUploadBadge.Visibility = Visibility.Collapsed;
                 RetryUploadButton.Visibility = Visibility.Collapsed;
+                UploadStatusText.Text = "Uploaded";
+            }
+            else
+            {
+                UploadStatusText.Text = _transcriptionVm.ErrorMessage ?? "Still not reachable — will retry.";
             }
         }
         finally
@@ -341,26 +254,10 @@ public sealed partial class SessionDetailDialog : ContentDialog
         // Server-side transcript — placeholder
     }
 
-    private async void ViewLocalTranscript_Click(object sender, RoutedEventArgs e)
-    {
-        var transcript = _transcriptionVm.GetTranscript(_session.Id);
-        if (transcript == null) return;
-
-        var viewer = new TranscriptViewerDialog(transcript)
-        {
-            XamlRoot = XamlRoot,
-        };
-
-        // Close this dialog first, then show transcript viewer
-        Hide();
-        await viewer.ShowAsync();
-    }
-
     private void Dialog_Closing(ContentDialog sender, ContentDialogClosingEventArgs args)
     {
         StopPositionTimer();
 
-        // Stop playback when dialog closes
         if (_playbackService.PlayingSessionId == _session.Id)
         {
             _playbackService.PlaybackEnded -= OnPlaybackEnded;

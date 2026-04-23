@@ -51,7 +51,7 @@ public partial class App : Application
         _window.Activate();
 
         // Resume pending transcription uploads after launch
-        _ = ResumePendingTranscriptionsAsync();
+        _ = ResumePendingUploadsAsync();
     }
 
     private static void ConfigureServices(ServiceCollection services)
@@ -64,9 +64,6 @@ public partial class App : Application
         services.AddSingleton<Services.RecordingService>();
         services.AddSingleton<Services.SessionRecordingStore>();
 
-        services.AddSingleton<Services.WhisperModelManager>();
-        services.AddSingleton<Services.TranscriptStore>();
-        services.AddSingleton<Services.SessionTranscriptionPipeline>();
         services.AddSingleton<Services.PendingTranscriptionStore>();
         services.AddSingleton<Services.PlaybackService>();
         services.AddSingleton<Services.InactivityMonitor>();
@@ -80,14 +77,14 @@ public partial class App : Application
         services.AddSingleton<ViewModels.SubscriptionViewModel>();
     }
 
-    private static async Task ResumePendingTranscriptionsAsync()
+    private static async Task ResumePendingUploadsAsync()
     {
         try
         {
             // Small delay to let the UI settle before background work
             await Task.Delay(2000);
             var transcriptionVm = Services.GetRequiredService<ViewModels.TranscriptionViewModel>();
-            await transcriptionVm.ResumePendingTranscriptionsAsync();
+            await transcriptionVm.ResumePendingUploadsAsync();
         }
         catch
         {

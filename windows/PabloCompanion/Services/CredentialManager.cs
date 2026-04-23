@@ -6,7 +6,7 @@ namespace PabloCompanion.Services;
 /// Stores and retrieves auth tokens using Windows Credential Manager (PasswordVault).
 /// Mirrors KeychainManager.swift on macOS.
 /// </summary>
-public sealed class CredentialManager
+public class CredentialManager
 {
     private const string Resource = "PabloCompanion";
 
@@ -111,7 +111,7 @@ public sealed class CredentialManager
     /// <summary>
     /// Returns the encryption key for the active user. Convenience wrapper used by all services.
     /// </summary>
-    public byte[]? GetOrCreateDeviceEncryptionKey()
+    public virtual byte[]? GetOrCreateDeviceEncryptionKey()
     {
         return GetOrCreateEncryptionKey(ActiveUserEmail ?? "");
     }

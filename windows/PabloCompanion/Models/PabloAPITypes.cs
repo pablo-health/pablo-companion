@@ -311,23 +311,6 @@ public sealed record SoapEntryStatus(
     [property: JsonPropertyName("error")] string? Error
 );
 
-// ── Transcript types (not already defined in GoogleMeetRenderer.cs) ──────────
-
-public sealed record RawSegment(
-    [property: JsonPropertyName("start_ms")] long StartMs,
-    [property: JsonPropertyName("end_ms")] long EndMs,
-    [property: JsonPropertyName("text")] string Text
-);
-
-public sealed record TranscriptionConfig(
-    [property: JsonPropertyName("model_path")] string ModelPath,
-    [property: JsonPropertyName("mic_channels")] byte MicChannels,
-    [property: JsonPropertyName("mic_sample_rate")] uint MicSampleRate,
-    [property: JsonPropertyName("system_channels")] byte SystemChannels,
-    [property: JsonPropertyName("system_sample_rate")] uint SystemSampleRate,
-    [property: JsonPropertyName("swap_speakers")] bool SwapSpeakers
-);
-
 // ── Error type ───────────────────────────────────────────────────────────────
 
 public class PabloException : Exception
