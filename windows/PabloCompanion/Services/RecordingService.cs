@@ -44,7 +44,7 @@ public sealed class RecordingService : IDisposable
             "PabloCompanion", "Recordings", sessionId);
 
         // Get or create encryption key
-        var keyBytes = _credentials.GetOrCreateDeviceEncryptionKey();
+        var keyBytes = _credentials.GetOrCreateUserEncryptionKey();
         ICaptureEncryptor? encryptor = keyBytes != null
             ? new AesGcmEncryptor(keyBytes, "device-key")
             : null;

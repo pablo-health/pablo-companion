@@ -196,7 +196,7 @@ public partial class TranscriptionViewModel : ObservableObject
         AesGcmEncryptor? encryptor = null;
         if (item.IsEncrypted)
         {
-            var keyBytes = _credentials.GetOrCreateDeviceEncryptionKey();
+            var keyBytes = _credentials.GetOrCreateUserEncryptionKey();
             if (keyBytes != null)
                 encryptor = new AesGcmEncryptor(keyBytes, "device-key");
         }

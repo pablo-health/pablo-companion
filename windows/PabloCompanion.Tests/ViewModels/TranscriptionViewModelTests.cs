@@ -147,7 +147,7 @@ public sealed class TranscriptionViewModelTests : IDisposable
     {
         private static readonly byte[] FixedKey = NewKey();
         private static byte[] NewKey() { var k = new byte[32]; RandomNumberGenerator.Fill(k); return k; }
-        public override byte[]? GetOrCreateDeviceEncryptionKey() => FixedKey;
+        public override byte[]? GetOrCreateUserEncryptionKey() => FixedKey;
     }
 
     private sealed class StubApiClient : APIClient

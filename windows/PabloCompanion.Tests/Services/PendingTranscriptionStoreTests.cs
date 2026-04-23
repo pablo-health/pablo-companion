@@ -24,7 +24,7 @@ public class PendingTranscriptionStoreTests : IDisposable
             RandomNumberGenerator.Fill(k);
             return k;
         }
-        public override byte[]? GetOrCreateDeviceEncryptionKey() => FixedKey;
+        public override byte[]? GetOrCreateUserEncryptionKey() => FixedKey;
     }
 
     [Fact]

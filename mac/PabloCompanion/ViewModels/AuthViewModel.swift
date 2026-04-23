@@ -59,6 +59,10 @@ final class AuthViewModel {
     /// PKCE code verifier for the current auth flow (RFC 7636).
     private var pkceCodeVerifier: String?
 
+    /// OAuth 2.0 `state` for the current flow (RFC 6749 §10.12 — CSRF protection).
+    /// Generated at flow start, echoed by the authz server, verified on callback.
+    private var oauthState: String?
+
     /// Active loopback server for the current sign-in attempt (if any).
     private var loopbackServer: LoopbackServer?
 
@@ -99,14 +103,7 @@ final class AuthViewModel {
 
             let callbackURL = try await server.waitForCallback(timeout: 120)
 
-            guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-                  let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
-                  Self.isValidAuthCode(code)
-            else {
-                errorMessage = "Invalid or missing authorization code in callback."
-                authState = .unauthenticated
-                return
-            }
+            guard let code = extractValidatedAuthCode(from: callbackURL) else { return }
 
             await exchangeCodeForTokens(code: code, redirectURI: server.redirectURI)
         } catch let error as LoopbackServer.ServerError {
@@ -120,6 +117,33 @@ final class AuthViewModel {
 
         server.stop()
         loopbackServer = nil
+    }
+
+    /// Validates the callback URL: extracts the authorization code and verifies the
+    /// `state` parameter matches the one we generated (constant-time compare). On any
+    /// failure, sets `errorMessage` / `authState` and returns nil.
+    private func extractValidatedAuthCode(from callbackURL: URL) -> String? {
+        guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+              let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
+              Self.isValidAuthCode(code)
+        else {
+            errorMessage = "Invalid or missing authorization code in callback."
+            authState = .unauthenticated
+            return nil
+        }
+
+        let returnedState = components.queryItems?.first(where: { $0.name == "state" })?.value
+        defer { oauthState = nil }
+        guard let expectedState = oauthState,
+              let returnedState,
+              PKCEHelper.constantTimeEquals(expectedState, returnedState)
+        else {
+            errorMessage = "Sign-in failed. Please try again."
+            authState = .unauthenticated
+            logger.error("OAuth state mismatch on callback")
+            return nil
+        }
+        return code
     }
 
     // MARK: - Sign Out
@@ -198,6 +222,11 @@ final class AuthViewModel {
         pkceCodeVerifier = verifier
         queryItems.append(URLQueryItem(name: "code_challenge", value: PKCEHelper.codeChallenge(for: verifier)))
         queryItems.append(URLQueryItem(name: "code_challenge_method", value: "S256"))
+
+        // OAuth state (RFC 6749 §10.12) — CSRF / cross-flow protection
+        let state = PKCEHelper.generateState()
+        oauthState = state
+        queryItems.append(URLQueryItem(name: "state", value: state))
 
         components?.queryItems = queryItems
         return components?.url
@@ -420,5 +449,24 @@ enum PKCEHelper {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+    }
+
+    /// Generates a cryptographically random OAuth 2.0 `state` value (RFC 6749 §10.12).
+    /// Same entropy profile as the PKCE verifier.
+    static func generateState() -> String {
+        generateCodeVerifier()
+    }
+
+    /// Length-preserving, constant-time string comparison.
+    /// Returns false if lengths differ (leaking only length, which is public).
+    static func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
+        let lhsBytes = Array(lhs.utf8)
+        let rhsBytes = Array(rhs.utf8)
+        guard lhsBytes.count == rhsBytes.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0 ..< lhsBytes.count {
+            diff |= lhsBytes[i] ^ rhsBytes[i]
+        }
+        return diff == 0
     }
 }
