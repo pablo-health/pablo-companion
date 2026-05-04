@@ -31,6 +31,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
+    <PackageReference Include="NAudio" Version="2.2.*" />
   </ItemGroup>
 
   <!-- AudioCaptureKit C# library (sibling repo, relative path for dev) -->

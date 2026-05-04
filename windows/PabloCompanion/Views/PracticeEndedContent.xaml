@@ -1,0 +1,43 @@
+<UserControl
+    x:Class="PabloCompanion.Views.PracticeEndedContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="16" MinWidth="300">
+        <!-- Session summary -->
+        <StackPanel Spacing="8">
+            <TextBlock x:Name="TopicText"
+                       Style="{StaticResource PabloBodyLarge}"
+                       FontWeight="SemiBold" />
+
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="Duration:"
+                           Style="{StaticResource PabloBodyMedium}"
+                           Foreground="{StaticResource PabloBrownSoft}" />
+                <TextBlock x:Name="DurationText"
+                           Grid.Column="1"
+                           Style="{StaticResource PabloBodyMedium}" />
+            </Grid>
+        </StackPanel>
+
+        <!-- SOAP note generation notice -->
+        <Border Background="{StaticResource PabloCream}"
+                CornerRadius="8"
+                Padding="16">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <FontIcon Glyph="&#xE8F1;"
+                          FontSize="20"
+                          Foreground="{StaticResource PabloSage}" />
+                <TextBlock Text="A SOAP note is being generated from this session. You'll find it in your session history shortly."
+                           Style="{StaticResource PabloBodyMedium}"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>
