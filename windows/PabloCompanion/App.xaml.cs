@@ -5,33 +5,14 @@ namespace PabloCompanion;
 
 public partial class App : Application
 {
-    private const string MutexName = "PabloCompanion_SingleInstance";
-
     public static IServiceProvider Services { get; private set; } = null!;
     public static Microsoft.UI.Dispatching.DispatcherQueue? UiDispatcherQueue { get; private set; }
-    /// <summary>
-    /// True when COM activation bypassed Main() and another instance already owns the mutex.
-    /// </summary>
-    private bool _isSecondInstance;
-    private Mutex? _comPathMutex;
+
     private Window? _window;
 
     public App()
     {
         InitializeComponent();
-
-        // Normal path: Main() ran, mutex already acquired, we're the primary instance.
-        // COM activation path: Main() was bypassed — check if another instance is running.
-        if (!Program.RanThroughMain)
-        {
-            bool createdNew;
-            _comPathMutex = new Mutex(true, MutexName, out createdNew);
-            if (!createdNew)
-            {
-                _isSecondInstance = true;
-                return;
-            }
-        }
 
         var services = new ServiceCollection();
         ConfigureServices(services);
@@ -40,12 +21,6 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        if (_isSecondInstance)
-        {
-            Environment.Exit(0);
-            return;
-        }
-
         _window = new Views.MainWindow();
         UiDispatcherQueue = _window.DispatcherQueue;
         _window.Activate();
@@ -70,6 +45,7 @@ public partial class App : Application
         services.AddSingleton<Services.EhrNavigator>();
 
         services.AddSingleton<Services.PracticeApiClient>();
+        services.AddSingleton<Services.ProtocolActivationListener>();
 
         services.AddSingleton<ViewModels.AuthViewModel>();
         services.AddSingleton<ViewModels.SessionViewModel>();

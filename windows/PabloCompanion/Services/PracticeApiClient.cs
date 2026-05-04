@@ -18,13 +18,18 @@ public sealed class PracticeApiClient
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
     };
 
+    private const string DefaultBaseUrl = "https://api.pablo.health";
+
     private readonly CredentialManager _credentials;
 
-    public string BaseUrl { get; set; } = "https://api.pablo.health";
+    public string BaseUrl { get; set; }
 
     public PracticeApiClient(CredentialManager credentials)
     {
         _credentials = credentials;
+        // Seed from the previously discovered backend URL so practice-mode requests
+        // route to the same env as APIClient on app launch / restored session.
+        BaseUrl = credentials.BackendApiUrl ?? DefaultBaseUrl;
     }
 
     private string GetToken()

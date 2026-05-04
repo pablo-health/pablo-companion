@@ -54,6 +54,16 @@
         </uap:DefaultTile>
         <uap:SplashScreen Image="Images\SplashScreen.png" BackgroundColor="#FDF6EC" />
       </uap:VisualElements>
+      <Extensions>
+        <!-- pablohealth:// for OAuth callback redirect (RFC 8252 §7.1).
+             Replaces the loopback HTTP redirect path so the packaged app doesn't
+             need CheckNetIsolation LoopbackExempt. -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="pablohealth">
+            <uap:DisplayName>Pablo</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

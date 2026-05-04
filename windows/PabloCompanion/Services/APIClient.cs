@@ -23,13 +23,18 @@ public class APIClient
     private const string ClientPlatform = "windows";
     private const string ClientTypeHeader = "pablo-companion-windows/1.0";
 
+    private const string DefaultBaseUrl = "https://api.pablo.health";
+
     private readonly CredentialManager _credentials;
 
-    public string BaseUrl { get; set; } = "https://api.pablo.health";
+    public string BaseUrl { get; set; }
 
     public APIClient(CredentialManager credentials)
     {
         _credentials = credentials;
+        // Seed from the previously discovered backend URL so a restored session
+        // starts on the correct env before AuthViewModel.DiscoverServerConfigAsync runs.
+        BaseUrl = credentials.BackendApiUrl ?? DefaultBaseUrl;
     }
 
     private string GetToken()
