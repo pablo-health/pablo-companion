@@ -154,7 +154,7 @@ public sealed partial class PracticeViewModel : ObservableObject, IDisposable
     private void ConfigureCallbacks()
     {
         _wsClient.ConnectionStateChanged += OnConnectionStateChanged;
-        _wsClient.PabloStateChanged += state => DispatcherQueue(()  => PabloState = state);
+        _wsClient.PabloStateChanged += state => DispatcherQueue(() => PabloState = state);
         _wsClient.AudioReceived += OnAudioReceived;
         _wsClient.SessionStarted += OnSessionStarted;
         _wsClient.SessionEnded += OnSessionEnded;
