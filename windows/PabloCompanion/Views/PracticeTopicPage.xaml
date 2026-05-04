@@ -1,0 +1,116 @@
+<Page
+    x:Class="PabloCompanion.Views.PracticeTopicPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{StaticResource PabloCream}">
+
+    <Grid Padding="32" RowSpacing="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock Text="Practice with Pablo"
+                       Style="{StaticResource PabloDisplayLarge}"
+                       AutomationProperties.Name="Practice with Pablo" />
+            <TextBlock Text="Choose a topic to practice your therapeutic skills"
+                       Style="{StaticResource PabloBodyMedium}"
+                       Foreground="{StaticResource PabloBrownSoft}" />
+        </StackPanel>
+
+        <!-- Error banner -->
+        <InfoBar Grid.Row="1"
+                 x:Name="ErrorBanner"
+                 IsOpen="False"
+                 Severity="Error"
+                 Title="Error"
+                 HorizontalAlignment="Stretch" />
+
+        <!-- Content area: loading, topic list, or empty state -->
+        <Grid Grid.Row="2">
+            <ProgressRing x:Name="LoadingRing"
+                          IsActive="False"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center" />
+
+            <ListView x:Name="TopicList"
+                      SelectionMode="None"
+                      Visibility="Collapsed"
+                      AutomationProperties.Name="Practice topics">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Padding="16"
+                              Margin="0,4"
+                              Background="White"
+                              CornerRadius="8"
+                              PointerPressed="TopicItem_PointerPressed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Topic name -->
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="{Binding Name}"
+                                       Style="{StaticResource PabloBodyLarge}"
+                                       FontWeight="SemiBold" />
+
+                            <!-- Duration badge -->
+                            <Border Grid.Row="0" Grid.Column="1"
+                                    Background="{StaticResource PabloCream}"
+                                    CornerRadius="12"
+                                    Padding="8,4"
+                                    VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource PabloBodySmall}">
+                                    <Run Text="{Binding EstimatedDurationMinutes}" /><Run Text=" min" />
+                                </TextBlock>
+                            </Border>
+
+                            <!-- Description -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Text="{Binding Description}"
+                                       Style="{StaticResource PabloBodyMedium}"
+                                       Foreground="{StaticResource PabloBrownSoft}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,0" />
+
+                            <!-- Category tag -->
+                            <Border Grid.Row="2" Grid.Column="0"
+                                    Background="{StaticResource PabloCream}"
+                                    CornerRadius="12"
+                                    Padding="10,4"
+                                    Margin="0,8,0,0"
+                                    HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding Category}"
+                                           Style="{StaticResource PabloBodySmall}" />
+                            </Border>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Empty state -->
+            <StackPanel x:Name="EmptyState"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+                <FontIcon Glyph="&#xE8D6;"
+                          FontSize="48"
+                          Foreground="{StaticResource PabloBrownSoft}" />
+                <TextBlock Text="No practice topics available"
+                           Style="{StaticResource PabloBodyMedium}"
+                           Foreground="{StaticResource PabloBrownSoft}"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

@@ -1,0 +1,147 @@
+<Page
+    x:Class="PabloCompanion.Views.PracticeSessionPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{StaticResource PabloCream}">
+
+    <Grid Padding="32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header: topic name + timer -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock x:Name="TopicNameText"
+                           Style="{StaticResource PabloDisplayMedium}"
+                           AutomationProperties.Name="Current practice topic" />
+                <TextBlock x:Name="StatusText"
+                           Style="{StaticResource PabloBodyMedium}"
+                           Foreground="{StaticResource PabloBrownSoft}" />
+            </StackPanel>
+
+            <!-- Duration timer -->
+            <Border Grid.Column="1"
+                    Background="White"
+                    CornerRadius="8"
+                    Padding="16,8"
+                    VerticalAlignment="Center">
+                <TextBlock x:Name="TimerText"
+                           Style="{StaticResource PabloBodyLarge}"
+                           FontWeight="SemiBold"
+                           Text="0:00"
+                           AutomationProperties.Name="Session duration" />
+            </Border>
+        </Grid>
+
+        <!-- Center: audio visualization -->
+        <Grid Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <StackPanel Spacing="32" HorizontalAlignment="Center">
+                <!-- Pablo state indicator -->
+                <StackPanel HorizontalAlignment="Center" Spacing="12">
+                    <Border x:Name="PabloIndicator"
+                            Width="120" Height="120"
+                            CornerRadius="60"
+                            Background="{StaticResource PabloSage}"
+                            HorizontalAlignment="Center">
+                        <FontIcon x:Name="PabloIcon"
+                                  Glyph="&#xE720;"
+                                  FontSize="40"
+                                  Foreground="White"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock x:Name="PabloStateText"
+                               Text="Pablo is listening..."
+                               Style="{StaticResource PabloBodyMedium}"
+                               Foreground="{StaticResource PabloBrownSoft}"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Audio level meters -->
+                <Grid HorizontalAlignment="Center" ColumnSpacing="48">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Mic level -->
+                    <StackPanel Grid.Column="0" Spacing="8" HorizontalAlignment="Center">
+                        <TextBlock Text="You"
+                                   Style="{StaticResource PabloBodySmall}"
+                                   HorizontalAlignment="Center" />
+                        <ProgressBar x:Name="MicLevelBar"
+                                     Width="120"
+                                     Height="6"
+                                     Minimum="0"
+                                     Maximum="1"
+                                     Value="0"
+                                     Foreground="{StaticResource PabloHoney}"
+                                     Background="#20000000"
+                                     CornerRadius="3"
+                                     AutomationProperties.Name="Your microphone level" />
+                    </StackPanel>
+
+                    <!-- Pablo level -->
+                    <StackPanel Grid.Column="1" Spacing="8" HorizontalAlignment="Center">
+                        <TextBlock Text="Pablo"
+                                   Style="{StaticResource PabloBodySmall}"
+                                   HorizontalAlignment="Center" />
+                        <ProgressBar x:Name="PabloLevelBar"
+                                     Width="120"
+                                     Height="6"
+                                     Minimum="0"
+                                     Maximum="1"
+                                     Value="0"
+                                     Foreground="{StaticResource PabloSage}"
+                                     Background="#20000000"
+                                     CornerRadius="3"
+                                     AutomationProperties.Name="Pablo's audio level" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Grid>
+
+        <!-- Bottom controls -->
+        <StackPanel Grid.Row="2" Spacing="12" HorizontalAlignment="Center">
+            <!-- Connecting state -->
+            <StackPanel x:Name="ConnectingPanel"
+                        Orientation="Horizontal"
+                        Spacing="12"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center">
+                <ProgressRing IsActive="True" Width="20" Height="20" />
+                <TextBlock Text="Connecting..."
+                           Style="{StaticResource PabloBodyMedium}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <!-- Active controls -->
+            <StackPanel x:Name="ActiveControlsPanel"
+                        Orientation="Horizontal"
+                        Spacing="16"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center">
+                <Button x:Name="EndSessionButton"
+                        Content="End Session"
+                        Style="{StaticResource PabloDestructiveButton}"
+                        Click="EndSession_Click"
+                        AutomationProperties.Name="End practice session" />
+            </StackPanel>
+
+            <!-- Error banner -->
+            <InfoBar x:Name="ErrorBanner"
+                     IsOpen="False"
+                     Severity="Warning"
+                     Title="Connection Issue"
+                     HorizontalAlignment="Stretch" />
+        </StackPanel>
+    </Grid>
+</Page>

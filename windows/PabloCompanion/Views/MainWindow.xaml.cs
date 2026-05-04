@@ -109,6 +109,7 @@ public sealed partial class MainWindow : Window
                 "DayPage" => typeof(DayPage),
                 "SessionHistoryPage" => typeof(SessionHistoryPage),
                 "PatientListPage" => typeof(PatientListPage),
+                "PracticeTopicPage" => typeof(PracticeTopicPage),
                 "SettingsPage" => typeof(SettingsPage),
                 _ => null,
             };

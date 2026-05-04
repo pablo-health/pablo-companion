@@ -69,12 +69,15 @@ public partial class App : Application
         services.AddSingleton<Services.InactivityMonitor>();
         services.AddSingleton<Services.EhrNavigator>();
 
+        services.AddSingleton<Services.PracticeApiClient>();
+
         services.AddSingleton<ViewModels.AuthViewModel>();
         services.AddSingleton<ViewModels.SessionViewModel>();
         services.AddSingleton<ViewModels.PatientViewModel>();
         services.AddSingleton<ViewModels.RecordingViewModel>();
         services.AddSingleton<ViewModels.TranscriptionViewModel>();
         services.AddSingleton<ViewModels.SubscriptionViewModel>();
+        services.AddSingleton<ViewModels.PracticeViewModel>();
     }
 
     private static async Task ResumePendingUploadsAsync()
