@@ -55,10 +55,18 @@ jobs:
         run: dotnet format windows/PabloCompanion.sln --verify-no-changes --verbosity diagnostic
 
       - name: Build Windows app
+        # Production build mode (framework-dependent MSIX). Validates the actual
+        # build that ships to the Store.
         run: dotnet build windows/PabloCompanion/PabloCompanion.csproj -c Debug -p:Platform=x64 --no-restore
 
       - name: Build tests
-        run: dotnet build windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj -c Debug -p:Platform=x64 --no-restore
+        # WindowsAppSDKSelfContained=true bundles the WinAppSDK runtime DLLs
+        # alongside the test binaries. Required because the test runner loads
+        # the main DLL unpackaged via vstest — the framework-dependent build
+        # would fail to COM-activate WinAppSDK types ("Class not registered").
+        # This rebuilds main in self-contained mode for the test output;
+        # the previous "Build Windows app" step covers the production mode.
+        run: dotnet build windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj -c Debug -p:Platform=x64 -p:WindowsAppSDKSelfContained=true --no-restore
 
       - name: Run tests
         run: dotnet test windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj --no-build -c Debug -p:Platform=x64

@@ -21,19 +21,27 @@ public enum AuthState
 
 /// <summary>
 /// Manages authentication state, sign-in flow, and token refresh.
-/// Uses loopback redirect (RFC 8252 §7.3):
-///   1. App starts local HTTP server on ephemeral port
-///   2. Browser opens {authServerUrl}/native-auth?redirect_uri=http://127.0.0.1:{port}/callback
-///   3. Browser redirects to loopback; app captures the code
-///   4. App exchanges code for tokens via POST to {authServerUrl}/api/auth/native/exchange
+/// Uses custom URL scheme protocol activation (RFC 8252 §7.1):
+///   1. AuthViewModel awaits ProtocolActivationListener for the next pablohealth:// URI
+///   2. Browser opens {authServerUrl}/native-auth?redirect_uri=pablohealth://callback
+///   3. Browser redirects to pablohealth://callback?code=...&state=...
+///   4. Windows reactivates the packaged app with the URI; listener delivers it
+///   5. App exchanges code for tokens via POST to {authServerUrl}/api/auth/native/exchange
+///
+/// Replaces the prior loopback HTTP listener pattern, which required a
+/// CheckNetIsolation LoopbackExempt entry that isn't viable for Store-distributed
+/// packaged apps.
 /// </summary>
 public partial class AuthViewModel : ObservableObject
 {
+    private const string NativeRedirectUri = "pablohealth://callback";
 
     private readonly CredentialManager _credentials;
     private readonly TokenRefresher _tokenRefresher;
     private readonly APIClient _apiClient;
+    private readonly PracticeApiClient _practiceApiClient;
     private readonly InactivityMonitor _inactivityMonitor;
+    private readonly ProtocolActivationListener _protocolListener;
     private System.Threading.Timer? _refreshTimer;
     private string? _pkceCodeVerifier;
     private string? _oauthState;
@@ -51,12 +59,20 @@ public partial class AuthViewModel : ObservableObject
     [ObservableProperty]
     public partial string ServerUrl { get; set; } = "";
 
-    public AuthViewModel(CredentialManager credentials, TokenRefresher tokenRefresher, APIClient apiClient, InactivityMonitor inactivityMonitor)
+    public AuthViewModel(
+        CredentialManager credentials,
+        TokenRefresher tokenRefresher,
+        APIClient apiClient,
+        PracticeApiClient practiceApiClient,
+        InactivityMonitor inactivityMonitor,
+        ProtocolActivationListener protocolListener)
     {
         _credentials = credentials;
         _tokenRefresher = tokenRefresher;
         _apiClient = apiClient;
+        _practiceApiClient = practiceApiClient;
         _inactivityMonitor = inactivityMonitor;
+        _protocolListener = protocolListener;
         _inactivityMonitor.OnTimeout += OnInactivityTimeout;
         _inactivityMonitor.OnScreenLocked += OnInactivityTimeout;
     }
@@ -95,7 +111,10 @@ public partial class AuthViewModel : ObservableObject
         // Fall back to saved backend URL if config discovery failed
         var backendUrl = _credentials.BackendApiUrl;
         if (!string.IsNullOrEmpty(backendUrl))
+        {
             _apiClient.BaseUrl = backendUrl;
+            _practiceApiClient.BaseUrl = backendUrl;
+        }
 
         var expiry = JwtDecoder.GetExpiry(token);
         if (expiry != null && expiry.Value > DateTimeOffset.UtcNow.AddMinutes(5))
@@ -134,23 +153,16 @@ public partial class AuthViewModel : ObservableObject
         // Discover backend URL before opening browser
         await DiscoverServerConfigAsync();
 
-        using var server = new LoopbackServer();
-
         AuthState = AuthState.Authenticating;
         ErrorMessage = null;
 
         try
         {
-            // Start loopback server — must happen BEFORE opening browser
-            // so the port is bound and ready to receive the callback.
-            // The server starts listening synchronously inside StartAndWaitForCallbackAsync
-            // before awaiting the connection. We need to build the URL first though,
-            // so we use a two-step approach: start + wait.
+            // Arm the protocol activation listener BEFORE opening the browser,
+            // so a fast redirect can't race ahead of the awaiter.
+            var listenerTask = _protocolListener.WaitForCallbackAsync(TimeSpan.FromSeconds(120));
 
-            // Use a TcpListener to find the port, then build the URL
-            var serverTask = server.StartAndWaitForCallbackAsync(TimeSpan.FromSeconds(120));
-
-            var redirectUri = server.RedirectUri;
+            var redirectUri = NativeRedirectUri;
             var redirectEncoded = Uri.EscapeDataString(redirectUri);
             var loginUrl = $"{ServerUrl.TrimEnd('/')}/native-auth?redirect_uri={redirectEncoded}";
 
@@ -175,7 +187,7 @@ public partial class AuthViewModel : ObservableObject
                 UseShellExecute = true,
             });
 
-            var callbackUri = await serverTask;
+            var callbackUri = await listenerTask;
 
             // Extract authorization code from callback
             var query = System.Web.HttpUtility.ParseQueryString(callbackUri.Query);
@@ -326,6 +338,7 @@ public partial class AuthViewModel : ObservableObject
                 {
                     _credentials.BackendApiUrl = url;
                     _apiClient.BaseUrl = url;
+                    _practiceApiClient.BaseUrl = url;
                 }
             }
             if (doc.RootElement.TryGetProperty("firebaseApiKey", out var fbKey))
