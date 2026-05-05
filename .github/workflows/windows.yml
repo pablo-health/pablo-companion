@@ -51,6 +51,28 @@ jobs:
       - name: Restore NuGet packages (with vulnerability audit)
         run: dotnet restore windows/PabloCompanion.sln /p:NuGetAudit=true /p:NuGetAuditLevel=moderate
 
+      - name: Install Windows App Runtime framework
+        # The main project went framework-dependent for MSIX, so its build output
+        # no longer bundles WinAppSDK runtime DLLs. The test project transitively
+        # loses them too, and unpackaged vstest fails to COM-activate WinAppSDK
+        # types ("Class not registered"). Install the framework system-wide so
+        # the auto-initializer's bootstrap call succeeds.
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem $env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk\*\tools\WindowsAppRuntimeInstall-x64.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $installer) {
+            Write-Host "Installer not in NuGet cache; downloading from aka.ms..."
+            $url = 'https://aka.ms/windowsappsdk/1.8/latest/windowsappruntimeinstall-x64.exe'
+            $tmp = Join-Path $env:RUNNER_TEMP 'WindowsAppRuntimeInstall-x64.exe'
+            Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+            $installer = Get-Item $tmp
+          }
+          Write-Host "Running: $($installer.FullName)"
+          & $installer.FullName --quiet
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
+            throw "WindowsAppRuntimeInstall failed with exit code $LASTEXITCODE"
+          }
+
       - name: Check C# formatting
         run: dotnet format windows/PabloCompanion.sln --verify-no-changes --verbosity diagnostic
 
