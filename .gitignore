@@ -23,6 +23,8 @@ SourcePackages/
 # Windows / .NET
 windows/**/bin/
 windows/**/obj/
+windows/**/AppPackages/
+windows/**/BundleArtifacts/
 .vs/
 *.user
 *.suo
