@@ -18,6 +18,14 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
+        ContentFrame.NavigationFailed += (_, e) =>
+        {
+            App.LogException(
+                $"Frame.NavigationFailed → {e.SourcePageType?.FullName}",
+                e.Exception);
+            e.Handled = true; // prevent app crash so we can see the log
+        };
+
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
         // WinUI 3 AppWindow.Resize uses physical pixels, so scale for DPI

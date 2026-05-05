@@ -53,20 +53,17 @@ public sealed partial class PracticeSessionPage : Page
             case PracticeWebSocketClient.PabloState.Listening:
                 PabloStateText.Text = "Pablo is listening...";
                 PabloIcon.Glyph = "\uE720"; // Microphone
-                PabloIndicator.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["PabloSage"]
-                    ?? App.Current.Resources["PabloSage"] as Microsoft.UI.Xaml.Media.Brush;
+                PabloIndicator.Background = AppBrush("PabloSage");
                 break;
             case PracticeWebSocketClient.PabloState.Processing:
                 PabloStateText.Text = "Pablo is thinking...";
                 PabloIcon.Glyph = "\uE945"; // Processing
-                PabloIndicator.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["PabloSky"]
-                    ?? App.Current.Resources["PabloSky"] as Microsoft.UI.Xaml.Media.Brush;
+                PabloIndicator.Background = AppBrush("PabloSky");
                 break;
             case PracticeWebSocketClient.PabloState.Speaking:
                 PabloStateText.Text = "Pablo is speaking...";
                 PabloIcon.Glyph = "\uE767"; // Volume
-                PabloIndicator.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["PabloHoney"]
-                    ?? App.Current.Resources["PabloHoney"] as Microsoft.UI.Xaml.Media.Brush;
+                PabloIndicator.Background = AppBrush("PabloHoney");
                 break;
         }
 
@@ -138,5 +135,13 @@ public sealed partial class PracticeSessionPage : Page
     private void EndSession_Click(object sender, RoutedEventArgs e)
     {
         _viewModel.EndSessionCommand.Execute(null);
+    }
+
+    private static Microsoft.UI.Xaml.Media.Brush? AppBrush(string key)
+    {
+        var resources = App.Current.Resources;
+        return resources.TryGetValue(key, out var value)
+            ? value as Microsoft.UI.Xaml.Media.Brush
+            : null;
     }
 }

@@ -94,31 +94,40 @@ public sealed partial class PracticeViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task StartSessionAsync(PracticeTopic topic)
     {
+        App.Log($"[Practice] StartSessionAsync topic={topic.Id} ({topic.Name})");
         SelectedTopic = topic;
         CurrentPhase = Phase.Connecting;
 
         try
         {
             // 1. Create session via REST
+            App.Log($"[Practice] POST /api/practice/sessions baseUrl={_apiClient.BaseUrl}");
             var response = await _apiClient.CreateSessionAsync(topic.Id);
             SessionId = response.SessionId;
+            App.Log($"[Practice] CreateSession ok session={response.SessionId} ticket.len={response.WsTicket.Length}");
 
             // 2. Connect WebSocket
             var wsUri = _apiClient.BuildWebSocketUri(response.WsTicket);
+            App.Log($"[Practice] ws connect → {wsUri.Host}:{wsUri.Port}{wsUri.AbsolutePath}");
             await _wsClient.ConnectAsync(wsUri);
+            App.Log($"[Practice] ws connect returned, state={_wsClient.State}");
 
             // 3. Start mic capture
             _micCapture.Start(SelectedMicId);
+            App.Log($"[Practice] mic started (deviceId={SelectedMicId ?? "default"})");
 
             // 4. Start audio player
             _audioPlayer.Start();
+            App.Log("[Practice] audio player started");
 
             // 5. Wait briefly for auth, then send session_start
             await Task.Delay(500);
             _wsClient.StartSession(response.SessionId);
+            App.Log($"[Practice] sent session_start session={response.SessionId}");
         }
         catch (Exception ex)
         {
+            App.LogException("[Practice] StartSessionAsync failed", ex);
             Cleanup();
             ErrorMessage = $"Failed to start practice session: {ex.Message}";
             CurrentPhase = Phase.Idle;
