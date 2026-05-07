@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
+using System.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
 
 namespace PabloCompanion.Views;
@@ -13,6 +15,7 @@ public sealed partial class MainWindow : Window
 
     private readonly AuthViewModel _authVm;
     private readonly SubscriptionViewModel _subscriptionVm;
+    private readonly DeepLinkRouter _deepLinks;
 
     public MainWindow()
     {
@@ -41,6 +44,9 @@ public sealed partial class MainWindow : Window
 
         _subscriptionVm = App.Services.GetRequiredService<SubscriptionViewModel>();
         SubscriptionBannerControl.Bind(_subscriptionVm);
+
+        _deepLinks = App.Services.GetRequiredService<DeepLinkRouter>();
+        _deepLinks.UriReceived += OnDeepLinkReceived;
 
         // Refresh subscription status when a 403 is detected
         var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
@@ -90,6 +96,8 @@ public sealed partial class MainWindow : Window
                 ContentFrame.Navigate(typeof(DayPage));
                 NavView.SelectedItem = NavView.MenuItems[0];
             }
+
+            TryDrainDeepLink();
         }
         else
         {
@@ -97,6 +105,35 @@ public sealed partial class MainWindow : Window
             NavView.Visibility = Visibility.Collapsed;
             _subscriptionVm.ClearAllData();
         }
+    }
+
+    private void OnDeepLinkReceived(object? sender, Uri uri)
+    {
+        DispatcherQueue.TryEnqueue(TryDrainDeepLink);
+    }
+
+    private void TryDrainDeepLink()
+    {
+        if (_authVm.AuthState != AuthState.Authenticated) return;
+        var uri = _deepLinks.TakePending();
+        if (uri is null) return;
+
+        if (string.Equals(uri.Host, "session", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(uri.AbsolutePath.Trim('/'), "start", StringComparison.OrdinalIgnoreCase))
+        {
+            var appointmentId = HttpUtility.ParseQueryString(uri.Query).Get("appointment");
+            if (string.IsNullOrEmpty(appointmentId))
+            {
+                System.Diagnostics.Debug.WriteLine($"[DeepLink] session/start without appointment param (deferred): {uri}");
+                return;
+            }
+
+            ContentFrame.Navigate(typeof(DayPage), new DayPage.StartFromAppointmentArgs(appointmentId));
+            NavView.SelectedItem = NavView.MenuItems[0];
+            return;
+        }
+
+        System.Diagnostics.Debug.WriteLine($"[DeepLink] Unsupported deep link (deferred): {uri}");
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)

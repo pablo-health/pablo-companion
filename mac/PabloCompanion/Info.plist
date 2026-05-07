@@ -7,6 +7,19 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>health.pablo.companion.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pablohealth</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+		</dict>
+	</array>
 	<key>SUFeedURL</key>
 	<string>https://pablo-health.github.io/pablo-companion/appcast.xml</string>
 	<key>SUPublicEDKey</key>
