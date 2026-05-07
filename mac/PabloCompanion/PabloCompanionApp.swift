@@ -6,6 +6,7 @@ import SwiftUI
 @main
 struct PabloCompanionApp: App {
     @State private var authVM = AuthViewModel()
+    @State private var deepLinks = DeepLinkRouter()
 
     private let updaterController: SPUStandardUpdaterController
 
@@ -20,9 +21,13 @@ struct PabloCompanionApp: App {
 
     var body: some Scene {
         Window("Pablo", id: "main") {
-            ContentView(authVM: authVM)
+            ContentView(authVM: authVM, deepLinks: deepLinks)
                 .task {
                     await requestScreenCapturePermission()
+                }
+                .onOpenURL { url in
+                    DeepLinkRouter.logger.info("Received deep link: \(url.absoluteString, privacy: .public)")
+                    deepLinks.pendingURL = url
                 }
         }
         .windowResizability(.contentMinSize)

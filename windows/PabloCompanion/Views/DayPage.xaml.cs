@@ -10,6 +10,13 @@ namespace PabloCompanion.Views;
 
 public sealed partial class DayPage : Page
 {
+    /// <summary>
+    /// Navigation parameter signalling that the page should kick off a recording
+    /// for a specific appointment as soon as it loads. Used by deep-link handling
+    /// in <see cref="MainWindow"/>.
+    /// </summary>
+    public sealed record StartFromAppointmentArgs(string AppointmentId);
+
     private readonly SessionViewModel _viewModel;
     private readonly PatientViewModel _patientVm;
     private readonly RecordingViewModel _recordingVm;
@@ -35,6 +42,22 @@ public sealed partial class DayPage : Page
         await _viewModel.LoadTodaySessionsAsync();
         _viewModel.StartPolling();
         UpdateUI();
+
+        if (e.Parameter is StartFromAppointmentArgs args)
+        {
+            await StartFromAppointmentAsync(args.AppointmentId);
+        }
+    }
+
+    private async Task StartFromAppointmentAsync(string appointmentId)
+    {
+        // Don't clobber an in-flight recording. If the therapist clicks a deep
+        // link mid-session, leave them alone.
+        if (_recordingVm.State != Models.RecordingUIState.Idle) return;
+
+        var session = await _viewModel.StartSessionFromAppointmentAsync(appointmentId);
+        if (session is null) return;
+        await _viewModel.StartSessionAsync(session.Id);
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
