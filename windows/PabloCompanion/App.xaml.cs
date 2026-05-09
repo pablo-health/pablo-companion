@@ -113,7 +113,9 @@ public partial class App : Application
         // before the browser hand-off.)
         SeedDeepLinkFromInitialActivation();
 
-        // Resume pending transcription uploads after launch
+        DropLegacyArtifacts();
+
+        // Adopt orphaned recordings + resume pending transcription uploads after launch.
         _ = ResumePendingUploadsAsync();
     }
 
@@ -127,6 +129,35 @@ public partial class App : Application
         Services.GetService<Services.DeepLinkRouter>()?.Deliver(pa.Uri);
     }
 
+    /// <summary>
+    /// Best-effort cleanup of artifacts left over from earlier app versions:
+    ///   * <c>TranscriptionSettings.json</c> — held the now-removed <c>autoTranscribe</c> toggle
+    ///   * <c>Models\</c> — local Whisper <c>ggml-*.bin</c> files (~4 GB) from the
+    ///     pre-cloud-only architecture, when transcription ran on-device
+    /// Both are unused by the current code path. Safe on fresh installs.
+    /// </summary>
+    private static void DropLegacyArtifacts()
+    {
+        var appData = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PabloCompanion");
+
+        try
+        {
+            var legacySettings = Path.Combine(appData, "TranscriptionSettings.json");
+            if (File.Exists(legacySettings)) File.Delete(legacySettings);
+        }
+        catch { /* never block launch on cleanup */ }
+
+        try
+        {
+            var legacyModels = Path.Combine(appData, "Models");
+            if (Directory.Exists(legacyModels))
+                Directory.Delete(legacyModels, recursive: true);
+        }
+        catch { /* never block launch on cleanup */ }
+    }
+
     private static void ConfigureServices(ServiceCollection services)
     {
         services.AddSingleton<Services.CredentialManager>();
@@ -138,6 +169,7 @@ public partial class App : Application
         services.AddSingleton<Services.SessionRecordingStore>();
 
         services.AddSingleton<Services.PendingTranscriptionStore>();
+        services.AddSingleton<Services.RecordingDirectoryScanner>();
         services.AddSingleton<Services.PlaybackService>();
         services.AddSingleton<Services.InactivityMonitor>();
         services.AddSingleton<Services.EhrNavigator>();
@@ -161,12 +193,21 @@ public partial class App : Application
         {
             // Small delay to let the UI settle before background work
             await Task.Delay(2000);
+
+            // First, sweep the disk for orphaned recordings and adopt them into
+            // the pending queue. This is the safety net for any path where audio
+            // ended up on disk but never reached the upload pipeline.
+            var scanner = Services.GetRequiredService<Services.RecordingDirectoryScanner>();
+            var adopted = scanner.AdoptOrphans();
+            if (adopted > 0) Log($"Adopted {adopted} orphaned recording(s) into pending queue.");
+
             var transcriptionVm = Services.GetRequiredService<ViewModels.TranscriptionViewModel>();
             await transcriptionVm.ResumePendingUploadsAsync();
         }
-        catch
+        catch (Exception ex)
         {
             // Best effort — don't crash on resume failures
+            LogException("ResumePendingUploadsAsync", ex);
         }
     }
 }
