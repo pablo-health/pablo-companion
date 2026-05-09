@@ -60,12 +60,15 @@ public sealed class PracticeWebSocketClient : IDisposable
 
         try
         {
+            PabloCompanion.App.Log($"[WS] connecting to {uri}");
             await _ws.ConnectAsync(uri, _cts.Token);
+            PabloCompanion.App.Log("[WS] connected, entering authenticating state");
             SetState(ConnectionState.Authenticating);
             _ = Task.Run(() => ReceiveLoopAsync(_cts.Token));
         }
         catch (Exception ex)
         {
+            PabloCompanion.App.LogException("[WS] connect failed", ex);
             ErrorOccurred?.Invoke($"Connection failed: {ex.Message}", true);
             SetState(ConnectionState.Disconnected);
         }
@@ -205,6 +208,7 @@ public sealed class PracticeWebSocketClient : IDisposable
 
     private void HandleTextMessage(string text)
     {
+        PabloCompanion.App.Log($"[WS] recv text: {(text.Length > 200 ? text[..200] + "..." : text)}");
         using var doc = JsonDocument.Parse(text);
         var root = doc.RootElement;
 
@@ -308,6 +312,7 @@ public sealed class PracticeWebSocketClient : IDisposable
     private void SetState(ConnectionState newState)
     {
         lock (_lock) _state = newState;
+        PabloCompanion.App.Log($"[WS] state → {newState}");
         ConnectionStateChanged?.Invoke(newState);
     }
 

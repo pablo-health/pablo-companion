@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.IO;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
@@ -9,15 +12,90 @@ public partial class App : Application
     public static IServiceProvider Services { get; private set; } = null!;
     public static Microsoft.UI.Dispatching.DispatcherQueue? UiDispatcherQueue { get; private set; }
 
+    public static string CrashLogPath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "PabloCompanion",
+        "crash.log");
+
+    public static void Log(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(CrashLogPath)!);
+            var line = $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}";
+            File.AppendAllText(CrashLogPath, line);
+            Debug.WriteLine(line);
+        }
+        catch { /* never crash on logging */ }
+    }
+
     private Window? _window;
 
     public App()
     {
+        WireUpCrashLogging();
         InitializeComponent();
 
         var services = new ServiceCollection();
         ConfigureServices(services);
         Services = services.BuildServiceProvider();
+    }
+
+    private void WireUpCrashLogging()
+    {
+        UnhandledException += (_, e) =>
+        {
+            LogCrash("Application.UnhandledException", e.Exception, e.Message);
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            LogCrash("AppDomain.UnhandledException",
+                e.ExceptionObject as Exception,
+                $"IsTerminating={e.IsTerminating}");
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            LogCrash("TaskScheduler.UnobservedTaskException", e.Exception, null);
+            e.SetObserved();
+        };
+    }
+
+    private static void LogCrash(string source, Exception? ex, string? extra)
+        => LogException(source, ex, extra);
+
+    public static void LogException(string source, Exception? ex, string? extra = null)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(CrashLogPath)!);
+            var sb = new StringBuilder();
+            sb.AppendLine($"=== {DateTime.Now:O} {source} ===");
+            if (!string.IsNullOrEmpty(extra)) sb.AppendLine(extra);
+
+            var current = ex;
+            int depth = 0;
+            while (current != null)
+            {
+                var prefix = depth == 0 ? "Exception" : $"Inner[{depth}]";
+                sb.AppendLine($"{prefix}: {current.GetType().FullName}");
+                sb.AppendLine($"  HResult: 0x{current.HResult:X8}");
+                sb.AppendLine($"  Message: {current.Message}");
+                if (!string.IsNullOrEmpty(current.StackTrace))
+                {
+                    sb.AppendLine("  StackTrace:");
+                    sb.AppendLine(current.StackTrace);
+                }
+                current = current.InnerException;
+                depth++;
+            }
+            sb.AppendLine();
+            File.AppendAllText(CrashLogPath, sb.ToString());
+            Debug.WriteLine(sb.ToString());
+        }
+        catch
+        {
+            // Never let logging itself crash the app.
+        }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
