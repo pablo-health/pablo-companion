@@ -3,6 +3,7 @@ import SwiftUI
 /// Main view — authenticates, then shows four-tab navigation.
 struct ContentView: View {
     var authVM: AuthViewModel
+    var deepLinks: DeepLinkRouter
     @State var sessionVM = SessionViewModel()
     @State private var recordingVM = RecordingViewModel()
     @State private var uploadVM = UploadViewModel()
@@ -14,7 +15,7 @@ struct ContentView: View {
     @State private var viewingTranscript: TranscriptViewerItem?
     @State private var detailSession: Session?
     @State var activeSessionId: String?
-    @State private var selectedTab = 0
+    @State var selectedTab = 0
     @State private var versionBlock: UpdateRequiredView.Reason?
     @State private var screenLockObserver: NSObjectProtocol?
 
@@ -114,6 +115,13 @@ struct ContentView: View {
             if case .unauthenticated = newState {
                 clearAllPHI()
             }
+            if case .authenticated = newState {
+                drainPendingDeepLink()
+            }
+        }
+        .onChange(of: deepLinks.pendingURL) { _, url in
+            guard url != nil else { return }
+            drainPendingDeepLink()
         }
         .onChange(of: uploadVM.backendURL) { _, newURL in
             patientVM.backendURL = newURL
@@ -205,13 +213,11 @@ struct ContentView: View {
 
     // MARK: - Session orchestration
 
-    private func startSessionFromAppointment(_ appointment: Appointment) {
+    func startSession(fromAppointmentId appointmentId: String) {
         Task {
-            // Create a session linked to this appointment
             guard let session = await sessionVM.startSessionFromAppointment(
-                appointmentId: appointment.id
+                appointmentId: appointmentId
             ) else { return }
-            // Transition session to in_progress
             guard await sessionVM.startSession(session.id) != nil else { return }
             activeSessionId = session.id
             recordingVM.activeSessionId = session.id
@@ -346,7 +352,7 @@ struct ContentView: View {
             transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
-            onStartSession: { startSessionFromAppointment($0) },
+            onStartSession: { startSession(fromAppointmentId: $0.id) },
             onQuickStart: { handleQuickStart($0) },
             onStopRecording: {
                 Task {
