@@ -210,26 +210,37 @@ public partial class SessionViewModel : ObservableObject
     [RelayCommand]
     public async Task EndSessionAsync(string sessionId)
     {
+        // Stop recording first.
         try
         {
-            // Stop recording first
             if (_recordingVm.State != Models.RecordingUIState.Idle)
                 await _recordingVm.StopRecordingAsync();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("EndSessionAsync.StopRecording", ex);
+            // Continue — we still want to enqueue any partial recording for upload.
+        }
 
+        // Enqueue + attempt upload BEFORE the status update. This guarantees the
+        // audio lands in PendingTranscriptionStore on disk; if anything below
+        // throws or the process dies, ResumePendingUploadsAsync recovers it on
+        // next launch.
+        await _transcriptionVm.UploadAudioAsync(sessionId);
+
+        // Mark the session recording_complete on the backend. Failures here are
+        // non-fatal to the upload — the audio is already enqueued.
+        try
+        {
             await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.RecordingComplete);
             ActiveSession = null;
-
-            // Upload audio to Pablo for server-side transcription. On failure it
-            // lands in PendingTranscriptionStore and the app retries on next launch.
-            if (_transcriptionVm.AutoTranscribe)
-                _ = _transcriptionVm.UploadAudioAsync(sessionId);
-
-            await LoadTodaySessionsAsync();
         }
         catch (PabloException)
         {
             ErrorMessage = "Failed to end session.";
         }
+
+        await LoadTodaySessionsAsync();
     }
 
     [RelayCommand]

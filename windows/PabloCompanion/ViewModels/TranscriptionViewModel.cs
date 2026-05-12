@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AudioCapture.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using PabloCompanion.Services;
@@ -27,16 +26,6 @@ public partial class TranscriptionViewModel : ObservableObject
     private readonly APIClient _apiClient;
     private readonly CredentialManager _credentials;
 
-    private static readonly string SettingsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PabloCompanion", "TranscriptionSettings.json");
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     // Exponential backoff — matches macOS (PendingTranscriptStore behavior).
     private const int BaseBackoffSeconds = 300;    // 5 minutes
     private const int MaxBackoffSeconds = 14400;   // 4 hours
@@ -58,9 +47,6 @@ public partial class TranscriptionViewModel : ObservableObject
     public partial string? ActiveSessionId { get; set; }
 
     [ObservableProperty]
-    public partial bool AutoTranscribe { get; set; } = true;
-
-    [ObservableProperty]
     public partial int PendingUploadCount { get; set; }
 
     public TranscriptionViewModel(
@@ -74,11 +60,8 @@ public partial class TranscriptionViewModel : ObservableObject
         _apiClient = apiClient;
         _credentials = credentials;
 
-        LoadSettings();
         PendingUploadCount = _pendingStore.GetAll().Length;
     }
-
-    partial void OnAutoTranscribeChanged(bool value) => SaveSettings();
 
     /// <summary>
     /// Enqueue a session for cloud transcription and kick off an immediate
@@ -220,41 +203,4 @@ public partial class TranscriptionViewModel : ObservableObject
             return false;
         }
     }
-
-    // --- settings persistence ---
-
-    private void LoadSettings()
-    {
-        if (!File.Exists(SettingsPath)) return;
-        try
-        {
-            var json = File.ReadAllText(SettingsPath);
-            var settings = JsonSerializer.Deserialize<TranscriptionSettings>(json, JsonOptions);
-            if (settings != null)
-                AutoTranscribe = settings.AutoTranscribe;
-        }
-        catch
-        {
-            // Corrupt settings — use defaults.
-        }
-    }
-
-    private void SaveSettings()
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(SettingsPath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-
-            var settings = new TranscriptionSettings(AutoTranscribe);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
-        }
-        catch
-        {
-            // Best-effort — non-critical.
-        }
-    }
-
-    private sealed record TranscriptionSettings(bool AutoTranscribe);
 }

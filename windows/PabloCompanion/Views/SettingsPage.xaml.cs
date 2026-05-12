@@ -33,9 +33,38 @@ public sealed partial class SettingsPage : Page
         await _recordingVm.LoadAudioDevicesAsync();
         PopulateMicDropdown();
 
-        AutoTranscribeToggle.IsOn = _transcriptionVm.AutoTranscribe;
+        UpdatePendingUploadsPanel();
+        _transcriptionVm.PropertyChanged += TranscriptionVm_PropertyChanged;
 
         VersionText.Text = "Pablo Companion (Windows) v1.0.0";
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        _transcriptionVm.PropertyChanged -= TranscriptionVm_PropertyChanged;
+    }
+
+    private void TranscriptionVm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TranscriptionViewModel.PendingUploadCount))
+            UpdatePendingUploadsPanel();
+    }
+
+    private void UpdatePendingUploadsPanel()
+    {
+        var count = _transcriptionVm.PendingUploadCount;
+        if (count > 0)
+        {
+            PendingUploadsPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+            PendingUploadsText.Text = count == 1
+                ? "1 recording pending upload."
+                : $"{count} recordings pending upload.";
+        }
+        else
+        {
+            PendingUploadsPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+        }
     }
 
     private async void HealthCheck_Click(object sender, RoutedEventArgs e)
@@ -87,9 +116,18 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void AutoTranscribe_Toggled(object sender, RoutedEventArgs e)
+    private async void RetryUploads_Click(object sender, RoutedEventArgs e)
     {
-        _transcriptionVm.AutoTranscribe = AutoTranscribeToggle.IsOn;
+        RetryUploadsButton.IsEnabled = false;
+        try
+        {
+            await _transcriptionVm.ForceRetryPendingUploadsAsync();
+        }
+        finally
+        {
+            RetryUploadsButton.IsEnabled = true;
+            UpdatePendingUploadsPanel();
+        }
     }
 
     private void SignOut_Click(object sender, RoutedEventArgs e)
