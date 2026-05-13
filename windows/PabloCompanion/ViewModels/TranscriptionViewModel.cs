@@ -1,5 +1,6 @@
 using AudioCapture.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
+using PabloCompanion.Models;
 using PabloCompanion.Services;
 
 namespace PabloCompanion.ViewModels;
@@ -123,16 +124,25 @@ public partial class TranscriptionViewModel : ObservableObject
         PendingUploadCount = pending.Length;
         if (pending.Length == 0) return;
 
+        App.Log($"ResumePendingUploads: {pending.Length} item(s) in queue");
+
         foreach (var item in pending)
         {
-            if (item.RetryCount >= MaxAutoRetries) continue;
+            if (item.RetryCount >= MaxAutoRetries)
+            {
+                App.Log($"  skip session={item.SessionId} retry={item.RetryCount} (max retries exhausted)");
+                continue;
+            }
             if (item.RetryCount > 0)
             {
                 var backoffSeconds = Math.Min(
                     BaseBackoffSeconds * Math.Pow(2, item.RetryCount - 1),
                     MaxBackoffSeconds);
                 if ((DateTime.UtcNow - item.CreatedAt).TotalSeconds < backoffSeconds)
+                {
+                    App.Log($"  skip session={item.SessionId} retry={item.RetryCount} (backoff)");
                     continue;
+                }
             }
 
             await UploadFromPendingAsync(item);
@@ -194,13 +204,53 @@ public partial class TranscriptionViewModel : ObservableObject
             await _apiClient.UploadAudioAsync(item.SessionId, mic.Path, sys?.Path);
             _pendingStore.Remove(item.SessionId);
             PendingUploadCount = _pendingStore.GetAll().Length;
+            App.Log($"  upload OK session={item.SessionId} retry={item.RetryCount}");
             return true;
+        }
+        catch (PabloException ex) when (IsInvalidStatus(ex))
+        {
+            // Backend rejected because session is still in "recording" — usually a
+            // session from a buggy build where EndSessionAsync uploaded before the
+            // status PATCH. Heal it: PATCH to recording_complete, retry the upload
+            // once. If either step fails, fall back to the normal retry/backoff path.
+            App.Log($"  upload 400 INVALID_STATUS session={item.SessionId} — attempting self-heal");
+            try
+            {
+                await _apiClient.UpdateSessionStatusAsync(item.SessionId, SessionStatus.RecordingComplete);
+                await _apiClient.UploadAudioAsync(item.SessionId, mic.Path, sys?.Path);
+                _pendingStore.Remove(item.SessionId);
+                PendingUploadCount = _pendingStore.GetAll().Length;
+                App.Log($"  upload OK session={item.SessionId} (self-healed)");
+                return true;
+            }
+            catch (Exception innerEx)
+            {
+                _pendingStore.IncrementRetry(item.SessionId);
+                ErrorMessage = $"Audio upload failed: {innerEx.Message}";
+                App.Log($"  upload FAIL session={item.SessionId} retry={item.RetryCount}->{item.RetryCount + 1} self-heal-failed type={innerEx.GetType().Name}{FormatStatusCode(innerEx.Message)}");
+                return false;
+            }
         }
         catch (Exception ex)
         {
             _pendingStore.IncrementRetry(item.SessionId);
             ErrorMessage = $"Audio upload failed: {ex.Message}";
+            App.Log($"  upload FAIL session={item.SessionId} retry={item.RetryCount}->{item.RetryCount + 1} type={ex.GetType().Name}{FormatStatusCode(ex.Message)}");
             return false;
         }
+    }
+
+    private static bool IsInvalidStatus(PabloException ex) =>
+        ex.StatusCode == 400 && ex.ErrorCode == "INVALID_STATUS";
+
+    /// <summary>
+    /// Extracts only the HTTP status digits from the upload exception (e.g. "(401)").
+    /// Discards the rest of the message — the response body can contain PHI/PII.
+    /// </summary>
+    private static string FormatStatusCode(string? message)
+    {
+        if (string.IsNullOrEmpty(message)) return "";
+        var match = System.Text.RegularExpressions.Regex.Match(message, @"\((\d{3})\)");
+        return match.Success ? $" status={match.Groups[1].Value}" : "";
     }
 }

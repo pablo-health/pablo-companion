@@ -78,16 +78,40 @@ public class APIClient
     {
         var statusCode = (ushort)response.StatusCode;
         var body = await response.Content.ReadAsStringAsync();
+        var (envelopeMessage, errorCode) = TryParseErrorEnvelope(body);
 
         throw statusCode switch
         {
-            401 => new PabloException(statusCode, "Unauthenticated"),
-            403 => new PabloException(statusCode, "Forbidden"),
-            404 => new PabloException(statusCode, string.IsNullOrWhiteSpace(body) ? "Not found" : body),
-            409 => new PabloException(statusCode, string.IsNullOrWhiteSpace(body) ? "Conflict" : body),
-            426 => new PabloException(statusCode, "Update required"),
-            _ => new PabloException(statusCode, $"HTTP {statusCode}: {body}"),
+            401 => new PabloException(statusCode, "Unauthenticated", errorCode),
+            403 => new PabloException(statusCode, "Forbidden", errorCode),
+            404 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Not found" : body), errorCode),
+            409 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Conflict" : body), errorCode),
+            426 => new PabloException(statusCode, "Update required", errorCode),
+            _ => new PabloException(statusCode, envelopeMessage ?? $"HTTP {statusCode}: {body}", errorCode),
         };
+    }
+
+    /// <summary>
+    /// Parses the standard backend error envelope (<c>{error: {code, message, details}}</c>)
+    /// into <c>(message, code)</c>. Returns (null, null) for non-JSON or unrecognized bodies.
+    /// </summary>
+    private static (string? message, string? code) TryParseErrorEnvelope(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return (null, null);
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (null, null);
+            if (!doc.RootElement.TryGetProperty("error", out var err) ||
+                err.ValueKind != JsonValueKind.Object) return (null, null);
+
+            var msg = err.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String
+                ? m.GetString() : null;
+            var code = err.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String
+                ? c.GetString() : null;
+            return (msg, code);
+        }
+        catch (JsonException) { return (null, null); }
     }
 
     /// <summary>
@@ -166,7 +190,7 @@ public class APIClient
 
     // ── Sessions ────────────────────────────────────────────────────────────
 
-    public async Task<Session[]> FetchTodaySessionsAsync(string timezone)
+    public virtual async Task<Session[]> FetchTodaySessionsAsync(string timezone)
     {
         using var request = CreateRequest(HttpMethod.Get,
             $"/api/sessions/today?timezone={Uri.EscapeDataString(timezone)}");
@@ -201,7 +225,7 @@ public class APIClient
         return await SendAsync<SessionListResponse>(request);
     }
 
-    public async Task<Session> UpdateSessionStatusAsync(string sessionId, SessionStatus status)
+    public virtual async Task<Session> UpdateSessionStatusAsync(string sessionId, SessionStatus status)
     {
         using var request = CreateRequest(HttpMethod.Patch,
             $"/api/sessions/{Uri.EscapeDataString(sessionId)}/status");
@@ -370,11 +394,15 @@ public class APIClient
         request.Headers.Add("X-Client-Platform", ClientPlatform);
 
         var response = await Http.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Audio upload failed ({(int)response.StatusCode}): {body}");
+        {
+            // Throws PabloException with backend error code populated when present.
+            // Lets UploadFromPendingAsync branch on INVALID_STATUS for self-heal.
+            await HandleErrorResponse(response);
+        }
 
+        var body = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<AudioUploadResponse>(body, JsonOptions)
             ?? throw new InvalidOperationException("Failed to parse audio upload response");
     }

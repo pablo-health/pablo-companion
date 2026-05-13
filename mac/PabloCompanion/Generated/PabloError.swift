@@ -6,7 +6,7 @@ enum PabloError: LocalizedError, Sendable {
     case audioPreprocessing(message: String)
     case whisperInit(message: String)
     case whisperTranscribe(message: String)
-    case apiClient(statusCode: UInt16, message: String)
+    case apiClient(statusCode: UInt16, message: String, code: String? = nil)
     case jsonParse(message: String)
     case unauthenticated
     case forbidden
@@ -22,7 +22,7 @@ enum PabloError: LocalizedError, Sendable {
             return "Whisper model init error: \(message)"
         case .whisperTranscribe(let message):
             return "Whisper transcription error: \(message)"
-        case let .apiClient(statusCode, message):
+        case let .apiClient(statusCode, message, _):
             return "API error (HTTP \(statusCode)): \(message)"
         case .jsonParse(let message):
             return "JSON parse error: \(message)"

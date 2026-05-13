@@ -11,7 +11,9 @@ extension APIClient {
 
         guard !(200 ... 299).contains(statusCode) else { return }
 
-        let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+        let rawBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+        let envelope = APIClient.parseErrorEnvelope(data)
+        let message = envelope?.message ?? rawBody
 
         switch statusCode {
         case 401:
@@ -25,8 +27,25 @@ extension APIClient {
         case 426:
             throw PabloError.updateRequired(message: message)
         default:
-            throw PabloError.apiClient(statusCode: UInt16(statusCode), message: message)
+            throw PabloError.apiClient(
+                statusCode: UInt16(statusCode),
+                message: message,
+                code: envelope?.code
+            )
         }
+    }
+
+    /// Parses the standard backend error envelope
+    /// (`{error: {code, message, details}}`) into a `(message, code)` pair.
+    /// Returns nil for bodies that don't match the envelope shape.
+    static func parseErrorEnvelope(_ data: Data) -> (message: String?, code: String?)? {
+        guard
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let err = json["error"] as? [String: Any]
+        else { return nil }
+        let msg = err["message"] as? String
+        let code = err["code"] as? String
+        return (msg, code)
     }
 
     // MARK: - Version Comparison

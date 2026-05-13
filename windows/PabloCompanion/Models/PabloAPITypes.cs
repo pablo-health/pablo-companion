@@ -317,8 +317,18 @@ public class PabloException : Exception
 {
     public ushort StatusCode { get; }
 
-    public PabloException(ushort statusCode, string message) : base(message)
+    /// <summary>
+    /// Structured error code parsed from the backend's JSON envelope
+    /// (<c>{error: {code, message, details}}</c>). Null when the response
+    /// body wasn't a structured error or didn't carry a code. Lets callers
+    /// branch on semantic conditions like <c>INVALID_STATUS</c> without
+    /// regexing the message.
+    /// </summary>
+    public string? ErrorCode { get; }
+
+    public PabloException(ushort statusCode, string message, string? errorCode = null) : base(message)
     {
         StatusCode = statusCode;
+        ErrorCode = errorCode;
     }
 }

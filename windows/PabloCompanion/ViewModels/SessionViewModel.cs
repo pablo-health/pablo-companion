@@ -222,24 +222,30 @@ public partial class SessionViewModel : ObservableObject
             // Continue — we still want to enqueue any partial recording for upload.
         }
 
-        // Enqueue + attempt upload BEFORE the status update. This guarantees the
-        // audio lands in PendingTranscriptionStore on disk; if anything below
-        // throws or the process dies, ResumePendingUploadsAsync recovers it on
-        // next launch.
-        await _transcriptionVm.UploadAudioAsync(sessionId);
-
-        // Mark the session recording_complete on the backend. Failures here are
-        // non-fatal to the upload — the audio is already enqueued.
+        // PATCH status BEFORE the upload — the backend's /upload-audio route
+        // (sessions.py:594-604) rejects anything outside {recording_complete,
+        // transcribing, failed} with 400 INVALID_STATUS. The audio's on-disk
+        // durability does NOT depend on doing the PATCH last: UploadAudioAsync
+        // enqueues to PendingTranscriptionStore before its network call
+        // (TranscriptionViewModel.cs:83-87), and UploadFromPendingAsync now
+        // self-heals from INVALID_STATUS, so a failed PATCH still recovers on
+        // the next ResumePendingUploadsAsync pass.
         try
         {
             await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.RecordingComplete);
-            ActiveSession = null;
         }
-        catch (PabloException)
+        catch (PabloException ex)
         {
-            ErrorMessage = "Failed to end session.";
+            App.LogException("EndSessionAsync.UpdateSessionStatus", ex);
+            ErrorMessage = "Failed to mark session complete.";
+            // Fall through — UploadAudioAsync still enqueues so we don't lose
+            // the audio. The pending-store retry loop will re-attempt the PATCH
+            // via the INVALID_STATUS self-heal on the next pass.
         }
 
+        await _transcriptionVm.UploadAudioAsync(sessionId);
+
+        ActiveSession = null;
         await LoadTodaySessionsAsync();
     }
 
