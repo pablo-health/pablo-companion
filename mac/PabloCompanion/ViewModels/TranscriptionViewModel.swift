@@ -194,10 +194,11 @@ final class TranscriptionViewModel {
                 )
                 logger.info("Audio upload succeeded: \(response.message ?? "ok")")
                 return true
-            } catch let PabloError.apiClient(statusCode, message, code) where statusCode == 400 && code == "INVALID_STATUS" {
+            } catch {
+                guard Self.isInvalidStatus(error) else { throw error }
                 // Backend rejects because the session is still in "recording".
                 // Heal: PATCH to recording_complete, retry the upload once.
-                logger.warning("Upload returned INVALID_STATUS — attempting self-heal (\(message))")
+                logger.warning("Upload returned INVALID_STATUS — attempting self-heal")
                 _ = try await apiClient.updateSessionStatus(
                     sessionId: sessionId,
                     status: .recordingComplete
@@ -215,6 +216,11 @@ final class TranscriptionViewModel {
             logger.error("Audio upload failed: \(error.localizedDescription)")
             return false
         }
+    }
+
+    private static func isInvalidStatus(_ error: Error) -> Bool {
+        guard case let PabloError.apiClient(statusCode, _, code) = error else { return false }
+        return statusCode == 400 && code == "INVALID_STATUS"
     }
 
     /// Retry every queued audio upload with exponential backoff. Mirrors
