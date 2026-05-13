@@ -183,8 +183,7 @@ struct ContentView: View {
 
         transcriptionVM.backendURL = uploadVM.backendURL
         transcriptionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
-        await transcriptionVM.retryPendingUploads()
-        await adoptAndRetryPendingAudioUploads()
+        await resumeAllPendingUploads()
         await subscriptionVM.refreshStatus()
 
         recordingVM.onRecordingCompleted = { [recordingVM, transcriptionVM] recording in
@@ -195,31 +194,6 @@ struct ContentView: View {
             }
         }
 
-    }
-
-    /// On launch, sweep the recordings directory for orphaned audio whose
-    /// recording-ID maps back to a known session via `sessionRecordingMap`,
-    /// enqueue them into `PendingAudioUploadStore`, and drive the retry loop.
-    /// Mirrors the Windows scanner + `ResumePendingUploadsAsync` (App.xaml.cs:190-212).
-    /// Orphans without a session linkage stay in the existing manual-attach UX.
-    private func adoptAndRetryPendingAudioUploads() async {
-        let orphans = recordingVM.orphanedRecordings()
-        if !orphans.isEmpty {
-            let recordingToSession = Dictionary(
-                uniqueKeysWithValues: recordingVM.sessionRecordingMap.map { ($1, $0) }
-            )
-            for orphan in orphans {
-                guard let sessionId = recordingToSession[orphan.id] else { continue }
-                guard let micURL = orphan.micPCMFileURL else { continue }
-                transcriptionVM.enqueuePendingAudioUpload(
-                    sessionId: sessionId,
-                    micPath: micURL.path,
-                    systemPath: orphan.systemPCMFileURL?.path,
-                    isEncrypted: orphan.isEncrypted
-                )
-            }
-        }
-        await transcriptionVM.retryPendingAudioUploads()
     }
 
     private func checkVersionCompatibility() {
@@ -401,12 +375,7 @@ struct ContentView: View {
             recordingError: recordingVM.persistentError,
             onRetryCapture: { Task { await recordingVM.retryCapture() } },
             onDismissError: { recordingVM.persistentError = nil },
-            onRetryUploads: {
-                Task {
-                    await transcriptionVM.forceRetryPendingUploads()
-                    await transcriptionVM.forceRetryPendingAudioUploads()
-                }
-            },
+            onRetryUploads: { Task { await forceRetryAllPendingUploads() } },
             onSwitchToSettings: { selectedTab = 3 },
             onViewTranscript: { showTranscript(for: $0) },
             onTranscribeSession: { transcribeSession($0) },
@@ -447,12 +416,7 @@ struct ContentView: View {
             transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
-            onRetryUploads: {
-                Task {
-                    await transcriptionVM.forceRetryPendingUploads()
-                    await transcriptionVM.forceRetryPendingAudioUploads()
-                }
-            },
+            onRetryUploads: { Task { await forceRetryAllPendingUploads() } },
             onViewTranscript: { showTranscript(for: $0) },
             onTranscribeSession: { transcribeSession($0) },
             onPlaySession: { playSession($0) },

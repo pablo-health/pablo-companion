@@ -194,9 +194,7 @@ final class TranscriptionViewModel {
                 )
                 logger.info("Audio upload succeeded: \(response.message ?? "ok")")
                 return true
-            } catch let PabloError.apiClient(statusCode, message, code)
-                where statusCode == 400 && code == "INVALID_STATUS"
-            {
+            } catch let PabloError.apiClient(statusCode, message, code) where statusCode == 400 && code == "INVALID_STATUS" {
                 // Backend rejects because the session is still in "recording".
                 // Heal: PATCH to recording_complete, retry the upload once.
                 logger.warning("Upload returned INVALID_STATUS — attempting self-heal (\(message))")
