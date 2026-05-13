@@ -85,7 +85,7 @@ final class TranscriptionViewModel {
     // (TranscriptionViewModel.cs:30-32) and with `retryPendingUploads` below.
     private let audioBaseBackoffSeconds: Double = 300
     private let audioMaxBackoffSeconds: Double = 14400
-    private let audioMaxAutoRetries: Int = 10
+    private let audioMaxAutoRetries = 10
 
     private var autoTranscribe: Bool {
         UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool ?? true

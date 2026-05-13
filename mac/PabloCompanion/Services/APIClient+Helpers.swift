@@ -39,13 +39,9 @@ extension APIClient {
     /// (`{error: {code, message, details}}`) into a `(message, code)` pair.
     /// Returns nil for bodies that don't match the envelope shape.
     static func parseErrorEnvelope(_ data: Data) -> (message: String?, code: String?)? {
-        guard
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let err = json["error"] as? [String: Any]
-        else { return nil }
-        let msg = err["message"] as? String
-        let code = err["code"] as? String
-        return (msg, code)
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let err = json?["error"] as? [String: Any] else { return nil }
+        return (err["message"] as? String, err["code"] as? String)
     }
 
     // MARK: - Version Comparison
