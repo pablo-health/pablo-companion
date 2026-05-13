@@ -70,12 +70,22 @@ final class TranscriptionViewModel {
 
     private var apiClient = APIClient()
     private var store = PendingTranscriptStore()
+    private var audioStore = PendingAudioUploadStore()
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "TranscriptionViewModel")
 
     /// The signed-in user's email, used to scope encryption keys.
     var userEmail: String? {
-        didSet { store.userEmail = userEmail }
+        didSet {
+            store.userEmail = userEmail
+            audioStore.userEmail = userEmail
+        }
     }
+
+    // Exponential backoff for audio-upload retries — parity with Windows
+    // (TranscriptionViewModel.cs:30-32) and with `retryPendingUploads` below.
+    private let audioBaseBackoffSeconds: Double = 300
+    private let audioMaxBackoffSeconds: Double = 14400
+    private let audioMaxAutoRetries = 10
 
     private var autoTranscribe: Bool {
         UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool ?? true
@@ -116,38 +126,178 @@ final class TranscriptionViewModel {
     }
 
     /// Uploads the therapist (mic) and client (system) audio to the backend.
+    ///
+    /// Persists the upload intent to `PendingAudioUploadStore` BEFORE the
+    /// network call so a process crash, sign-out, or network outage leaves
+    /// a recovery anchor on disk that `retryPendingAudioUploads` can drain
+    /// on the next launch. Mirrors Windows
+    /// `TranscriptionViewModel.UploadAudioAsync` (cs:70-115).
     private func uploadAudioToBackend(_ recording: LocalRecording, sessionId: String) async {
-        guard recording.micPCMFileURL != nil else {
+        guard let micURL = recording.micPCMFileURL else {
             states[recording.id] = .failed(message: "No mic audio file available")
             return
         }
 
+        // Enqueue BEFORE any network call. Idempotent — re-adding the same
+        // sessionId preserves `createdAt` and `retryCount`.
+        audioStore.add(
+            sessionId: sessionId,
+            micPath: micURL.path,
+            systemPath: recording.systemPCMFileURL?.path,
+            isEncrypted: recording.isEncrypted
+        )
+
         states[recording.id] = .running
         logger.info("Uploading audio to backend for server-side transcription")
 
-        do {
-            // Decrypt if needed
-            let pcm = try decryptPCMIfNeeded(recording)
-            defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
+        let succeeded = await attemptAudioUpload(
+            sessionId: sessionId,
+            micPath: micURL.path,
+            systemPath: recording.systemPCMFileURL?.path,
+            isEncrypted: recording.isEncrypted
+        )
 
+        if succeeded {
+            audioStore.remove(sessionId: sessionId)
+            states[recording.id] = .done(transcript: "")
+        } else {
+            audioStore.incrementRetry(sessionId: sessionId)
+            states[recording.id] = .failed(message: "Audio upload failed — will retry later")
+        }
+    }
+
+    /// Single upload attempt with INVALID_STATUS self-heal. Returns true on
+    /// success. Does NOT touch the pending store — callers manage that.
+    /// Path-based so retry flows can call it from `PendingAudioUpload` entries.
+    private func attemptAudioUpload(
+        sessionId: String,
+        micPath: String,
+        systemPath: String?,
+        isEncrypted: Bool
+    ) async -> Bool {
+        do {
+            let pcm = try decryptPCMIfNeeded(
+                micPath: micPath,
+                systemPath: systemPath,
+                isEncrypted: isEncrypted
+            )
+            defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
             let therapistURL = URL(fileURLWithPath: pcm.micPath)
             let clientURL = pcm.systemPath.map { URL(fileURLWithPath: $0) }
 
-            let response = try await apiClient.uploadAudio(
-                sessionId: sessionId,
-                therapistAudioURL: therapistURL,
-                clientAudioURL: clientURL
-            ) { _ in
-                // Progress callback — could wire to UI in future
+            do {
+                let response = try await apiClient.uploadAudio(
+                    sessionId: sessionId,
+                    therapistAudioURL: therapistURL,
+                    clientAudioURL: clientURL,
+                    onProgress: { _ in }
+                )
+                logger.info("Audio upload succeeded: \(response.message ?? "ok")")
+                return true
+            } catch {
+                guard Self.isInvalidStatus(error) else { throw error }
+                // Backend rejects because the session is still in "recording".
+                // Heal: PATCH to recording_complete, retry the upload once.
+                logger.warning("Upload returned INVALID_STATUS — attempting self-heal")
+                _ = try await apiClient.updateSessionStatus(
+                    sessionId: sessionId,
+                    status: .recordingComplete
+                )
+                let response = try await apiClient.uploadAudio(
+                    sessionId: sessionId,
+                    therapistAudioURL: therapistURL,
+                    clientAudioURL: clientURL,
+                    onProgress: { _ in }
+                )
+                logger.info("Audio upload succeeded after self-heal: \(response.message ?? "ok")")
+                return true
+            }
+        } catch {
+            logger.error("Audio upload failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private static func isInvalidStatus(_ error: Error) -> Bool {
+        guard case let PabloError.apiClient(statusCode, _, code) = error else { return false }
+        return statusCode == 400 && code == "INVALID_STATUS"
+    }
+
+    /// Retry every queued audio upload with exponential backoff. Mirrors
+    /// `retryPendingUploads` (transcript text) but operates on the audio
+    /// pending store. Invoked on app launch and after orphan adoption.
+    func retryPendingAudioUploads() async {
+        let pending = audioStore.loadAll()
+        guard !pending.isEmpty else { return }
+        logger.info("Retrying \(pending.count) pending audio upload(s)")
+
+        for item in pending {
+            if item.retryCount >= audioMaxAutoRetries {
+                logger.info("Skip audio session=\(item.sessionId) retry=\(item.retryCount) (max retries exhausted)")
+                continue
+            }
+            if item.retryCount > 0 {
+                let backoff = min(
+                    audioMaxBackoffSeconds,
+                    audioBaseBackoffSeconds * pow(2.0, Double(item.retryCount - 1))
+                )
+                if Date().timeIntervalSince(item.createdAt) < backoff {
+                    logger.info("Skip audio session=\(item.sessionId) retry=\(item.retryCount) (backoff)")
+                    continue
+                }
             }
 
-            states[recording.id] = .done(transcript: "")
-            logger.info("Audio upload succeeded: \(response.message ?? "ok")")
-        } catch {
-            let message = error.localizedDescription
-            states[recording.id] = .failed(message: "Audio upload failed: \(message)")
-            logger.error("Audio upload failed: \(message)")
+            let ok = await attemptAudioUpload(
+                sessionId: item.sessionId,
+                micPath: item.micPath,
+                systemPath: item.systemPath,
+                isEncrypted: item.isEncrypted
+            )
+            if ok {
+                audioStore.remove(sessionId: item.sessionId)
+            } else {
+                audioStore.incrementRetry(sessionId: item.sessionId)
+            }
         }
+    }
+
+    /// Force-retry every queued audio upload immediately, ignoring backoff and
+    /// the max-retries cap. Bound to the Settings "Retry now" entry.
+    func forceRetryPendingAudioUploads() async {
+        let pending = audioStore.loadAll()
+        guard !pending.isEmpty else { return }
+        logger.info("Force-retrying \(pending.count) pending audio upload(s)")
+
+        for item in pending {
+            let ok = await attemptAudioUpload(
+                sessionId: item.sessionId,
+                micPath: item.micPath,
+                systemPath: item.systemPath,
+                isEncrypted: item.isEncrypted
+            )
+            if ok {
+                audioStore.remove(sessionId: item.sessionId)
+            } else {
+                audioStore.incrementRetry(sessionId: item.sessionId)
+            }
+        }
+    }
+
+    /// Enqueue an audio upload for a session whose recording lives on disk
+    /// already (e.g. orphan adoption on launch). Idempotent — re-adding the
+    /// same session preserves `createdAt` and `retryCount`.
+    func enqueuePendingAudioUpload(
+        sessionId: String,
+        micPath: String,
+        systemPath: String?,
+        isEncrypted: Bool
+    ) {
+        audioStore.add(
+            sessionId: sessionId,
+            micPath: micPath,
+            systemPath: systemPath,
+            isEncrypted: isEncrypted
+        )
     }
 
     /// Retry all pending transcripts that failed to upload.
@@ -227,33 +377,43 @@ final class TranscriptionViewModel {
 
     // MARK: - Private
 
-    /// Decrypts encrypted PCM sidecar files to temp files for upload.
+    /// Decrypts encrypted PCM sidecar files to temp files for upload. Path-based
+    /// so retry / orphan-adoption paths can call it without reconstructing a
+    /// `LocalRecording`.
     private func decryptPCMIfNeeded(
-        _ recording: LocalRecording
+        micPath: String,
+        systemPath: String?,
+        isEncrypted: Bool
     ) throws -> DecryptedPCMPaths {
         var tempFiles: [URL] = []
 
-        let micPath: String
-        if recording.isEncrypted, let micURL = recording.micPCMFileURL {
+        let resolvedMic: String
+        if isEncrypted {
+            let micURL = URL(fileURLWithPath: micPath)
             let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: micURL, userEmail: userEmail)
             tempFiles.append(tempURL)
-            micPath = tempURL.path
+            resolvedMic = tempURL.path
             logger.info("Decrypted mic PCM to temp file")
         } else {
-            micPath = recording.micPCMFileURL?.path ?? ""
+            resolvedMic = micPath
         }
 
-        let systemPath: String?
-        if recording.isEncrypted, let systemURL = recording.systemPCMFileURL {
+        let resolvedSystem: String?
+        if isEncrypted, let systemPath {
+            let systemURL = URL(fileURLWithPath: systemPath)
             let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: systemURL, userEmail: userEmail)
             tempFiles.append(tempURL)
-            systemPath = tempURL.path
+            resolvedSystem = tempURL.path
             logger.info("Decrypted system PCM to temp file")
         } else {
-            systemPath = recording.systemPCMFileURL?.path
+            resolvedSystem = systemPath
         }
 
-        return DecryptedPCMPaths(micPath: micPath, systemPath: systemPath, tempFiles: tempFiles)
+        return DecryptedPCMPaths(
+            micPath: resolvedMic,
+            systemPath: resolvedSystem,
+            tempFiles: tempFiles
+        )
     }
 
     private func postTranscript(sessionID: String, text: String) async throws {

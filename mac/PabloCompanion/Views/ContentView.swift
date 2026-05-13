@@ -183,7 +183,7 @@ struct ContentView: View {
 
         transcriptionVM.backendURL = uploadVM.backendURL
         transcriptionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
-        await transcriptionVM.retryPendingUploads()
+        await resumeAllPendingUploads()
         await subscriptionVM.refreshStatus()
 
         recordingVM.onRecordingCompleted = { [recordingVM, transcriptionVM] recording in
@@ -375,7 +375,7 @@ struct ContentView: View {
             recordingError: recordingVM.persistentError,
             onRetryCapture: { Task { await recordingVM.retryCapture() } },
             onDismissError: { recordingVM.persistentError = nil },
-            onRetryUploads: { Task { await transcriptionVM.forceRetryPendingUploads() } },
+            onRetryUploads: { Task { await forceRetryAllPendingUploads() } },
             onSwitchToSettings: { selectedTab = 3 },
             onViewTranscript: { showTranscript(for: $0) },
             onTranscribeSession: { transcribeSession($0) },
@@ -416,7 +416,7 @@ struct ContentView: View {
             transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
-            onRetryUploads: { Task { await transcriptionVM.forceRetryPendingUploads() } },
+            onRetryUploads: { Task { await forceRetryAllPendingUploads() } },
             onViewTranscript: { showTranscript(for: $0) },
             onTranscribeSession: { transcribeSession($0) },
             onPlaySession: { playSession($0) },

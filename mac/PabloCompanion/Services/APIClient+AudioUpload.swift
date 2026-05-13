@@ -59,16 +59,13 @@ extension APIClient {
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-
         onProgress(0.9)
 
-        guard (200 ... 299).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw APIError.serverError(statusCode: httpResponse.statusCode, message: message)
-        }
+        // Route non-2xx through the shared error mapper so callers see a typed
+        // PabloError with the backend's structured `error.code` populated.
+        // Lets `uploadAudioToBackend` branch on `INVALID_STATUS` for self-heal.
+        // mapHTTPErrors also performs the `URLResponse` -> `HTTPURLResponse` cast.
+        try mapHTTPErrors(data: data, response: response)
 
         let decoded = try JSONDecoder().decode(AudioUploadResponse.self, from: data)
         onProgress(1.0)

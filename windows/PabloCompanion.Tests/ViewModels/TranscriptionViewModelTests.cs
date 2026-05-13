@@ -132,6 +132,48 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.Null(MakePendingStore().Get("session-4"));
     }
 
+    /// <summary>
+    /// Simulates the PR #68 fallout: a session got into PendingTranscriptionStore
+    /// while its backend status was still "recording", so /upload-audio returns
+    /// 400 INVALID_STATUS. The self-heal in UploadFromPendingAsync should PATCH
+    /// status to recording_complete and retry the upload in the same pass.
+    /// </summary>
+    [Fact]
+    public async Task UploadFromPendingAsync_OnInvalidStatus_PatchesThenRetriesUpload()
+    {
+        SeedRecording("session-5");
+        var api = new StubApiClient(_credentials) { ThrowInvalidStatusOnNextUpload = true };
+        var vm = MakeVm(api, MakePendingStore());
+
+        await vm.UploadAudioAsync("session-5");
+
+        // First upload throws INVALID_STATUS; PATCH runs; second upload succeeds.
+        Assert.Equal(2, api.CallCount);
+        Assert.Equal(1, api.PatchCallCount);
+        Assert.Equal(SessionStatus.RecordingComplete, api.LastPatchStatus);
+        Assert.Null(MakePendingStore().Get("session-5"));
+    }
+
+    [Fact]
+    public async Task UploadFromPendingAsync_OnInvalidStatus_PatchFails_LeavesEntryForLaterRetry()
+    {
+        SeedRecording("session-6");
+        var api = new StubApiClient(_credentials)
+        {
+            ThrowInvalidStatusOnNextUpload = true,
+            FailNextPatch = true,
+        };
+        var vm = MakeVm(api, MakePendingStore());
+
+        await vm.UploadAudioAsync("session-6");
+
+        Assert.Equal(1, api.CallCount);   // upload only once — heal aborted at PATCH
+        Assert.Equal(1, api.PatchCallCount);
+        var entry = MakePendingStore().Get("session-6");
+        Assert.NotNull(entry);
+        Assert.Equal(1, entry!.RetryCount);
+    }
+
     public void Dispose()
     {
         _recordingStore.Clear();
@@ -161,6 +203,12 @@ public sealed class TranscriptionViewModelTests : IDisposable
         public string? LastSessionId { get; private set; }
         public bool FailNext { get; set; }
 
+        // INVALID_STATUS self-heal path
+        public bool ThrowInvalidStatusOnNextUpload { get; set; }
+        public int PatchCallCount { get; private set; }
+        public SessionStatus? LastPatchStatus { get; private set; }
+        public bool FailNextPatch { get; set; }
+
         public StubApiClient(CredentialManager credentials) : base(credentials) { }
 
         public override Task<AudioUploadResponse> UploadAudioAsync(
@@ -168,10 +216,31 @@ public sealed class TranscriptionViewModelTests : IDisposable
         {
             CallCount++;
             LastSessionId = sessionId;
+            if (ThrowInvalidStatusOnNextUpload)
+            {
+                ThrowInvalidStatusOnNextUpload = false;
+                throw new PabloException(400, "Session must be in 'recording_complete'...", "INVALID_STATUS");
+            }
             if (FailNext)
                 throw new InvalidOperationException("Simulated upload failure");
             return Task.FromResult(new AudioUploadResponse(
                 Id: sessionId, Status: "recording_complete", Queue: "transcribe", Message: "ok"));
         }
+
+        public override Task<Session> UpdateSessionStatusAsync(string sessionId, SessionStatus status)
+        {
+            PatchCallCount++;
+            LastPatchStatus = status;
+            if (FailNextPatch)
+                throw new PabloException(500, "Simulated PATCH failure");
+            return Task.FromResult(MakeSession(sessionId, status));
+        }
+
+        private static Session MakeSession(string id, SessionStatus status) => new(
+            Id: id, PatientId: null, Patient: null, Status: status,
+            ScheduledAt: null, StartedAt: null, EndedAt: null,
+            DurationMinutes: null, VideoLink: null, VideoPlatform: null,
+            SessionType: null, Source: null, Notes: null,
+            CreatedAt: null, UpdatedAt: null);
     }
 }
