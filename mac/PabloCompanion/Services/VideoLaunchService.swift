@@ -26,13 +26,20 @@ enum VideoLaunchService {
             return
         }
 
+        // Validate the link is an allowed HTTPS URL before any platform dispatch.
+        // Done here (inline) so CodeQL dataflow can prove the URL is HTTPS.
+        guard let httpsURL = validatedHTTPSVideoURL(link) else {
+            logger.error("Blocked video URL for session \(session.id): not an allowed HTTPS domain")
+            return
+        }
+
         switch platform {
         case .zoom:
-            launchZoom(link: link, sessionId: session.id)
+            launchZoom(httpsURL: httpsURL, sessionId: session.id)
         case .teams:
-            launchTeams(link: link, sessionId: session.id)
+            launchTeams(httpsURL: httpsURL, sessionId: session.id)
         case .meet:
-            launchBrowser(link: link, sessionId: session.id)
+            launchBrowser(httpsURL: httpsURL, sessionId: session.id)
         case .none:
             break
         }
@@ -40,50 +47,44 @@ enum VideoLaunchService {
 
     // MARK: - Platform Launchers
 
-    private static func launchZoom(link: String, sessionId: String) {
-        guard let linkURL = URL(string: link), isAllowedVideoDomain(linkURL) else {
-            logger.error("Blocked Zoom URL for session \(sessionId): not an allowed domain")
-            return
-        }
-        // Extract meeting ID from Zoom URL (e.g., https://zoom.us/j/123456789)
-        let meetingId = extractZoomMeetingId(from: link)
-        let scheme = "zoommtg://zoom.us/join?confno=\(meetingId)"
+    private static func launchZoom(httpsURL: URL, sessionId: String) {
+        // Build the zoommtg:// deep link. This is a local app handoff, not a network transmission.
+        let meetingId = extractZoomMeetingId(from: httpsURL)
+        let deepLink = "zoommtg://zoom.us/join?confno=\(meetingId)"
 
-        if let url = URL(string: scheme) {
+        if let url = URL(string: deepLink), url.scheme == "zoommtg" {
             logger.info("Launching Zoom for session \(sessionId)")
             NSWorkspace.shared.open(url)
         } else {
-            // Fall back to browser if scheme URL is invalid
-            launchBrowser(link: link, sessionId: sessionId)
+            // Fall back to browser if the deep-link URL is invalid.
+            launchBrowser(httpsURL: httpsURL, sessionId: sessionId)
         }
     }
 
-    private static func launchTeams(link: String, sessionId: String) {
-        guard let linkURL = URL(string: link), isAllowedVideoDomain(linkURL) else {
-            logger.error("Blocked Teams URL for session \(sessionId): not an allowed domain")
-            return
-        }
-        // Convert https:// Teams link to msteams:// deep link
-        let teamsLink = link.replacingOccurrences(
+    private static func launchTeams(httpsURL: URL, sessionId: String) {
+        // Convert the validated https:// Teams link to an msteams:// deep link.
+        // This is a local app handoff, not a network transmission.
+        let teamsLink = httpsURL.absoluteString.replacingOccurrences(
             of: "https://",
             with: "msteams://"
         )
 
-        if let url = URL(string: teamsLink) {
+        if let url = URL(string: teamsLink), url.scheme == "msteams" {
             logger.info("Launching Teams for session \(sessionId)")
             NSWorkspace.shared.open(url)
         } else {
-            launchBrowser(link: link, sessionId: sessionId)
+            launchBrowser(httpsURL: httpsURL, sessionId: sessionId)
         }
     }
 
-    private static func launchBrowser(link: String, sessionId: String) {
-        guard let url = URL(string: link), isAllowedVideoDomain(url) else {
-            logger.error("Blocked or invalid video URL for session \(sessionId)")
+    private static func launchBrowser(httpsURL: URL, sessionId: String) {
+        // httpsURL is validated by validatedHTTPSVideoURL before reaching here.
+        guard httpsURL.scheme == "https" else {
+            logger.error("Refusing to open non-HTTPS URL for session \(sessionId)")
             return
         }
         logger.info("Opening video link in browser for session \(sessionId)")
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(httpsURL)
     }
 
     // MARK: - Domain Validation
@@ -94,24 +95,31 @@ enum VideoLaunchService {
         "meet.google.com",
     ]
 
-    /// Returns true if the URL's host is a known video platform domain.
-    private static func isAllowedVideoDomain(_ url: URL) -> Bool {
-        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
-        return allowedVideoHosts.contains(host)
-            || host.hasSuffix(".zoom.us")
+    /// Parses the given string and returns it as a URL only if:
+    /// - It parses successfully,
+    /// - Its scheme is `https`, and
+    /// - Its host is a known video platform domain.
+    ///
+    /// Returning a URL from a single guard lets CodeQL's dataflow analysis prove
+    /// that every use of the returned URL is over HTTPS.
+    private static func validatedHTTPSVideoURL(_ link: String) -> URL? {
+        guard let url = URL(string: link),
+              url.scheme == "https",
+              let host = url.host?.lowercased(),
+              allowedVideoHosts.contains(host) || host.hasSuffix(".zoom.us")
+        else { return nil }
+        return url
     }
 
     // MARK: - URL Parsing
 
     /// Extracts the Zoom meeting ID from a URL like `https://zoom.us/j/123456789`.
-    private static func extractZoomMeetingId(from link: String) -> String {
-        guard let url = URL(string: link),
-              let pathComponents = Optional(url.pathComponents),
-              let jIndex = pathComponents.firstIndex(of: "j"),
+    private static func extractZoomMeetingId(from url: URL) -> String {
+        let pathComponents = url.pathComponents
+        guard let jIndex = pathComponents.firstIndex(of: "j"),
               jIndex + 1 < pathComponents.count
         else {
-            // If we can't parse it, return the whole link — Zoom may handle it
-            return link
+            return url.absoluteString
         }
         return pathComponents[jIndex + 1]
     }

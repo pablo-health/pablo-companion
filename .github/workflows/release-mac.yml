@@ -5,8 +5,7 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
-  pages: write
+  contents: read
 
 concurrency:
   group: release-mac
@@ -15,8 +14,10 @@ concurrency:
 jobs:
   release:
     runs-on: macos-26
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set version from tag
         run: |
@@ -46,7 +47,7 @@ jobs:
           security list-keychains -d user -s $KEYCHAIN_PATH
 
       - name: Cache SPM
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: mac/SourcePackages
           key: spm-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -118,13 +119,13 @@ jobs:
             $RUNNER_TEMP/releases
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           files: ${{ runner.temp }}/${{ env.DMG_NAME }}
           generate_release_notes: true
 
       - name: Publish appcast
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ${{ runner.temp }}/releases
