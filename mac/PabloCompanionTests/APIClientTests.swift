@@ -2,40 +2,44 @@ import Foundation
 import Testing
 @testable import Pablo
 
-@Suite("APIClient multipart body")
+@Suite("Multipart body builder")
 struct APIClientTests {
-    @MainActor
+    private func makePart(fileName: String, data: Data) -> MultipartFilePart {
+        MultipartFilePart(
+            fieldName: "file",
+            fileName: fileName,
+            mimeType: "application/octet-stream",
+            data: data
+        )
+    }
+
     @Test func multipartBodyContainsBoundary() {
-        let client = APIClient()
         let boundary = "test-boundary-123"
-        let data = Data("hello".utf8)
-        let body = client.createMultipartBody(fileData: data, fileName: "test.wav", boundary: boundary)
+        let part = makePart(fileName: "test.wav", data: Data("hello".utf8))
+        let body = buildMultipartBody(parts: [part], boundary: boundary)
         let bodyString = String(data: body, encoding: .utf8)!
         #expect(bodyString.contains("--\(boundary)"))
         #expect(bodyString.contains("--\(boundary)--"))
     }
 
-    @MainActor
     @Test func multipartBodyContainsFileName() {
-        let client = APIClient()
-        let body = client.createMultipartBody(fileData: Data(), fileName: "my_recording.wav", boundary: "b")
+        let part = makePart(fileName: "my_recording.wav", data: Data())
+        let body = buildMultipartBody(parts: [part], boundary: "b")
         let bodyString = String(data: body, encoding: .utf8)!
         #expect(bodyString.contains("my_recording.wav"))
     }
 
-    @MainActor
     @Test func multipartBodyContainsCRLF() {
-        let client = APIClient()
-        let body = client.createMultipartBody(fileData: Data(), fileName: "f.wav", boundary: "b")
+        let part = makePart(fileName: "f.wav", data: Data())
+        let body = buildMultipartBody(parts: [part], boundary: "b")
         let bodyString = String(data: body, encoding: .utf8)!
         #expect(bodyString.contains("\r\n"))
     }
 
-    @MainActor
     @Test func multipartBodyContainsFileData() {
-        let client = APIClient()
         let fileContent = Data("audio-bytes".utf8)
-        let body = client.createMultipartBody(fileData: fileContent, fileName: "f.wav", boundary: "boundary")
+        let part = makePart(fileName: "f.wav", data: fileContent)
+        let body = buildMultipartBody(parts: [part], boundary: "boundary")
         #expect(body.range(of: fileContent) != nil)
     }
 }

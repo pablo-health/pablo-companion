@@ -339,11 +339,6 @@ struct TranscriptUploadResponse: Codable, Sendable {
     let message: String
 }
 
-struct UploadResponse: Codable, Sendable {
-    let id: String
-    let status: String
-}
-
 // MARK: - Health / Version Types
 
 struct HealthStatus: Codable, Sendable {

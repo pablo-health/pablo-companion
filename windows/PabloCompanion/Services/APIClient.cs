@@ -344,19 +344,6 @@ public class APIClient
         return await SendAsync<TranscriptUploadResponse>(request);
     }
 
-    // ── Recordings ──────────────────────────────────────────────────────────
-
-    public async Task<UploadResponse> UploadRecordingAsync(string filePath)
-    {
-        using var request = CreateRequest(HttpMethod.Post, "/api/recordings/upload");
-        using var formContent = new MultipartFormDataContent();
-        var fileStream = new StreamContent(File.OpenRead(filePath));
-        fileStream.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        formContent.Add(fileStream, "file", Path.GetFileName(filePath));
-        request.Content = formContent;
-        return await SendAsync<UploadResponse>(request);
-    }
-
     // ── Audio Upload ────────────────────────────────────────────────────────
 
     /// <summary>

@@ -96,51 +96,6 @@ final class APIClient {
         )
     }
 
-    // MARK: - Recordings
-
-    /// Uploads a recording file to the backend.
-    func uploadRecording(
-        fileURL: URL,
-        onProgress: @Sendable @escaping (Double) -> Void
-    ) async throws -> UploadResponse {
-        let token = try await requireToken()
-        logger.info("Uploading recording file")
-
-        onProgress(0.3)
-
-        let endpoint = "\(baseURLString)/api/recordings/upload"
-        guard let url = URL(string: endpoint) else {
-            throw APIError.invalidResponse
-        }
-
-        let boundary = UUID().uuidString
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
-        request.setValue(Self.clientVersion, forHTTPHeaderField: "X-Client-Version")
-        request.setValue("macos", forHTTPHeaderField: "X-Client-Platform")
-
-        let fileData = try Data(contentsOf: fileURL)
-        let parts = [MultipartFilePart(
-            fieldName: "file",
-            fileName: fileURL.lastPathComponent,
-            mimeType: "application/octet-stream",
-            data: fileData
-        )]
-        request.httpBody = buildMultipartBody(parts: parts, boundary: boundary)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try mapHTTPErrors(data: data, response: response)
-
-        let decoded: UploadResponse = try handleResponse(data, response)
-
-        onProgress(1.0)
-        logger.info("Upload successful")
-        return decoded
-    }
-
     // MARK: - Patients
 
     /// Fetches a paginated list of patients.

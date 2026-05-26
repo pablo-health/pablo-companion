@@ -5,10 +5,12 @@ struct ContentView: View {
     var authVM: AuthViewModel
     var deepLinks: DeepLinkRouter
     @State var sessionVM = SessionViewModel()
-    @State private var recordingVM = RecordingViewModel()
+    // recordingVM / transcriptionVM are non-private: ContentView+AudioRecovery
+    // is a separate-file extension that drives the launch recovery + retry flow.
+    @State var recordingVM = RecordingViewModel()
     @State private var uploadVM = UploadViewModel()
     @State private var patientVM = PatientViewModel()
-    @State private var transcriptionVM = TranscriptionViewModel()
+    @State var transcriptionVM = TranscriptionViewModel()
     @State var practiceVM = PracticeViewModel()
     @State private var subscriptionVM = SubscriptionViewModel()
     @State var showPractice = false
@@ -52,11 +54,6 @@ struct ContentView: View {
         .frame(minWidth: 500, minHeight: 600)
         .task { await configureAndLoad() }
         .alert("Recording Error", isPresented: $recordingVM.showError, presenting: recordingVM.errorMessage) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
-        }
-        .alert("Upload Error", isPresented: $uploadVM.showError, presenting: uploadVM.errorMessage) { _ in
             Button("OK") {}
         } message: { message in
             Text(message)
