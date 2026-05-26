@@ -49,3 +49,4 @@ windows/**/BundleArtifacts/
 
 # Internal docs (separate private repo)
 docs/internal/
+.build-linux/
