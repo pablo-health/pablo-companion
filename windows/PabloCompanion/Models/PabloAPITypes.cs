@@ -277,11 +277,6 @@ public sealed record TranscriptUploadResponse(
     [property: JsonPropertyName("message")] string Message
 );
 
-public sealed record UploadResponse(
-    [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("status")] string Status
-);
-
 // ── Health / version types ───────────────────────────────────────────────────
 
 public sealed record HealthStatus(
