@@ -92,10 +92,11 @@ struct PracticeHarness {
 /// Thread-safe collector for WebSocket events (callbacks fire off the main actor).
 private final class Events: @unchecked Sendable {
     private let lock = NSLock()
+    private(set) var authOk = false
     private(set) var sessionStarted = false
     private(set) var sessionEnded = false
     private(set) var fatal: String?
-    private(set) var finalTranscripts = 0
+    private(set) var asrRecognized = 0
     private(set) var serverFrames = 0
 
     func markStarted() { lock.lock(); sessionStarted = true; lock.unlock() }
@@ -105,17 +106,28 @@ private final class Events: @unchecked Sendable {
     func recordServerEvent(_ raw: String) {
         lock.lock()
         serverFrames += 1
-        // Count "final" transcript frames as the structural ASR signal.
-        if raw.contains("\"transcript\""), raw.contains("\"is_final\":true") || raw.contains("\"final\":true") {
-            finalTranscripts += 1
+        if contains(raw, "auth_result"), contains(raw, "ok") {
+            authOk = true
+        }
+        // The server never forwards transcript *text*. Instead it emits a
+        // `status`/`processing` frame the instant ASR finalises a therapist
+        // utterance and the patient turn begins — that is the faithful
+        // "our streamed audio was recognised" signal.
+        if contains(raw, "status"), contains(raw, "processing") {
+            asrRecognized += 1
         }
         lock.unlock()
     }
 
-    var snapshot: (started: Bool, ended: Bool, fatal: String?, finals: Int, frames: Int) {
+    /// Substring match for a JSON value, tolerant of `json.dumps` spacing.
+    private func contains(_ raw: String, _ value: String) -> Bool {
+        raw.contains("\"\(value)\"")
+    }
+
+    var snapshot: (authOk: Bool, started: Bool, ended: Bool, fatal: String?, asr: Int, frames: Int) {
         lock.lock()
         defer { lock.unlock() }
-        return (sessionStarted, sessionEnded, fatal, finalTranscripts, serverFrames)
+        return (authOk, sessionStarted, sessionEnded, fatal, asrRecognized, serverFrames)
     }
 }
 
@@ -196,27 +208,67 @@ private struct Runner {
         ws.endSession()
         try await waitUntil(timeout: 15) { events.snapshot.ended }
 
-        // 7. Clean up the created session in the test tenant.
+        // 7. Fetch the generated SOAP note. The server builds it during
+        //    session_end (before sending the frame), but poll briefly in case
+        //    the persistence write trails the frame.
+        var soap: PracticeSoapNote?
+        let soapDeadline = Date().addingTimeInterval(30)
+        while Date() < soapDeadline {
+            if let detail = try? await api.getSessionDetail(sessionId: session.sessionId),
+               let note = detail.soapNote {
+                soap = note
+                break
+            }
+            try await Task.sleep(for: .seconds(2))
+        }
+
+        // 8. Clean up the created session in the test tenant.
         try? await api.endSession(sessionId: session.sessionId)
         ws.disconnect()
 
-        // 8. Report (structural signal only for this increment — no gating yet).
+        // 9. Evaluate the gate — structural + audio-liveness only (per design).
+        try evaluate(events: events, sink: sink, soap: soap, sessionId: session.sessionId)
+    }
+
+    /// Asserts the structural + VAD/RMS gate and throws (non-zero exit) on any miss.
+    private func evaluate(events: Events, sink: CapturingAudioSink, soap: PracticeSoapNote?, sessionId: String) throws {
         let snap = events.snapshot
-        let captured = sink.captured
+        let rms = sink.rms()
+        let minRMS = Double(ProcessInfo.processInfo.environment["PRACTICE_MIN_RMS"] ?? "") ?? 0.01
+
+        let soapDetail: String
+        if let soap {
+            soapDetail = soap.isComplete ? "all four sections present" : "a section was empty"
+        } else {
+            soapDetail = "no soap_note returned"
+        }
+
+        let checks: [(name: String, ok: Bool, detail: String)] = [
+            ("auth_result ok", snap.authOk, snap.authOk ? "" : "no auth_result:ok frame"),
+            ("session_started", snap.started, snap.started ? "" : "server never started the session"),
+            ("asr recognised speech", snap.asr >= 1, "status:processing frames = \(snap.asr)"),
+            ("patient voice frames", sink.chunkCount >= 1, "\(sink.chunkCount) chunks, \(sink.captured.count) bytes"),
+            ("patient audio is speech", rms >= minRMS, String(format: "RMS %.4f (min %.4f)", rms, minRMS)),
+            ("session_ended", snap.ended, snap.ended ? "" : "no session_ended frame"),
+            ("4-section SOAP", soap?.isComplete == true, soapDetail),
+        ]
+
+        let pad = checks.map(\.name.count).max() ?? 0
+        let lines = checks
+            .map { "  [\($0.ok ? "PASS" : "FAIL")] \($0.name.padding(toLength: pad, withPad: " ", startingAt: 0))  \($0.detail)" }
+            .joined(separator: "\n")
         log("""
-        ───── summary ─────
-        session:            \(session.sessionId)
-        server frames:      \(snap.frames)
-        final transcripts:  \(snap.finals)
-        patient audio:      \(captured.count) bytes in \(sink.chunkCount) chunks
-        patient audio RMS:  \(String(format: "%.4f", sink.rms()))
-        session_ended:      \(snap.ended)
-        ───────────────────
+        ───── gate summary (session \(sessionId)) ─────
+        \(lines)
+          server frames: \(snap.frames)
+        ─────────────────────────────────────────
         """)
 
-        if captured.isEmpty {
-            throw RunError.message("No patient audio received — client→server path likely not exercised")
+        let failed = checks.filter { !$0.ok }.map(\.name)
+        if !failed.isEmpty {
+            throw RunError.message("Gate FAILED: \(failed.joined(separator: ", "))")
         }
+        log("GATE PASSED ✓")
     }
 
     private func waitUntil(timeout: Double, _ condition: @escaping @Sendable () -> Bool) async throws {

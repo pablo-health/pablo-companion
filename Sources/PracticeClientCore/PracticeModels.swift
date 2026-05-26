@@ -45,6 +45,21 @@ public struct TicketResponse: Codable, Sendable {
     public let ticket: String
 }
 
+/// The four-section narrative SOAP note generated from a practice session's
+/// conversation history (server builds this on `session_end`).
+public struct PracticeSoapNote: Codable, Sendable {
+    public let subjective: String
+    public let objective: String
+    public let assessment: String
+    public let plan: String
+
+    /// True when all four sections carry non-empty narrative text.
+    public var isComplete: Bool {
+        [subjective, objective, assessment, plan]
+            .allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+}
+
 /// Response from GET /api/practice/sessions/{id}.
 public struct PracticeSessionDetail: Codable, Sendable {
     public let sessionId: String
@@ -55,6 +70,7 @@ public struct PracticeSessionDetail: Codable, Sendable {
     public let startedAt: String?
     public let endedAt: String?
     public let createdAt: String
+    public let soapNote: PracticeSoapNote?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -65,5 +81,6 @@ public struct PracticeSessionDetail: Codable, Sendable {
         case startedAt = "started_at"
         case endedAt = "ended_at"
         case createdAt = "created_at"
+        case soapNote = "soap_note"
     }
 }
