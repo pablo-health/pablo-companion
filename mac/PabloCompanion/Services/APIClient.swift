@@ -1,5 +1,6 @@
 import Foundation
 import os
+import PracticeClientCore
 
 /// Native URLSession-based API client for the Pablo backend.
 /// Replaces the previous Rust FFI (pablo-core) delegation with direct HTTP calls.

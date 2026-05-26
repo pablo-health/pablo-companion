@@ -1,3 +1,4 @@
+import PracticeClientCore
 import SwiftUI
 
 /// Topic picker sheet — displayed when the therapist starts a practice session.

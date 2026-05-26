@@ -14,8 +14,10 @@ let package = Package(
     ],
     dependencies: [
         // TOTP (HMAC-SHA1) for the harness's self-contained test-user sign-in.
-        // swift-crypto builds on both macOS and Linux.
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+        // swift-crypto builds on both macOS and Linux. Range spans 3.x–4.x so
+        // the version unifies with the macOS app's transitive pin (4.x via
+        // AudioCaptureKit) when the app consumes this as a local package.
+        .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0" ..< "5.0.0"),
     ],
     targets: [
         .target(name: "PracticeClientCore"),

@@ -1,13 +1,14 @@
 import AVFoundation
 import Foundation
 import os
+import PracticeClientCore
 
 /// Captures mic audio and delivers 16kHz 16-bit mono PCM frames for WebSocket streaming.
 ///
 /// Runs independently of AudioCaptureKit — both can tap the mic simultaneously.
 /// AudioCaptureKit handles the recording (for transcription), while this provides
 /// the real-time stream for the Gemini Live API.
-final class PracticeMicCapture: @unchecked Sendable {
+final class PracticeMicCapture: PracticeAudioSource, @unchecked Sendable {
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PracticeMicCapture")
     private let engine = AVAudioEngine()
     private let lock = NSLock()
@@ -37,6 +38,11 @@ final class PracticeMicCapture: @unchecked Sendable {
 
     /// Accumulates samples until we have a full 20ms frame
     private var accumulator = Data()
+
+    /// `PracticeAudioSource` conformance — captures from the default input device.
+    func start() throws {
+        try start(micDeviceID: nil)
+    }
 
     func start(micDeviceID: String? = nil) throws {
         lock.lock()

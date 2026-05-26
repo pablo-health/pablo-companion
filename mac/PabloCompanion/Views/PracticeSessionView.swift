@@ -1,3 +1,4 @@
+import PracticeClientCore
 import SwiftUI
 
 /// Main practice session UI — shows Pablo Bear, waveform, timer, and controls.

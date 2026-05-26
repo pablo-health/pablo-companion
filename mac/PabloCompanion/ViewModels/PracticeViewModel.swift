@@ -1,5 +1,6 @@
 import Foundation
 import os
+import PracticeClientCore
 
 /// Orchestrates a practice session: topic selection → WebSocket connection →
 /// mic capture → audio playback → session teardown.
@@ -51,6 +52,8 @@ final class PracticeViewModel {
     var selectedMicID: String?
 
     init() {
+        // Preserve the app's real client-type header; the core defaults to a dev value.
+        apiClient.clientType = "pablo-companion-macos/\(AppConstants.appVersion)"
         configureCallbacks()
     }
 
