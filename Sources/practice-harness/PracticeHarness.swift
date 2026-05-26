@@ -222,7 +222,7 @@ private struct Runner {
             try await Task.sleep(for: .seconds(2))
         }
 
-        // 8. Clean up the created session in the test tenant.
+        // 8. Clean up the practice session we created.
         try? await api.endSession(sessionId: session.sessionId)
         ws.disconnect()
 

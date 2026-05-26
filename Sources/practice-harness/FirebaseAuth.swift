@@ -9,7 +9,7 @@ import FoundationNetworking
 /// runner can authenticate the pinned test user without Node or any prior
 /// e2e state.
 ///
-/// Strategy (matches THERAPY-71d5): try the cached refresh token first (cheap,
+/// Strategy: try the cached refresh token first (cheap,
 /// avoids the rate-limited `mfaSignIn:finalize` quota); on ANY failure — 401,
 /// expired/revoked refresh token, network error — fall back to the full TOTP
 /// MFA dance. Either path returns a fresh, MFA-stamped ID token plus a NEW
