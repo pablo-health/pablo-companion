@@ -14,21 +14,27 @@ import FoundationNetworking
 /// reimplementation, so it can't drift from the shipping client.
 ///
 /// Configuration (env):
-///   PRACTICE_BASE_URL     backend base URL (default https://app.pablo.health)
-///   PRACTICE_BEARER_TOKEN  Firebase ID token for the test user (required)
+///   PRACTICE_BASE_URL      backend base URL (default https://app.pablo.health)
 ///   PRACTICE_AUDIO         path to raw s16le 16 kHz mono PCM fixture (required)
 ///   PRACTICE_TOPIC         topic id (default: first from /api/practice/topics)
 ///   PRACTICE_RESPONSE_WAIT seconds to wait for patient audio after streaming
 ///                          (default 20)
+///
+/// Auth — the harness signs the pinned test user in itself (no Node, no prior
+/// e2e state). Refresh token is tried first; on any failure it falls back to
+/// the full TOTP MFA flow.
+///   PRACTICE_BEARER_TOKEN  pre-minted ID token override (skips sign-in)
+///   FB_API_KEY             Firebase API key (required unless BEARER_TOKEN set)
+///   FB_REFRESH_TOKEN       cached refresh token (fast path)
+///   FB_EMAIL/FB_PASSWORD/FB_TOTP_SECRET  TOTP MFA fallback creds
+///   REFRESH_OUT            file to write the rotated refresh token to (so a
+///                          wrapper can persist it back to Secret Manager)
 @main
 struct PracticeHarness {
     static func main() async {
         let env = ProcessInfo.processInfo.environment
         let baseURL = env["PRACTICE_BASE_URL"] ?? "https://app.pablo.health"
 
-        guard let token = env["PRACTICE_BEARER_TOKEN"], !token.isEmpty else {
-            fail("PRACTICE_BEARER_TOKEN is required (Firebase ID token for the test user).")
-        }
         guard let audioPath = env["PRACTICE_AUDIO"], !audioPath.isEmpty else {
             fail("PRACTICE_AUDIO is required (path to raw s16le 16kHz mono PCM).")
         }
@@ -38,6 +44,31 @@ struct PracticeHarness {
         }
 
         let responseWait = Double(env["PRACTICE_RESPONSE_WAIT"] ?? "") ?? 20
+
+        let token: String
+        if let preset = env["PRACTICE_BEARER_TOKEN"], !preset.isEmpty {
+            log("Using preset PRACTICE_BEARER_TOKEN")
+            token = preset
+        } else {
+            guard let apiKey = env["FB_API_KEY"], !apiKey.isEmpty else {
+                fail("FB_API_KEY is required to mint a token (or set PRACTICE_BEARER_TOKEN).")
+            }
+            do {
+                let result = try await FirebaseAuth(apiKey: apiKey).mint(
+                    refreshToken: env["FB_REFRESH_TOKEN"],
+                    email: env["FB_EMAIL"],
+                    password: env["FB_PASSWORD"],
+                    totpSecret: env["FB_TOTP_SECRET"]
+                )
+                log("Signed in via \(result.mode)")
+                token = result.idToken
+                if let refreshOut = env["REFRESH_OUT"], !refreshOut.isEmpty {
+                    try? result.refreshToken.write(toFile: refreshOut, atomically: true, encoding: .utf8)
+                }
+            } catch {
+                fail("Sign-in failed: \(error.localizedDescription)")
+            }
+        }
 
         do {
             try await Runner(
