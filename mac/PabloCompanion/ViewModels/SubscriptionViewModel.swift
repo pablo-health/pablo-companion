@@ -1,5 +1,6 @@
 import Foundation
 import os
+import PracticeClientCore
 
 /// Manages subscription status fetching and the one-time grace extension.
 ///

@@ -1,4 +1,5 @@
 import Foundation
+import PracticeClientCore
 
 // MARK: - Audio Upload (native URLSession multipart)
 

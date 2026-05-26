@@ -1,4 +1,5 @@
 import Foundation
+import PracticeClientCore
 
 /// Subscription status and grace extension endpoints.
 extension APIClient {

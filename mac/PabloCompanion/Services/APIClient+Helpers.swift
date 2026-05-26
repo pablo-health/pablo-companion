@@ -1,4 +1,5 @@
 import Foundation
+import PracticeClientCore
 
 extension APIClient {
     /// Maps non-2xx HTTP status codes to typed `PabloError` values.

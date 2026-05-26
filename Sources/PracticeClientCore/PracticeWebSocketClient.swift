@@ -1,16 +1,18 @@
-import AVFoundation
 import Foundation
-import os
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// WebSocket client for practice mode audio streaming.
 ///
 /// Sends therapist mic audio (PCM 16kHz mono) to the backend and receives
 /// Pablo Bear's response audio (PCM 24kHz mono). Uses the hybrid text/binary
 /// protocol defined in practice-mode-api.md.
-final class PracticeWebSocketClient: @unchecked Sendable {
+public final class PracticeWebSocketClient: @unchecked Sendable {
     // MARK: - Public state
 
-    enum ConnectionState: Sendable {
+    public enum ConnectionState: Sendable {
         case disconnected
         case connecting
         case authenticating
@@ -19,7 +21,7 @@ final class PracticeWebSocketClient: @unchecked Sendable {
         case ending
     }
 
-    enum PabloState: String, Sendable {
+    public enum PabloState: String, Sendable {
         case listening
         case processing
         case speaking
@@ -27,16 +29,21 @@ final class PracticeWebSocketClient: @unchecked Sendable {
 
     // MARK: - Callbacks (set by PracticeViewModel on MainActor)
 
-    var onConnectionStateChanged: (@Sendable (ConnectionState) -> Void)?
-    var onPabloStateChanged: (@Sendable (PabloState) -> Void)?
-    var onAudioReceived: (@Sendable (Data, Bool) -> Void)?
-    var onSessionStarted: (@Sendable (String) -> Void)?
-    var onSessionEnded: (@Sendable (Int) -> Void)?
-    var onError: (@Sendable (String, Bool) -> Void)?
+    public var onConnectionStateChanged: (@Sendable (ConnectionState) -> Void)?
+    public var onPabloStateChanged: (@Sendable (PabloState) -> Void)?
+    public var onAudioReceived: (@Sendable (Data, Bool) -> Void)?
+    public var onSessionStarted: (@Sendable (String) -> Void)?
+    public var onSessionEnded: (@Sendable (Int) -> Void)?
+    public var onError: (@Sendable (String, Bool) -> Void)?
+
+    /// Fires for every server text (JSON) frame with the raw payload. The app
+    /// UI doesn't need this, but a headless/test consumer uses it to observe
+    /// transcript and status frames as they arrive.
+    public var onServerEvent: (@Sendable (String) -> Void)?
 
     // MARK: - Private
 
-    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PracticeWebSocket")
+    private let logger = PracticeLog(category: "PracticeWebSocket")
     private var webSocket: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private let lock = NSLock()
@@ -45,7 +52,7 @@ final class PracticeWebSocketClient: @unchecked Sendable {
     private var receiveTask: Task<Void, Never>?
 
     private var _state: ConnectionState = .disconnected
-    var state: ConnectionState {
+    public var state: ConnectionState {
         lock.lock()
         defer { lock.unlock() }
         return _state
@@ -53,11 +60,13 @@ final class PracticeWebSocketClient: @unchecked Sendable {
 
     /// Last received sequence number from server binary frames (for session_resume).
     private var _lastReceivedSequence: UInt16 = 0
-    var lastReceivedSequence: UInt16 {
+    public var lastReceivedSequence: UInt16 {
         lock.lock()
         defer { lock.unlock() }
         return _lastReceivedSequence
     }
+
+    public init() {}
 
     private func setState(_ newState: ConnectionState) {
         lock.lock()
@@ -68,7 +77,7 @@ final class PracticeWebSocketClient: @unchecked Sendable {
 
     // MARK: - Connect
 
-    func connect(url: URL) {
+    public func connect(url: URL) {
         disconnect()
 
         setState(.connecting)
@@ -86,7 +95,7 @@ final class PracticeWebSocketClient: @unchecked Sendable {
 
     // MARK: - Session lifecycle
 
-    func startSession(sessionId: String) {
+    public func startSession(sessionId: String) {
         let message: [String: Any] = [
             "type": "session_start",
             "session_id": sessionId,
@@ -96,7 +105,7 @@ final class PracticeWebSocketClient: @unchecked Sendable {
     }
 
     /// Resumes a session after reconnection (30-second window).
-    func resumeSession(sessionId: String, lastSequence: UInt16) {
+    public func resumeSession(sessionId: String, lastSequence: UInt16) {
         let message: [String: Any] = [
             "type": "session_resume",
             "session_id": sessionId,
@@ -106,23 +115,23 @@ final class PracticeWebSocketClient: @unchecked Sendable {
         setState(.waitingForSession)
     }
 
-    func endSession() {
+    public func endSession() {
         sendJSON(["type": "session_end"])
         setState(.ending)
     }
 
-    func pauseAudio() {
+    public func pauseAudio() {
         sendJSON(["type": "audio_pause"])
     }
 
-    func resumeAudio() {
+    public func resumeAudio() {
         sendJSON(["type": "audio_resume"])
     }
 
     // MARK: - Send audio
 
     /// Sends a 20ms PCM audio frame with the 4-byte protocol header.
-    func sendAudioFrame(_ pcmData: Data) {
+    public func sendAudioFrame(_ pcmData: Data) {
         guard state == .active else { return }
 
         lock.lock()
@@ -148,7 +157,7 @@ final class PracticeWebSocketClient: @unchecked Sendable {
 
     /// Disconnects the WebSocket. If `forReconnect` is true, preserves
     /// sequence numbers so the session can be resumed.
-    func disconnect(forReconnect: Bool = false) {
+    public func disconnect(forReconnect: Bool = false) {
         heartbeatTask?.cancel()
         heartbeatTask = nil
         receiveTask?.cancel()
@@ -205,6 +214,8 @@ final class PracticeWebSocketClient: @unchecked Sendable {
     // MARK: - Text message handling
 
     private func handleTextMessage(_ text: String) {
+        onServerEvent?(text)
+
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String
@@ -281,19 +292,19 @@ final class PracticeWebSocketClient: @unchecked Sendable {
         }
 
         // Parse 4-byte header
-        let direction = data[0]
+        let direction = data[data.startIndex]
         guard direction == 0x02 else {
             logger.warning("Unexpected binary direction byte: \(direction)")
             return
         }
 
-        let flags = data[1]
+        let flags = data[data.startIndex + 1]
         let isFinal = (flags & 0x01) != 0
-        let seq = (UInt16(data[2]) << 8) | UInt16(data[3])
+        let seq = (UInt16(data[data.startIndex + 2]) << 8) | UInt16(data[data.startIndex + 3])
         lock.lock()
         _lastReceivedSequence = seq
         lock.unlock()
-        let pcmData = data.subdata(in: 4 ..< data.count)
+        let pcmData = data.subdata(in: (data.startIndex + 4) ..< data.endIndex)
 
         onAudioReceived?(pcmData, isFinal)
     }

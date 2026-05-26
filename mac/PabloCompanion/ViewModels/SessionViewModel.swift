@@ -1,5 +1,6 @@
 import Foundation
 import os
+import PracticeClientCore
 
 /// ViewModel for session management — powers the day view, session history, and session lifecycle.
 ///

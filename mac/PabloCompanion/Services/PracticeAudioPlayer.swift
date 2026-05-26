@@ -1,13 +1,14 @@
 import AVFoundation
 import Foundation
 import os
+import PracticeClientCore
 
 /// Plays Pablo Bear's response audio through system speakers.
 ///
 /// Receives PCM chunks (24kHz, 16-bit, mono) from the WebSocket client and queues
 /// them for playback via AVAudioEngine. Playing through system audio output means
 /// AudioCaptureKit will capture it as the "client" channel automatically.
-final class PracticeAudioPlayer: @unchecked Sendable {
+final class PracticeAudioPlayer: PracticeAudioSink, @unchecked Sendable {
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PracticeAudioPlayer")
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
