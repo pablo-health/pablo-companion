@@ -25,12 +25,19 @@ public protocol PracticeAudioSink: AnyObject {
 /// Replays a raw PCM fixture as 20 ms frames at wall-clock cadence, mirroring
 /// how the live mic delivers chunks. Pacing matters: the server's VAD/turn
 /// detection expects roughly real-time audio, not a burst.
+///
+/// After the fixture, it emits a tail of silent frames. A live mic keeps
+/// streaming (near-silent) audio once the speaker stops, and that trailing
+/// silence is what the streaming ASR uses to detect end-of-turn. Fixtures that
+/// end mid-utterance have no such tail, so without it the turn never closes and
+/// no transcript is finalized.
 public final class FileAudioInputSource: PracticeAudioSource, @unchecked Sendable {
     public var onAudioFrame: (@Sendable (Data) -> Void)?
 
     private let pcm: Data
     private let frameBytes: Int
     private let frameInterval: Duration
+    private let trailingSilenceFrames: Int
     private let lock = NSLock()
     private var task: Task<Void, Never>?
 
@@ -38,19 +45,28 @@ public final class FileAudioInputSource: PracticeAudioSource, @unchecked Sendabl
     ///   - pcmURL: raw little-endian s16 PCM (no header), 16 kHz mono.
     ///   - frameBytes: bytes per frame (default 640 = 20 ms at 16 kHz s16le).
     ///   - frameIntervalMS: real-time gap between frames (default 20 ms).
-    public init(pcmURL: URL, frameBytes: Int = 640, frameIntervalMS: Int = 20) throws {
+    ///   - trailingSilenceMS: silence streamed after the fixture so the ASR
+    ///     detects end-of-turn, mirroring an open mic (default 1500 ms).
+    public init(
+        pcmURL: URL,
+        frameBytes: Int = 640,
+        frameIntervalMS: Int = 20,
+        trailingSilenceMS: Int = 1500
+    ) throws {
         pcm = try Data(contentsOf: pcmURL)
         self.frameBytes = frameBytes
         frameInterval = .milliseconds(frameIntervalMS)
+        trailingSilenceFrames = max(0, trailingSilenceMS / max(1, frameIntervalMS))
     }
 
-    /// True once the whole fixture has been emitted.
+    /// True once the whole fixture (plus trailing silence) has been emitted.
     public private(set) var didFinish = false
 
     public func start() throws {
         let pcm = self.pcm
         let frameBytes = self.frameBytes
         let frameInterval = self.frameInterval
+        let trailingSilenceFrames = self.trailingSilenceFrames
         lock.lock()
         task = Task { [weak self] in
             var offset = pcm.startIndex
@@ -59,6 +75,14 @@ public final class FileAudioInputSource: PracticeAudioSource, @unchecked Sendabl
                 let frame = pcm.subdata(in: offset ..< end)
                 self?.onAudioFrame?(frame)
                 offset = end
+                try? await Task.sleep(for: frameInterval)
+            }
+            // Tail of silence so the ASR finalizes the turn (see class doc).
+            let silentFrame = Data(count: frameBytes)
+            var emitted = 0
+            while emitted < trailingSilenceFrames, !Task.isCancelled {
+                self?.onAudioFrame?(silentFrame)
+                emitted += 1
                 try? await Task.sleep(for: frameInterval)
             }
             self?.didFinish = true
