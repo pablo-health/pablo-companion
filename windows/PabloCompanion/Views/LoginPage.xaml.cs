@@ -12,13 +12,5 @@ public sealed partial class LoginPage : UserControl
     {
         ViewModel = App.Services.GetRequiredService<AuthViewModel>();
         InitializeComponent();
-
-        // Restore saved server URL
-        var credentials = App.Services.GetRequiredService<Services.CredentialManager>();
-        var saved = credentials.AuthServerUrl;
-        if (!string.IsNullOrEmpty(saved))
-        {
-            ViewModel.ServerUrl = saved;
-        }
     }
 }

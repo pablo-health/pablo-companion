@@ -15,6 +15,7 @@
             <!-- Converters -->
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
             <converters:NullToFalseConverter x:Key="NullToFalseConverter" />
+            <converters:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVisibilityConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -57,7 +57,16 @@ public partial class AuthViewModel : ObservableObject
     public partial string? ErrorMessage { get; set; }
 
     [ObservableProperty]
-    public partial string ServerUrl { get; set; } = "";
+    public partial string ServerUrl { get; set; } = AppConstants.DefaultAuthServerUrl;
+
+    /// <summary>
+    /// Controls visibility of the "Connect to a different server" UI on the login screen.
+    /// Hidden by default — therapists installing from the Store sign in against
+    /// <see cref="AppConstants.DefaultAuthServerUrl"/> without ever seeing a URL field.
+    /// Auto-shown when a saved URL exists that differs from the default (dev / self-host).
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsAdvancedVisible { get; set; }
 
     public AuthViewModel(
         CredentialManager credentials,
@@ -75,7 +84,20 @@ public partial class AuthViewModel : ObservableObject
         _protocolListener = protocolListener;
         _inactivityMonitor.OnTimeout += OnInactivityTimeout;
         _inactivityMonitor.OnScreenLocked += OnInactivityTimeout;
+
+        // Restore saved server URL if non-empty; otherwise stay on the default.
+        // Show the "Connect to a different server" panel only when the saved URL
+        // differs from the default — i.e. self-host or dev configuration.
+        var saved = _credentials.AuthServerUrl;
+        if (!string.IsNullOrEmpty(saved))
+        {
+            ServerUrl = saved;
+            IsAdvancedVisible = saved != AppConstants.DefaultAuthServerUrl;
+        }
     }
+
+    [RelayCommand]
+    private void ShowAdvanced() => IsAdvancedVisible = true;
 
     private void OnInactivityTimeout()
     {

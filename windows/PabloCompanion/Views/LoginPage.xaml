@@ -4,13 +4,25 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <Grid Background="{StaticResource PabloCream}">
-        <StackPanel Spacing="24"
+        <StackPanel Spacing="20"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Width="400"
                     Padding="40">
-            <!-- Logo / Title -->
-            <TextBlock Text="Pablo Companion"
+
+            <!-- Pablo bear (same artwork as the app icon) -->
+            <Border CornerRadius="32"
+                    Width="160"
+                    Height="160"
+                    HorizontalAlignment="Center"
+                    AutomationProperties.AccessibilityView="Raw">
+                <Border.Background>
+                    <ImageBrush ImageSource="ms-appx:///Images/PabloBear.png"
+                                Stretch="UniformToFill" />
+                </Border.Background>
+            </Border>
+
+            <TextBlock Text="Welcome to Pablo"
                        Style="{StaticResource PabloDisplayLarge}"
                        HorizontalAlignment="Center" />
 
@@ -19,19 +31,27 @@
                        Foreground="{StaticResource PabloBrownSoft}"
                        HorizontalAlignment="Center" />
 
-            <!-- Server URL -->
+            <!-- Server URL (hidden by default — visible only for self-host / dev) -->
             <TextBox x:Name="ServerUrlBox"
                      Header="Server URL"
-                     PlaceholderText="https://your-practice.pablo.health"
+                     PlaceholderText="https://app.pablo.health"
                      Text="{x:Bind ViewModel.ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     Visibility="{x:Bind ViewModel.IsAdvancedVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                      AutomationProperties.Name="Server URL" />
 
             <!-- Single Sign In button -->
-            <Button Content="Sign In"
+            <Button Content="Sign in"
                     Command="{x:Bind ViewModel.SignInCommand}"
                     Style="{StaticResource PabloPrimaryButton}"
                     HorizontalAlignment="Stretch"
                     AutomationProperties.Name="Sign in using your browser" />
+
+            <!-- "Connect to a different server" — only shown when advanced is hidden -->
+            <HyperlinkButton Content="Connect to a different server"
+                             Command="{x:Bind ViewModel.ShowAdvancedCommand}"
+                             HorizontalAlignment="Center"
+                             Visibility="{x:Bind ViewModel.IsAdvancedVisible, Mode=OneWay, Converter={StaticResource InvertedBoolToVisibilityConverter}}"
+                             AutomationProperties.Name="Connect to a different Pablo server" />
 
             <!-- Error -->
             <InfoBar x:Name="ErrorBar"
