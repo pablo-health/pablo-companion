@@ -22,7 +22,7 @@
 
   <Dependencies>
     <!-- Windows 10 1809 (Oct 2018) minimum, matches TargetPlatformMinVersion in csproj -->
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26200.0" />
     <!-- WinAppSDK 1.8 framework — Store auto-installs as a dependency package -->
     <PackageDependency Name="Microsoft.WindowsAppRuntime.1.8" MinVersion="8000.0.0.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
   </Dependencies>
@@ -37,7 +37,7 @@
            Store listing uses "Pablo Health" (from Properties/DisplayName above). -->
       <uap:VisualElements
         DisplayName="Pablo"
-        Description="Pablo Companion - therapy session recording for therapists"
+        Description="The desktop companion for therapists — records sessions and turns them into SOAP notes."
         BackgroundColor="#FDF6EC"
         Square150x150Logo="Images\Square150x150Logo.png"
         Square44x44Logo="Images\Square44x44Logo.png">
