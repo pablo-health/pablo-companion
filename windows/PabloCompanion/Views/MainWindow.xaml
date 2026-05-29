@@ -46,11 +46,17 @@
                         <FontIcon Glyph="&#xE77B;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <!-- Practice Mode hidden pre-1.0-Store-submission: known crash when
+                     ending a session. Pages remain in the project so we can re-enable
+                     once the crash is fixed. -->
+                <!--
                 <NavigationViewItem Content="Practice" Tag="PracticeTopicPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8D6;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                -->
+
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
