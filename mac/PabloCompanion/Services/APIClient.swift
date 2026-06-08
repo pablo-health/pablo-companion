@@ -385,7 +385,11 @@ final class APIClient {
         path: String,
         authenticated: Bool = true
     ) async throws -> URLRequest {
-        guard let url = URL(string: "\(baseURLString)\(path)") else {
+        // Validate scheme inline so CodeQL dataflow can prove the request is HTTPS.
+        // (The base URL is also validated at APIClient init via URLValidator.)
+        guard let url = URL(string: "\(baseURLString)\(path)"),
+              isAllowedRequestScheme(url)
+        else {
             throw APIError.invalidResponse
         }
 
@@ -409,6 +413,18 @@ final class APIClient {
         }
 
         return request
+    }
+
+    /// Returns true if the URL uses a scheme permitted for API requests.
+    /// Production requires HTTPS; debug additionally allows http://localhost.
+    nonisolated private func isAllowedRequestScheme(_ url: URL) -> Bool {
+        if url.scheme == "https" { return true }
+        #if DEBUG
+        if url.scheme == "http", let host = url.host, host == "localhost" || host == "127.0.0.1" {
+            return true
+        }
+        #endif
+        return false
     }
 
     /// Decodes a successful HTTP response body into the requested type.
