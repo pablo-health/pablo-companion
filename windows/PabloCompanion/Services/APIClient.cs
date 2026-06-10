@@ -287,6 +287,35 @@ public class APIClient
         return await SendAsync<Patient>(request);
     }
 
+    // ── Launch handoff ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Redeems a single-use launch intent received via a verified deep link
+    /// (or legacy-scheme fallback). On success the backend marks the intent
+    /// consumed and returns the appointment + patient name to confirm.
+    ///
+    /// Throws <see cref="PabloException"/> with <c>StatusCode == 410</c> when the
+    /// intent is no longer valid (already redeemed via the other path, expired,
+    /// or unknown) — callers treat that as a benign "already handled / expired".
+    /// The <c>X-Install-ID</c> header identifies this enrolled device; it is sent
+    /// so the redeem path keeps working once per-request DPoP proofs are enforced
+    /// server-side.
+    /// </summary>
+    public virtual async Task<RedeemLaunchIntentResponse> RedeemLaunchIntentAsync(string intentId)
+    {
+        using var request = CreateRequest(HttpMethod.Post, "/api/launch/redeem");
+
+        var installId = _credentials.InstallId;
+        if (!string.IsNullOrEmpty(installId))
+        {
+            request.Headers.Add("X-Install-ID", installId);
+        }
+
+        var body = JsonSerializer.Serialize(new RedeemLaunchIntentRequest(intentId), JsonOptions);
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        return await SendAsync<RedeemLaunchIntentResponse>(request);
+    }
+
     // ── User ────────────────────────────────────────────────────────────────
 
     public async Task<UserProfile> FetchUserProfileAsync()

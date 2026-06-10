@@ -109,6 +109,34 @@ public class CredentialManager
     }
 
     /// <summary>
+    /// Stable per-install device identifier (UUIDv4), registered with the backend
+    /// at enrollment and sent on the launch-redeem path via <c>X-Install-ID</c>.
+    /// Deliberately NOT in <see cref="AuthTokenKeys"/>: it is a device identity that
+    /// must survive sign-out/sign-in cycles, so <see cref="ClearAuthTokens"/> leaves
+    /// it in place. Use <see cref="GetOrCreateInstallId"/> to read-or-mint it.
+    /// </summary>
+    public string? InstallId
+    {
+        get => GetValue("installId");
+        set { if (value != null) SetValue("installId", value); else RemoveValue("installId"); }
+    }
+
+    /// <summary>
+    /// Returns the persisted install id, minting a new UUIDv4 on first call and
+    /// storing it. The value is stable for the lifetime of the install and survives
+    /// sign-out (it is not cleared by <see cref="ClearAuthTokens"/>).
+    /// </summary>
+    public string GetOrCreateInstallId()
+    {
+        var existing = GetValue("installId");
+        if (!string.IsNullOrEmpty(existing)) return existing;
+
+        var id = Guid.NewGuid().ToString();
+        SetValue("installId", id);
+        return id;
+    }
+
+    /// <summary>
     /// Returns the per-user encryption key for <see cref="ActiveUserEmail"/>, creating one
     /// if it doesn't exist. Returns null if no user is signed in — callers must treat a null
     /// return as "no key available" (skip encryption / error). We deliberately refuse to

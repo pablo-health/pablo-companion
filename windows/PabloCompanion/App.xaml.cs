@@ -161,6 +161,7 @@ public partial class App : Application
     private static void ConfigureServices(ServiceCollection services)
     {
         services.AddSingleton<Services.CredentialManager>();
+        services.AddSingleton<Services.DeviceKeyService>();
         services.AddSingleton<Services.TokenRefresher>();
         services.AddSingleton<Services.APIClient>();
         services.AddSingleton<Services.VideoLaunchService>();

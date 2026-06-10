@@ -20,6 +20,13 @@
                          Grid.RowSpan="2"
                          Visibility="Collapsed" />
 
+        <!-- Minimal handoff shell — default authenticated surface. The web app is
+             the dashboard; the companion is a thin handoff target. Shown when
+             ENABLE_NATIVE_DASHBOARD is false (default). -->
+        <local:MinimalShellView x:Name="MinimalShell"
+                                Grid.Row="1"
+                                Visibility="Collapsed" />
+
         <!-- Main navigation shown when authenticated -->
         <NavigationView x:Name="NavView"
                         Grid.Row="1"

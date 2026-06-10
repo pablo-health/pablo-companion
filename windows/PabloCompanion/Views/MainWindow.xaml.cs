@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
-using System.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PabloCompanion.Models;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
 
@@ -13,9 +13,21 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
+    /// <summary>
+    /// Gates the full native dashboard (four-tab nav shell). Default <c>false</c>:
+    /// the companion shows only the minimal handoff window. Flip to <c>true</c> to
+    /// restore the legacy in-app dashboard verbatim. No view code is deleted either
+    /// way — the nav shell stays in the tree, just collapsed when this is false.
+    ///
+    /// <c>static readonly</c> (not <c>const</c>) so neither shell branch compiles to
+    /// unreachable code — both are kept live and one flag flip away.
+    /// </summary>
+    private static readonly bool EnableNativeDashboard = false;
+
     private readonly AuthViewModel _authVm;
     private readonly SubscriptionViewModel _subscriptionVm;
     private readonly DeepLinkRouter _deepLinks;
+    private readonly APIClient _apiClient;
 
     public MainWindow()
     {
@@ -56,6 +68,8 @@ public sealed partial class MainWindow : Window
         _deepLinks = App.Services.GetRequiredService<DeepLinkRouter>();
         _deepLinks.UriReceived += OnDeepLinkReceived;
 
+        _apiClient = App.Services.GetRequiredService<APIClient>();
+
         // Refresh subscription status when a 403 is detected
         var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
         sessionVm.PropertyChanged += (_, e) =>
@@ -89,20 +103,31 @@ public sealed partial class MainWindow : Window
         if (_authVm.AuthState == AuthState.Authenticated)
         {
             LoginPage.Visibility = Visibility.Collapsed;
-            NavView.Visibility = Visibility.Visible;
 
-            // Pre-load patient cache (matching macOS pattern)
-            var patientVm = App.Services.GetRequiredService<PatientViewModel>();
-            _ = patientVm.LoadPatientsAsync();
-
-            // Fetch subscription status and start polling
+            // Fetch subscription status and start polling (banner shows in both shells).
             _ = _subscriptionVm.RefreshStatusAsync();
             _subscriptionVm.StartPolling();
 
-            if (ContentFrame.Content == null)
+            if (EnableNativeDashboard)
             {
-                ContentFrame.Navigate(typeof(DayPage));
-                NavView.SelectedItem = NavView.MenuItems[0];
+                MinimalShell.Visibility = Visibility.Collapsed;
+                NavView.Visibility = Visibility.Visible;
+
+                // Pre-load patient cache (matching macOS pattern)
+                var patientVm = App.Services.GetRequiredService<PatientViewModel>();
+                _ = patientVm.LoadPatientsAsync();
+
+                if (ContentFrame.Content == null)
+                {
+                    ContentFrame.Navigate(typeof(DayPage));
+                    NavView.SelectedItem = NavView.MenuItems[0];
+                }
+            }
+            else
+            {
+                NavView.Visibility = Visibility.Collapsed;
+                MinimalShell.Visibility = Visibility.Visible;
+                MinimalShell.Refresh();
             }
 
             TryDrainDeepLink();
@@ -111,6 +136,7 @@ public sealed partial class MainWindow : Window
         {
             LoginPage.Visibility = Visibility.Visible;
             NavView.Visibility = Visibility.Collapsed;
+            MinimalShell.Visibility = Visibility.Collapsed;
             _subscriptionVm.ClearAllData();
         }
     }
@@ -126,22 +152,103 @@ public sealed partial class MainWindow : Window
         var uri = _deepLinks.TakePending();
         if (uri is null) return;
 
-        if (string.Equals(uri.Host, "session", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(uri.AbsolutePath.Trim('/'), "start", StringComparison.OrdinalIgnoreCase))
+        var link = LaunchIntentParser.Parse(uri);
+        switch (link.Kind)
         {
-            var appointmentId = HttpUtility.ParseQueryString(uri.Query).Get("appointment");
-            if (string.IsNullOrEmpty(appointmentId))
-            {
-                System.Diagnostics.Debug.WriteLine($"[DeepLink] session/start without appointment param (deferred): {uri}");
-                return;
-            }
+            case LaunchLinkKind.Intent when link.Value is { } intentId:
+                _ = RedeemAndConfirmAsync(intentId);
+                break;
 
+            case LaunchLinkKind.LegacyAppointment when link.Value is { } appointmentId:
+                // No server-side intent checkpoint on this path — still gate the mic
+                // behind the same affirmative confirmation. We don't have a patient
+                // name without redeeming, so the prompt is the generic form.
+                ShowConfirmation(appointmentId, patientName: null);
+                break;
+
+            default:
+                System.Diagnostics.Debug.WriteLine($"[DeepLink] Unsupported deep link (ignored): {uri}");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Redeems a launch intent and, on success, shows the affirmative
+    /// "Start session with [Patient Name]?" confirmation. A <c>410</c> (already
+    /// redeemed via the other path, expired, or unknown) surfaces as a soft,
+    /// non-PHI "link expired" notice rather than an error. Auth failures route
+    /// through the existing 401 sign-out handling in <see cref="APIClient"/>.
+    /// </summary>
+    private async Task RedeemAndConfirmAsync(string intentId)
+    {
+        RedeemLaunchIntentResponse redeemed;
+        try
+        {
+            redeemed = await _apiClient.RedeemLaunchIntentAsync(intentId);
+        }
+        catch (PabloException ex) when (ex.StatusCode == 410)
+        {
+            ShowExpiredNotice();
+            return;
+        }
+        catch (PabloException ex)
+        {
+            // 401/403 already drive sign-out via UnauthenticatedDetected; for
+            // anything else, fail soft without leaking detail.
+            App.LogException("RedeemLaunchIntentAsync", ex);
+            return;
+        }
+        catch (Exception ex)
+        {
+            App.LogException("RedeemLaunchIntentAsync", ex);
+            return;
+        }
+
+        ShowConfirmation(redeemed.AppointmentId, redeemed.PatientName);
+    }
+
+    private void ShowConfirmation(string appointmentId, string? patientName)
+    {
+        var window = new SessionConfirmationWindow(
+            appointmentId,
+            patientName,
+            StartSessionFromConfirmation);
+        window.Activate();
+    }
+
+    private void ShowExpiredNotice()
+    {
+        var window = new SessionConfirmationWindow(
+            "This link has expired. Start again from your web dashboard.");
+        window.Activate();
+    }
+
+    /// <summary>
+    /// Invoked from the confirmation window's Start Recording tap — the consent gate.
+    /// Starts the session via the same path the in-app day view uses, so the mic
+    /// arms only here. In native-dashboard mode we also surface the day view so the
+    /// recording banner is visible.
+    /// </summary>
+    private void StartSessionFromConfirmation(string appointmentId)
+    {
+        if (EnableNativeDashboard)
+        {
             ContentFrame.Navigate(typeof(DayPage), new DayPage.StartFromAppointmentArgs(appointmentId));
             NavView.SelectedItem = NavView.MenuItems[0];
             return;
         }
 
-        System.Diagnostics.Debug.WriteLine($"[DeepLink] Unsupported deep link (deferred): {uri}");
+        // Minimal shell: no day view in the frame. Drive the recording pipeline
+        // directly (the recording itself lives in RecordingViewModel, not the UI).
+        _ = StartSessionDirectAsync(appointmentId);
+    }
+
+    private async Task StartSessionDirectAsync(string appointmentId)
+    {
+        var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+        var session = await sessionVm.StartSessionFromAppointmentAsync(appointmentId);
+        if (session is null) return;
+        await sessionVm.StartSessionAsync(session.Id);
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)

@@ -37,6 +37,7 @@ public partial class AuthViewModel : ObservableObject
     private const string NativeRedirectUri = "pablohealth://callback";
 
     private readonly CredentialManager _credentials;
+    private readonly DeviceKeyService _deviceKey;
     private readonly TokenRefresher _tokenRefresher;
     private readonly APIClient _apiClient;
     private readonly PracticeApiClient _practiceApiClient;
@@ -71,6 +72,7 @@ public partial class AuthViewModel : ObservableObject
 
     public AuthViewModel(
         CredentialManager credentials,
+        DeviceKeyService deviceKey,
         TokenRefresher tokenRefresher,
         APIClient apiClient,
         PracticeApiClient practiceApiClient,
@@ -78,6 +80,7 @@ public partial class AuthViewModel : ObservableObject
         ProtocolActivationListener protocolListener)
     {
         _credentials = credentials;
+        _deviceKey = deviceKey;
         _tokenRefresher = tokenRefresher;
         _apiClient = apiClient;
         _practiceApiClient = practiceApiClient;
@@ -317,7 +320,7 @@ public partial class AuthViewModel : ObservableObject
         }
 
         var exchangeUrl = $"{authUrl.TrimEnd('/')}/api/auth/native/exchange";
-        var bodyObj = new Dictionary<string, string>
+        var bodyObj = new Dictionary<string, object?>
         {
             ["code"] = code,
             ["redirect_uri"] = redirectUri,
@@ -327,6 +330,22 @@ public partial class AuthViewModel : ObservableObject
             bodyObj["code_verifier"] = _pkceCodeVerifier;
             _pkceCodeVerifier = null;
         }
+
+        // Device enrollment piggy-backs on the code exchange: registers this install
+        // (id + public device key) so the web dashboard can detect it and hand off.
+        // Enrollment is optional server-side and the payload, when present, must be
+        // schema-complete (the backend requires the JWK + key_storage). Best-effort:
+        // if key generation fails we omit enrollment entirely rather than block
+        // sign-in — the companion re-enrolls on a later launch.
+        try
+        {
+            bodyObj["enrollment"] = DeviceEnrollment.BuildPayload(_credentials, _deviceKey);
+        }
+        catch (Exception ex)
+        {
+            App.LogException("BuildEnrollmentPayload", ex);
+        }
+
         var payload = JsonSerializer.Serialize(bodyObj);
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
