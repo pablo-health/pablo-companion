@@ -1,3 +1,4 @@
+import CompanionAuthCore
 import Foundation
 import os
 

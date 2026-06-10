@@ -10,10 +10,10 @@ import Foundation
 /// version string, a SHA-256 hash of the machine hostname, and the **public**
 /// half of the device keypair leave the device — never the raw hostname, the
 /// private key, or any PHI.
-enum DeviceEnrollment {
+public enum DeviceEnrollment {
     /// Platform tag for this build. The backend's stored enum is
     /// `mac | windows | linux` — NOT `macos`.
-    static let platform = "mac"
+    public static let platform = "mac"
 
     /// Assembles the full enrollment object for the OAuth code exchange.
     ///
@@ -24,7 +24,7 @@ enum DeviceEnrollment {
     /// be provisioned, in which case the caller omits the enrollment object
     /// entirely (the backend treats `enrollment` as optional) rather than sending
     /// a schema-invalid partial.
-    static func payload(installID: String) -> [String: Any]? {
+    public static func payload(installID: String) -> [String: Any]? {
         guard let key = DeviceKey.publicKey() else { return nil }
         return [
             "install_id": installID,
@@ -38,7 +38,7 @@ enum DeviceEnrollment {
 
     /// SHA-256 hex (lowercase) of the local hostname. Returns the hash of an empty
     /// string when no hostname is available — never the raw hostname.
-    static func hostnameHash() -> String {
+    public static func hostnameHash() -> String {
         let hostname = Host.current().localizedName ?? ""
         let digest = SHA256.hash(data: Data(hostname.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()

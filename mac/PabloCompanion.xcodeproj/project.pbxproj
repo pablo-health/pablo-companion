@@ -10,6 +10,8 @@
 		9588F2B82F46BE5B0052AF8F /* AudioCaptureKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9588F2B12F46BD500052AF8F /* AudioCaptureKit */; };
 		AA00000000000011000000 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000012000000 /* Sparkle */; };
 		AA00000000000022000000 /* PracticeClientCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000021000000 /* PracticeClientCore */; };
+		AA00000000000024000000 /* CompanionAuthCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000023000000 /* CompanionAuthCore */; };
+		AA00000000000026000000 /* CompanionAuthCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000025000000 /* CompanionAuthCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +51,7 @@
 				9588F2B82F46BE5B0052AF8F /* AudioCaptureKit in Frameworks */,
 				AA00000000000011000000 /* Sparkle in Frameworks */,
 				AA00000000000022000000 /* PracticeClientCore in Frameworks */,
+				AA00000000000024000000 /* CompanionAuthCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -56,6 +59,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA00000000000026000000 /* CompanionAuthCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -108,6 +112,7 @@
 				9588F2B12F46BD500052AF8F /* AudioCaptureKit */,
 				AA00000000000012000000 /* Sparkle */,
 				AA00000000000021000000 /* PracticeClientCore */,
+				AA00000000000023000000 /* CompanionAuthCore */,
 			);
 			productName = Pablo;
 			productReference = 9588F28A2F46BC910052AF8F /* Pablo.app */;
@@ -130,6 +135,9 @@
 				AA00000000000002000000 /* PabloCompanionTests */,
 			);
 			name = PabloTests;
+			packageProductDependencies = (
+				AA00000000000025000000 /* CompanionAuthCore */,
+			);
 			productName = PabloTests;
 			productReference = AA00000000000001000000 /* PabloTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -549,6 +557,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA00000000000020000000 /* XCLocalSwiftPackageReference ".." */;
 			productName = PracticeClientCore;
+		};
+		AA00000000000023000000 /* CompanionAuthCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA00000000000020000000 /* XCLocalSwiftPackageReference ".." */;
+			productName = CompanionAuthCore;
+		};
+		AA00000000000025000000 /* CompanionAuthCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA00000000000020000000 /* XCLocalSwiftPackageReference ".." */;
+			productName = CompanionAuthCore;
 		};
 		9588F2B12F46BD500052AF8F /* AudioCaptureKit */ = {
 			isa = XCSwiftPackageProductDependency;

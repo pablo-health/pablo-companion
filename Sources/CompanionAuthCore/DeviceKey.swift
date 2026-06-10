@@ -17,37 +17,48 @@ import Security
 /// (`keyStorage == .software`). Either way the enrollment payload carries a full,
 /// schema-valid `device_public_key_jwk` + `key_storage` so the OAuth code
 /// exchange is never rejected for a partial enrollment object.
-enum DeviceKey {
+public enum DeviceKey {
     /// Where the private key material lives. Mirrors the backend `KeyStorage`
     /// enum (`hardware | software`).
-    enum Storage: String {
+    public enum Storage: String {
         case hardware
         case software
     }
 
     /// The public key in JWK form plus the storage class that produced it.
-    struct PublicKey {
+    public struct PublicKey {
         /// Full public JWK: `{kty:"EC", crv:"P-256", x, y}` (base64url, no padding).
-        let jwk: [String: String]
+        public let jwk: [String: String]
         /// `"hardware"` for a Secure-Enclave key, `"software"` for the fallback.
-        let storage: Storage
+        public let storage: Storage
     }
 
-    private static let logger = Logger(subsystem: AppConstants.appBundleID, category: "DeviceKey")
+    private static let logger = Logger(subsystem: AuthCoreConfig.bundleID, category: "DeviceKey")
 
     /// Keychain account for the persisted software-fallback private key (raw
     /// P-256 representation). The Secure-Enclave key is persisted by its own
     /// application tag (below) and never exposes private bytes.
     private static let softwareKeyAccount = "device_signing_key"
     /// Application tag for the persisted Secure-Enclave key reference.
-    private static let secureEnclaveTag = Data("\(AppConstants.appBundleID).device-key".utf8)
+    private static var secureEnclaveTag: Data {
+        Data("\(AuthCoreConfig.bundleID).device-key".utf8)
+    }
+
+    /// Adds `kSecAttrAccessGroup` only when the process configured one — an
+    /// unentitled process (the harness CLI) must not send the attribute at all.
+    private static func withAccessGroup(_ query: [String: Any]) -> [String: Any] {
+        guard let group = AuthCoreConfig.keychainAccessGroup else { return query }
+        var query = query
+        query[kSecAttrAccessGroup as String] = group
+        return query
+    }
 
     /// Returns the public JWK + storage class for this install's device key,
     /// creating and persisting the keypair on first call. Returns `nil` only if
     /// neither a Secure-Enclave nor a software key can be created (extremely
     /// unusual); callers then omit the enrollment object entirely rather than
     /// sending a partial one.
-    static func publicKey() -> PublicKey? {
+    public static func publicKey() -> PublicKey? {
         if let hardware = secureEnclavePublicKey() {
             return PublicKey(jwk: hardware, storage: .hardware)
         }
@@ -89,13 +100,12 @@ enum DeviceKey {
     }
 
     private static func readSecureEnclaveKeyData() -> Data? {
-        let query: [String: Any] = [
+        let query: [String: Any] = withAccessGroup([
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: secureEnclaveTag,
-            kSecAttrAccessGroup as String: AppConstants.keychainAccessGroup,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
+        ])
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess, let data = result as? Data else { return nil }
@@ -104,13 +114,12 @@ enum DeviceKey {
 
     @discardableResult
     private static func storeSecureEnclaveKey(_ data: Data) -> Bool {
-        let query: [String: Any] = [
+        let query: [String: Any] = withAccessGroup([
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: secureEnclaveTag,
-            kSecAttrAccessGroup as String: AppConstants.keychainAccessGroup,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-        ]
+        ])
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
     }
@@ -138,14 +147,13 @@ enum DeviceKey {
     }
 
     private static func readSoftwareKeyData() -> Data? {
-        let query: [String: Any] = [
+        let query: [String: Any] = withAccessGroup([
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: AppConstants.appBundleID,
+            kSecAttrService as String: AuthCoreConfig.bundleID,
             kSecAttrAccount as String: softwareKeyAccount,
-            kSecAttrAccessGroup as String: AppConstants.keychainAccessGroup,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
+        ])
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess, let data = result as? Data else { return nil }
@@ -154,14 +162,13 @@ enum DeviceKey {
 
     @discardableResult
     private static func storeSoftwareKey(_ data: Data) -> Bool {
-        let query: [String: Any] = [
+        let query: [String: Any] = withAccessGroup([
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: AppConstants.appBundleID,
+            kSecAttrService as String: AuthCoreConfig.bundleID,
             kSecAttrAccount as String: softwareKeyAccount,
-            kSecAttrAccessGroup as String: AppConstants.keychainAccessGroup,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-        ]
+        ])
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
     }
@@ -182,7 +189,7 @@ enum DeviceKey {
     ///
     /// Returns `nil` when no device key is available (the caller then sends
     /// neither the `DPoP` nor the `X-Install-ID` header — never one alone).
-    static func sign(_ message: Data) -> Data? {
+    public static func sign(_ message: Data) -> Data? {
         if SecureEnclave.isAvailable, let key = loadSecureEnclaveKey() {
             guard let signature = try? key.signature(for: message) else {
                 logger.error("Secure-Enclave proof signing failed")
@@ -206,7 +213,7 @@ enum DeviceKey {
     /// Builds a public EC JWK from a P-256 public key. The uncompressed point is
     /// `0x04 || X(32) || Y(32)`; `x` and `y` are the two 32-byte coordinates
     /// encoded base64url without padding (RFC 7518 §6.2.1).
-    static func jwk(from publicKey: P256.Signing.PublicKey) -> [String: String]? {
+    public static func jwk(from publicKey: P256.Signing.PublicKey) -> [String: String]? {
         let raw = publicKey.rawRepresentation // 64 bytes: X(32) || Y(32)
         guard raw.count == 64 else { return nil }
         let x = raw.prefix(32)
@@ -219,7 +226,7 @@ enum DeviceKey {
         ]
     }
 
-    static func base64URLNoPadding(_ data: Data) -> String {
+    public static func base64URLNoPadding(_ data: Data) -> String {
         data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")

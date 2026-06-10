@@ -1,6 +1,6 @@
+import CompanionAuthCore
 import CryptoKit
 import Foundation
-@testable import Pablo
 import Testing
 
 @Suite("Device enrollment payload")

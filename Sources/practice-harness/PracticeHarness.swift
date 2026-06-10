@@ -14,6 +14,8 @@ import FoundationNetworking
 /// reimplementation, so it can't drift from the shipping client.
 ///
 /// Configuration (env):
+///   PRACTICE_SCENARIO      "practice" (default) or "dpop" — the device-binding
+///                          scenario in DPoPScenario.swift (macOS only)
 ///   PRACTICE_BASE_URL      backend base URL (default https://app.pablo.health)
 ///   PRACTICE_AUDIO         path to raw s16le 16 kHz mono PCM fixture (required)
 ///   PRACTICE_TOPIC         topic id (default: first from /api/practice/topics)
@@ -34,6 +36,15 @@ struct PracticeHarness {
     static func main() async {
         let env = ProcessInfo.processInfo.environment
         let baseURL = env["PRACTICE_BASE_URL"] ?? "https://app.pablo.health"
+
+        if env["PRACTICE_SCENARIO"] == "dpop" {
+            #if canImport(CompanionAuthCore)
+            await DPoPScenario.run(env: env)
+            return
+            #else
+            fail("The dpop scenario needs CompanionAuthCore (macOS only).")
+            #endif
+        }
 
         guard let audioPath = env["PRACTICE_AUDIO"], !audioPath.isEmpty else {
             fail("PRACTICE_AUDIO is required (path to raw s16le 16kHz mono PCM).")
