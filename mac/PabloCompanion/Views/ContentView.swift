@@ -1,6 +1,8 @@
+import AppKit
 import SwiftUI
 
-/// Main view — authenticates, then shows four-tab navigation.
+/// Main view — authenticates, then shows either the thin handoff window (default)
+/// or, behind `enableNativeDashboard`, the full four-tab native dashboard.
 struct ContentView: View {
     var authVM: AuthViewModel
     var deepLinks: DeepLinkRouter
@@ -9,17 +11,35 @@ struct ContentView: View {
     // is a separate-file extension that drives the launch recovery + retry flow.
     @State var recordingVM = RecordingViewModel()
     @State private var uploadVM = UploadViewModel()
-    @State private var patientVM = PatientViewModel()
+    @State var patientVM = PatientViewModel()
     @State var transcriptionVM = TranscriptionViewModel()
     @State var practiceVM = PracticeViewModel()
     @State private var subscriptionVM = SubscriptionViewModel()
     @State var showPractice = false
     @State private var viewingTranscript: TranscriptViewerItem?
-    @State private var detailSession: Session?
+    @State var detailSession: Session?
     @State var activeSessionId: String?
     @State var selectedTab = 0
     @State private var versionBlock: UpdateRequiredView.Reason?
     @State private var screenLockObserver: NSObjectProtocol?
+
+    /// A web-handoff awaiting the therapist's explicit "Start Recording" tap.
+    /// Set after a launch intent is redeemed (or a legacy appointment handoff is
+    /// parsed); cleared when confirmed or cancelled. The mic does NOT arm while
+    /// this is merely set — only the confirmation tap arms it.
+    @State var pendingLaunch: PendingLaunch?
+
+    /// Non-PHI message shown when a launch intent can't be redeemed.
+    @State var launchError: String?
+
+    /// Whether the preferences sheet is shown from the minimal window's footer.
+    @State private var showPreferences = false
+
+    /// Gates the full four-tab native dashboard. Default `false`: the companion
+    /// shows only the minimal handoff window and the web app is the dashboard.
+    /// Flip to `true` (UserDefaults key `enableNativeDashboard`) to restore the
+    /// full native shell. No view files are deleted either way.
+    @AppStorage("enableNativeDashboard") private var enableNativeDashboard = false
 
     var body: some View {
         Group {
@@ -41,32 +61,49 @@ struct ContentView: View {
         .preferredColorScheme(.light)
     }
 
+    /// Authenticated shell. The full four-tab dashboard is gated behind
+    /// `enableNativeDashboard`; when off (default) the companion is a thin handoff
+    /// target showing only the minimal status window. Deep-link handoff,
+    /// background work, and the launch-confirmation gate run in BOTH modes.
     private var authenticatedContent: some View {
-        VStack(spacing: 0) {
-            SubscriptionBannerView(viewModel: subscriptionVM)
-            TabView(selection: $selectedTab) {
-                todayTab
-                sessionsTab
-                patientsTab
-                settingsTab
+        Group {
+            if enableNativeDashboard {
+                nativeDashboardShell
+            } else {
+                minimalShell
             }
         }
-        .frame(minWidth: 500, minHeight: 600)
         .task { await configureAndLoad() }
-        .alert("Recording Error", isPresented: $recordingVM.showError, presenting: recordingVM.errorMessage) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
+        .sheet(item: $pendingLaunch) { launch in
+            SessionConfirmationView(
+                patientName: launch.patientName,
+                onStartRecording: { confirmPendingLaunch() },
+                onCancel: { pendingLaunch = nil }
+            )
         }
-        .alert("Patient Error", isPresented: $patientVM.showError, presenting: patientVM.errorMessage) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
+        .sheet(isPresented: launchErrorBinding) {
+            LaunchIntentErrorView(
+                message: launchError ?? "This link is no longer valid.",
+                onDismiss: { launchError = nil }
+            )
         }
-        .alert("Session Error", isPresented: $sessionVM.showError, presenting: sessionVM.errorMessage) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
+        .onChange(of: authVM.authState) { _, newState in
+            if case .unauthenticated = newState {
+                clearAllPHI()
+            }
+            if case .authenticated = newState {
+                drainPendingDeepLink()
+            }
+        }
+        .onChange(of: deepLinks.pendingURL) { _, url in
+            guard url != nil else { return }
+            drainPendingDeepLink()
+        }
+        .onChange(of: uploadVM.backendURL) { _, newURL in
+            patientVM.backendURL = newURL
+            sessionVM.backendURL = newURL
+            practiceVM.backendURL = newURL
+            subscriptionVM.backendURL = newURL
         }
         .task {
             while !Task.isCancelled {
@@ -102,29 +139,49 @@ struct ContentView: View {
                 authVM.signOut()
             }
         }
+    }
+
+    /// Binding that drives the launch-error sheet from the optional `launchError`.
+    private var launchErrorBinding: Binding<Bool> {
+        Binding(
+            get: { launchError != nil },
+            set: { if !$0 { launchError = nil } }
+        )
+    }
+
+    /// The full four-tab native dashboard (flag on). Verbatim from the prior
+    /// unconditional shell — no behaviour change when `enableNativeDashboard` is true.
+    private var nativeDashboardShell: some View {
+        VStack(spacing: 0) {
+            SubscriptionBannerView(viewModel: subscriptionVM)
+            TabView(selection: $selectedTab) {
+                todayTab
+                sessionsTab
+                patientsTab
+                settingsTab
+            }
+        }
+        .frame(minWidth: 500, minHeight: 600)
+        .alert("Recording Error", isPresented: $recordingVM.showError, presenting: recordingVM.errorMessage) { _ in
+            Button("OK") {}
+        } message: { message in
+            Text(message)
+        }
+        .alert("Patient Error", isPresented: $patientVM.showError, presenting: patientVM.errorMessage) { _ in
+            Button("OK") {}
+        } message: { message in
+            Text(message)
+        }
+        .alert("Session Error", isPresented: $sessionVM.showError, presenting: sessionVM.errorMessage) { _ in
+            Button("OK") {}
+        } message: { message in
+            Text(message)
+        }
         .sheet(item: $viewingTranscript) { item in
             TranscriptViewerView(transcript: item.text, recordingDate: item.recordingDate)
         }
         .sheet(item: $detailSession) { session in
             sessionDetailSheet(session)
-        }
-        .onChange(of: authVM.authState) { _, newState in
-            if case .unauthenticated = newState {
-                clearAllPHI()
-            }
-            if case .authenticated = newState {
-                drainPendingDeepLink()
-            }
-        }
-        .onChange(of: deepLinks.pendingURL) { _, url in
-            guard url != nil else { return }
-            drainPendingDeepLink()
-        }
-        .onChange(of: uploadVM.backendURL) { _, newURL in
-            patientVM.backendURL = newURL
-            sessionVM.backendURL = newURL
-            practiceVM.backendURL = newURL
-            subscriptionVM.backendURL = newURL
         }
         .onChange(of: sessionVM.subscriptionBlocked) { _, blocked in
             if blocked {
@@ -135,6 +192,47 @@ struct ContentView: View {
         .sheet(isPresented: $showPractice) {
             practiceSheet
         }
+    }
+
+    /// The thin-client minimal window (flag off, default). Status + "Open Web
+    /// Dashboard" + footer. Designed to be glanced at, not lived in.
+    private var minimalShell: some View {
+        MinimalMainView(
+            email: authVM.authenticatedEmail,
+            webDashboardURL: webDashboardURL,
+            isBackendReachable: uploadVM.isBackendReachable,
+            micReady: recordingVM.systemAudioPermitted,
+            appVersion: AppConstants.appVersion,
+            onOpenDashboard: { openWebDashboard() },
+            onOpenPreferences: { showPreferences = true },
+            onSignOut: { authVM.signOut() }
+        )
+        .frame(width: 480, height: 360)
+        .sheet(isPresented: $showPreferences) {
+            settingsTab
+                .frame(minWidth: 460, minHeight: 520)
+        }
+    }
+
+    // MARK: - Web dashboard
+
+    /// The web dashboard URL, derived from the configured auth-server (Next.js
+    /// front-end) host so it tracks dev vs prod automatically — same value the
+    /// OAuth flow already uses. Falls back to the prod dashboard if unset/invalid.
+    var webDashboardURL: URL {
+        let base = (KeychainManager.getToken(forKey: .authServerURL) ?? authVM.authServerURL)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let isValidBase = URLValidator.validateScheme(base) == nil
+        if isValidBase, let url = URL(string: "\(base)/dashboard") {
+            return url
+        }
+        // Static fallback — guaranteed to parse.
+        return URL(string: "https://app.pablo.health/dashboard")
+            ?? URL(fileURLWithPath: "/")
+    }
+
+    private func openWebDashboard() {
+        NSWorkspace.shared.open(webDashboardURL)
     }
 
     // MARK: - Setup
@@ -233,7 +331,7 @@ struct ContentView: View {
         }
     }
 
-    private func handleQuickStart(_ patient: Patient) {
+    func handleQuickStart(_ patient: Patient) {
         Task {
             guard let session = await sessionVM.createAdHocSession(patientId: patient.id) else { return }
             guard await sessionVM.startSession(session.id) != nil else { return }
@@ -245,25 +343,25 @@ struct ContentView: View {
 
     // MARK: - Lookups
 
-    private func transcriptionStateForSession(_ sessionId: String) -> TranscriptionState? {
+    func transcriptionStateForSession(_ sessionId: String) -> TranscriptionState? {
         guard let recordingId = recordingVM.sessionRecordingMap[sessionId] else {
             return nil
         }
         return transcriptionVM.states[recordingId]
     }
 
-    private func hasRecordingForSession(_ sessionId: String) -> Bool {
+    func hasRecordingForSession(_ sessionId: String) -> Bool {
         recordingVM.recordingForSession(sessionId) != nil
     }
 
-    private func transcribeSession(_ session: Session) {
+    func transcribeSession(_ session: Session) {
         guard let recording = recordingVM.recordingForSession(session.id) else {
             return
         }
         transcriptionVM.transcribeIfNeeded(recording, sessionId: session.id)
     }
 
-    private func showTranscript(for session: Session) {
+    func showTranscript(for session: Session) {
         guard let text = transcriptionStateForSession(session.id)?.transcript
         else { return }
         let date = ISO8601DateFormatter().date(from: session.scheduledAt ?? "")
@@ -275,7 +373,7 @@ struct ContentView: View {
         )
     }
 
-    private func playSession(_ session: Session) {
+    func playSession(_ session: Session) {
         guard let recording = recordingVM.recordingForSession(session.id) else {
             return
         }
@@ -330,104 +428,6 @@ struct ContentView: View {
                 }
             }
         )
-    }
-
-    // MARK: - Tabs
-
-    private var todayTab: some View {
-        DayView(
-            sessionVM: sessionVM,
-            patients: patientVM.patients,
-            isLoadingPatients: patientVM.isLoading,
-            patientSearchText: $patientVM.searchText,
-            recordingState: recordingVM.recordingState,
-            recordingDuration: recordingVM.duration,
-            micLevel: recordingVM.micLevel,
-            systemLevel: recordingVM.systemLevel,
-            systemAudioActive: recordingVM.systemAudioActive,
-            pendingUploadCount: transcriptionVM.pendingUploadCount,
-            transcriptionStateForSession: { transcriptionStateForSession($0) },
-            hasRecordingForSession: { hasRecordingForSession($0) },
-            playingSessionId: recordingVM.playingSessionId,
-            onStartSession: { startSession(fromAppointmentId: $0.id) },
-            onQuickStart: { handleQuickStart($0) },
-            onStopRecording: {
-                Task {
-                    await recordingVM.stopRecording()
-                    let sessionId = activeSessionId
-                    recordingVM.activeSessionId = nil
-                    activeSessionId = nil
-                    if let sessionId {
-                        _ = await sessionVM.endSession(sessionId)
-                        let segments = recordingVM.allRecordingsForSession(sessionId)
-                        if !segments.isEmpty {
-                            await transcriptionVM.uploadAudioSegments(segments, sessionId: sessionId)
-                        }
-                        recordingVM.clearSessionSegments(sessionId)
-                    }
-                    await sessionVM.loadTodayAppointments()
-                }
-            },
-            recordingStalled: recordingVM.recordingStalled,
-            recordingError: recordingVM.persistentError,
-            onRetryCapture: { Task { await recordingVM.retryCapture() } },
-            onDismissError: { recordingVM.persistentError = nil },
-            onRetryUploads: { Task { await forceRetryAllPendingUploads() } },
-            onSwitchToSettings: { selectedTab = 3 },
-            onViewTranscript: { showTranscript(for: $0) },
-            onTranscribeSession: { transcribeSession($0) },
-            onPlaySession: { playSession($0) },
-            onStopPlayback: { recordingVM.stopPlayback() },
-            onEndSession: { session in
-                Task {
-                    _ = await sessionVM.endSession(session.id)
-                    await sessionVM.loadTodayAppointments()
-                }
-            },
-            activeSessionId: activeSessionId,
-            onSessionTapped: { appointment in
-                guard let sessionId = appointment.sessionId else { return }
-                detailSession = sessionVM.todaySessions.first { $0.id == sessionId }
-            }
-        )
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    startPractice()
-                } label: {
-                    Label("Practice", systemImage: "pawprint.fill")
-                }
-                .disabled(activeSessionId != nil || practiceVM.isSessionActive)
-                .accessibilityLabel("Start practice session with Pablo Bear")
-            }
-        }
-        .tabItem { Label("Today", systemImage: "calendar") }
-        .tag(0)
-    }
-
-    private var sessionsTab: some View {
-        SessionHistoryView(
-            viewModel: sessionVM,
-            patients: patientVM.patients,
-            pendingUploadCount: transcriptionVM.pendingUploadCount,
-            transcriptionStateForSession: { transcriptionStateForSession($0) },
-            hasRecordingForSession: { hasRecordingForSession($0) },
-            playingSessionId: recordingVM.playingSessionId,
-            onRetryUploads: { Task { await forceRetryAllPendingUploads() } },
-            onViewTranscript: { showTranscript(for: $0) },
-            onTranscribeSession: { transcribeSession($0) },
-            onPlaySession: { playSession($0) },
-            onStopPlayback: { recordingVM.stopPlayback() },
-            onSessionTapped: { detailSession = $0 }
-        )
-        .tabItem { Label("Sessions", systemImage: "list.clipboard") }
-        .tag(1)
-    }
-
-    private var patientsTab: some View {
-        PatientListView(viewModel: patientVM)
-            .tabItem { Label("Patients", systemImage: "person.2") }
-            .tag(2)
     }
 
 }
