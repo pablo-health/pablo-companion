@@ -37,6 +37,9 @@ final class NavigationAPIClient {
         logger.info("EHR navigate → \(url.absoluteString)")
         var httpRequest = try await authenticatedRequest(url: url)
         httpRequest.httpMethod = "POST"
+        // Authenticated backend call — attach the device binding (DPoP +
+        // X-Install-ID) after the method is set so the proof's htm matches.
+        APIClient.attachDeviceBinding(to: &httpRequest)
         let requestBody = try encoder.encode(request)
         httpRequest.httpBody = requestBody
 

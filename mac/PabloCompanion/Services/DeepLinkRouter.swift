@@ -30,12 +30,16 @@ enum LaunchHosts {
 ///   not honour Universal Links.
 ///
 /// A launch *intent* (`redeemLaunchIntent`) always goes through a server-side
-/// redemption checkpoint before any session starts. The legacy
-/// `startSessionFromAppointment` path (raw appointment id, no checkpoint) is only
-/// taken when no `intent` is present.
+/// redemption checkpoint before any session starts. A bare `appointment=`
+/// pointer with no intent is a spoofable PHI reference — anyone can craft
+/// `pablohealth://session/start?appointment=<guess>` — so it is **not** resolved.
+/// It maps to `.expiredPointer`, which surfaces the soft "link expired — start
+/// again from the dashboard" state instead of fetching the appointment.
 enum DeepLinkAction: Equatable {
     case redeemLaunchIntent(intentId: String)
-    case startSessionFromAppointment(appointmentId: String)
+    /// A raw appointment pointer arrived without a verified intent. Spoofable;
+    /// never resolved to PHI. The UI shows the soft expired-link state.
+    case expiredPointer
     case unsupported(reason: String)
 
     init(url: URL) {
@@ -78,8 +82,11 @@ enum DeepLinkAction: Equatable {
     ///
     /// Dispatch rule: when handling `session/start`, an `intent` param is
     /// redeemed through the server checkpoint and any `appointment` param is
-    /// ignored. Only when `intent` is absent does the raw-`appointment` fallback
-    /// apply. `pablohealth://launch/<id>` is also accepted as a fallback form.
+    /// ignored. A bare `appointment=` pointer with no intent is **never**
+    /// resolved — the id is spoofable and resolving it would leak / act on PHI
+    /// off an unverified pointer — so it maps to `.expiredPointer` (soft
+    /// expired-link state). `pablohealth://launch/<id>` is also accepted as a
+    /// fallback form.
     private static func parseCustomScheme(_ url: URL) -> Self {
         let host = url.host?.lowercased() ?? ""
         let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
@@ -99,8 +106,12 @@ enum DeepLinkAction: Equatable {
             if let intentId = intentValue, isValidIntentId(intentId) {
                 return .redeemLaunchIntent(intentId: intentId)
             }
+            // A raw appointment pointer with no verified intent is spoofable —
+            // do NOT fetch the appointment. Treat it as an expired link so the
+            // therapist re-launches from the (authenticated) dashboard, which
+            // mints a real intent.
             if let id = query.first(where: { $0.name == "appointment" })?.value, !id.isEmpty {
-                return .startSessionFromAppointment(appointmentId: id)
+                return .expiredPointer
             }
             return .unsupported(reason: "session/start without intent or appointment param")
         }

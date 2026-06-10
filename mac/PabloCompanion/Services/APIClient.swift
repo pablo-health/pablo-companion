@@ -431,6 +431,10 @@ final class APIClient {
         if authenticated {
             let token = try await requireToken()
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            // Device binding (DPoP proof + X-Install-ID) for enrolled installs.
+            // Centralized here so every authenticated path built through
+            // buildRequest carries the proof — no call site can forget it.
+            Self.attachDeviceBinding(to: &request)
         }
 
         return request

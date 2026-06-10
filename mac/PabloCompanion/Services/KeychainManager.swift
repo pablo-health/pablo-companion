@@ -126,6 +126,18 @@ struct KeychainManager: Sendable {
         return installID
     }
 
+    /// Returns the persisted install identifier *without* creating one. Used by
+    /// the per-request DPoP seam to decide "is this install enrolled?" — a
+    /// request must never mint a fresh install_id as a side effect (the id is
+    /// established at enrollment, alongside the device key). Returns `nil` before
+    /// the first enrollment.
+    static func installID() -> String? {
+        guard let existing = getToken(forKey: .installID), !existing.isEmpty else {
+            return nil
+        }
+        return existing
+    }
+
     // MARK: - Per-User Encryption Key
 
     private static let legacyDeviceKeyAccount = "device_encryption_key"

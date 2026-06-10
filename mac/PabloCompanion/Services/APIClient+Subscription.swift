@@ -15,6 +15,8 @@ extension APIClient {
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+        // Hand-rolled request (not via buildRequest) — attach the device binding.
+        Self.attachDeviceBinding(to: &request)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -49,6 +51,8 @@ extension APIClient {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+        // Hand-rolled request (not via buildRequest) — attach the device binding.
+        Self.attachDeviceBinding(to: &request)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 

@@ -19,8 +19,9 @@ extension ContentView {
     /// Launch intents (`https://<host>/launch/<id>` and the legacy
     /// `pablohealth://session/start?intent=<id>`) are redeemed through the backend
     /// checkpoint and then routed to the affirmative confirmation gate — the mic
-    /// never arms from the external trigger alone. The legacy raw-appointment path
-    /// goes through the **same** confirmation gate.
+    /// never arms from the external trigger alone. A bare `appointment=` pointer
+    /// with no intent is spoofable PHI and is **never** resolved; it shows the
+    /// soft expired-link state instead.
     func drainPendingDeepLink() {
         guard case .authenticated = authVM.authState else { return }
         guard let url = deepLinks.pendingURL else { return }
@@ -40,9 +41,12 @@ extension ContentView {
         case let .redeemLaunchIntent(intentId):
             DeepLinkRouter.logger.info("Redeeming launch intent from deep link")
             Task { await redeemAndConfirm(intentId: intentId) }
-        case let .startSessionFromAppointment(appointmentId):
-            DeepLinkRouter.logger.info("Confirming legacy appointment handoff")
-            pendingLaunch = PendingLaunch(appointmentId: appointmentId, patientName: nil)
+        case .expiredPointer:
+            // Raw appointment pointer with no verified intent — spoofable, never
+            // resolved. Surface the soft expired-link state and let the therapist
+            // re-launch from the authenticated dashboard.
+            DeepLinkRouter.logger.info("Ignoring unverified appointment pointer; showing expired-link state")
+            launchError = "This link has expired — start again from the dashboard."
         case let .unsupported(reason):
             DeepLinkRouter.logger.warning("Unsupported deep link: \(reason, privacy: .public)")
         }

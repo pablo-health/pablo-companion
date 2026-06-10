@@ -166,6 +166,41 @@ enum DeviceKey {
         return status == errSecSuccess
     }
 
+    // MARK: - Proof signing (DPoP)
+
+    /// Signs `message` with this install's device private key and returns the
+    /// signature in JOSE raw `r || s` form (64 bytes for P-256), ready to be
+    /// base64url-encoded into a compact JWS.
+    ///
+    /// `SecKey` / CryptoKit P-256 signatures are ASN.1 DER (`ECDSASig ::=
+    /// SEQUENCE { r INTEGER, s INTEGER }`); RFC 7515 §3.4 / RFC 7518 requires the
+    /// fixed-width `r || s` concatenation instead. CryptoKit's
+    /// `ECDSASignature.rawRepresentation` already emits that JOSE form, so we go
+    /// through CryptoKit rather than `SecKeyCreateSignature` and hand-rolling the
+    /// DER→raw conversion. The Secure-Enclave key signs in hardware; the bytes it
+    /// returns are still the standard DER which CryptoKit re-expresses as raw.
+    ///
+    /// Returns `nil` when no device key is available (the caller then sends
+    /// neither the `DPoP` nor the `X-Install-ID` header — never one alone).
+    static func sign(_ message: Data) -> Data? {
+        if SecureEnclave.isAvailable, let key = loadSecureEnclaveKey() {
+            guard let signature = try? key.signature(for: message) else {
+                logger.error("Secure-Enclave proof signing failed")
+                return nil
+            }
+            return signature.rawRepresentation
+        }
+        if let key = loadSoftwareKey() {
+            guard let signature = try? key.signature(for: message) else {
+                logger.error("Software-key proof signing failed")
+                return nil
+            }
+            return signature.rawRepresentation
+        }
+        logger.error("No device key available to sign a proof")
+        return nil
+    }
+
     // MARK: - JWK encoding
 
     /// Builds a public EC JWK from a P-256 public key. The uncompressed point is

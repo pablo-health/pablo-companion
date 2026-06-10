@@ -89,27 +89,49 @@ struct DeepLinkRouterTests {
         )
     }
 
-    // MARK: - Legacy scheme: appointment fallback (no intent present)
+    // MARK: - Legacy scheme: raw appointment pointer is never resolved
 
-    @Test func legacySchemeAppointmentFallback() {
+    @Test func legacySchemeRawAppointmentIsExpiredPointer() {
+        // A bare appointment= param with no verified intent is spoofable PHI.
+        // It must NOT resolve to a session-start; it maps to the soft
+        // expired-link state instead.
         #expect(
-            action("pablohealth://session/start?appointment=appt-123")
-                == .startSessionFromAppointment(appointmentId: "appt-123")
+            action("pablohealth://session/start?appointment=appt-123") == .expiredPointer
         )
     }
 
+    @Test func legacySchemeRawAppointmentNeverStartsSession() {
+        // Belt-and-suspenders: assert the action is not any session-resolving
+        // variant for a raw appointment pointer.
+        let result = action("pablohealth://session/start?appointment=appt-123")
+        if case .redeemLaunchIntent = result {
+            Issue.record("Raw appointment pointer must never redeem an intent")
+        }
+    }
+
     @Test func legacySchemeNoParamsIsUnsupported() {
-        if case .startSessionFromAppointment = action("pablohealth://session/start") {
-            Issue.record("session/start with no params must not start a session")
+        if case .expiredPointer = action("pablohealth://session/start") {
+            Issue.record("session/start with no params is unsupported, not an expired pointer")
         }
         if case .redeemLaunchIntent = action("pablohealth://session/start") {
             Issue.record("session/start with no params must not redeem")
         }
+        if case .unsupported = action("pablohealth://session/start") {
+            // expected
+        } else {
+            Issue.record("session/start with no params must be unsupported")
+        }
     }
 
     @Test func legacySchemeEmptyAppointmentIsUnsupported() {
-        if case .startSessionFromAppointment = action("pablohealth://session/start?appointment=") {
-            Issue.record("Empty appointment must not start a session")
+        // Empty appointment value isn't even a pointer — unsupported, not expired.
+        if case .expiredPointer = action("pablohealth://session/start?appointment=") {
+            Issue.record("Empty appointment must not map to expiredPointer")
+        }
+        if case .unsupported = action("pablohealth://session/start?appointment=") {
+            // expected
+        } else {
+            Issue.record("Empty appointment must be unsupported")
         }
     }
 
