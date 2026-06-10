@@ -187,6 +187,30 @@ final class APIClient {
         return session
     }
 
+    // MARK: - Launch intent
+
+    /// Redeems a launch intent issued by the web dashboard. The companion
+    /// presents its existing bearer token; the backend verifies the intent is
+    /// unconsumed, unexpired, and bound to this user, marks it consumed, and
+    /// returns the appointment context to confirm with the therapist.
+    ///
+    /// A `410 Gone` (mapped to `PabloError.conflictState`) means the intent is no
+    /// longer valid — already redeemed via the other handoff path, expired, or
+    /// unknown. Callers should treat that as a benign "already handled / link
+    /// expired", not a hard error.
+    func redeemLaunchIntent(intentId: String) async throws -> LaunchRedemption {
+        var request = try await buildRequest("POST", path: "/api/launch/redeem")
+        let body = ["intent_id": intentId]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let decoded: LaunchRedemption = try handleResponse(data, response)
+        logger.info("Redeemed launch intent")
+        return decoded
+    }
+
     // MARK: - Sessions
 
     /// Fetches today's sessions for the given timezone.

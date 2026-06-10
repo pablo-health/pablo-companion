@@ -178,6 +178,48 @@ final class SessionViewModel {
         }
     }
 
+    // MARK: - Launch intent
+
+    /// Outcome of redeeming a web-issued launch intent.
+    enum LaunchRedeemResult: Equatable {
+        /// Intent redeemed — confirm with the therapist before arming the mic.
+        case confirm(LaunchContext)
+        /// Intent no longer valid (already redeemed, expired, or unknown — `410`).
+        case expired
+        /// Any other failure (network, auth). Carries a non-PHI message.
+        case failed(message: String)
+    }
+
+    /// The non-secret context needed to render the "Start session with X?"
+    /// confirmation. Deliberately small — `patientName` is the only PHI and it
+    /// never leaves this struct's render path.
+    struct LaunchContext: Equatable {
+        let appointmentId: String
+        let patientName: String?
+    }
+
+    /// Redeems a launch intent against the backend checkpoint. Never throws —
+    /// maps every outcome onto `LaunchRedeemResult` so the UI can present a
+    /// consistent confirmation / expired / error state without leaking PHI.
+    func redeemLaunchIntent(intentId: String) async -> LaunchRedeemResult {
+        do {
+            let redemption = try await apiClient.redeemLaunchIntent(intentId: intentId)
+            logger.info("Launch intent redeemed; awaiting confirmation")
+            return .confirm(
+                LaunchContext(
+                    appointmentId: redemption.appointmentId,
+                    patientName: redemption.patientName
+                )
+            )
+        } catch let PabloError.apiClient(statusCode, _, _) where statusCode == 410 {
+            logger.info("Launch intent no longer valid (410)")
+            return .expired
+        } catch {
+            logger.error("Launch intent redemption failed: \(error.localizedDescription)")
+            return .failed(message: "Couldn't open this session. Please start again from the dashboard.")
+        }
+    }
+
     // MARK: - Session lifecycle
 
     /// Transitions a session to "in_progress" — called when the therapist clicks "Start Session".

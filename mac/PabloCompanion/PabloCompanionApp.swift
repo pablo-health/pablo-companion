@@ -26,7 +26,14 @@ struct PabloCompanionApp: App {
                     await requestScreenCapturePermission()
                 }
                 .onOpenURL { url in
+                    // Legacy custom scheme (pablohealth://…) and OAuth callback.
                     DeepLinkRouter.logger.info("Received deep link: \(url.absoluteString, privacy: .public)")
+                    deepLinks.pendingURL = url
+                }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    // Domain-verified Universal Link (https://<host>/launch/<id>).
+                    guard let url = activity.webpageURL else { return }
+                    DeepLinkRouter.logger.info("Received universal link: \(url.absoluteString, privacy: .public)")
                     deepLinks.pendingURL = url
                 }
         }
