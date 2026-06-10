@@ -14,9 +14,11 @@ struct ContentView: View {
     @State var patientVM = PatientViewModel()
     @State var transcriptionVM = TranscriptionViewModel()
     @State var practiceVM = PracticeViewModel()
-    @State private var subscriptionVM = SubscriptionViewModel()
+    // subscriptionVM / viewingTranscript are non-private: clearAllPHI() lives in
+    // the separate-file ContentView+DeepLinks extension and purges them on sign-out.
+    @State var subscriptionVM = SubscriptionViewModel()
     @State var showPractice = false
-    @State private var viewingTranscript: TranscriptViewerItem?
+    @State var viewingTranscript: TranscriptViewerItem?
     @State var detailSession: Session?
     @State var activeSessionId: String?
     @State var selectedTab = 0
@@ -457,41 +459,5 @@ extension ContentView {
         )
         .tabItem { Label("Settings", systemImage: "gear") }
         .tag(3)
-    }
-}
-
-// MARK: - PHI Cleanup
-
-extension ContentView {
-    /// Clears all PHI from in-memory ViewModels on sign-out.
-    func clearAllPHI() {
-        sessionVM.todaySessions = []
-        sessionVM.sessions = []
-        sessionVM.totalSessions = 0
-        sessionVM.hasMoreSessions = false
-        sessionVM.errorMessage = nil
-
-        recordingVM.recordings = []
-        recordingVM.sessionRecordingMap = [:]
-        recordingVM.activeSessionId = nil
-        recordingVM.stopPlayback()
-        recordingVM.userEmail = nil
-
-        transcriptionVM.states = [:]
-        transcriptionVM.pendingUploadCount = 0
-        transcriptionVM.errorMessage = nil
-        transcriptionVM.userEmail = nil
-
-        patientVM.patients = []
-        patientVM.searchText = ""
-
-        practiceVM.dismiss()
-
-        subscriptionVM.subscriptionInfo = nil
-        subscriptionVM.extensionError = nil
-
-        activeSessionId = nil
-        detailSession = nil
-        viewingTranscript = nil
     }
 }

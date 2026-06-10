@@ -194,10 +194,11 @@ final class APIClient {
     /// unconsumed, unexpired, and bound to this user, marks it consumed, and
     /// returns the appointment context to confirm with the therapist.
     ///
-    /// A `410 Gone` (mapped to `PabloError.conflictState`) means the intent is no
-    /// longer valid — already redeemed via the other handoff path, expired, or
-    /// unknown. Callers should treat that as a benign "already handled / link
-    /// expired", not a hard error.
+    /// A `410 Gone` (surfaced as `PabloError.apiClient(statusCode: 410, ...)` —
+    /// 410 has no dedicated case in `mapHTTPErrors`, so it falls to the default)
+    /// means the intent is no longer valid — already redeemed via the other
+    /// handoff path, expired, or unknown. Callers should treat that as a benign
+    /// "already handled / link expired", not a hard error.
     func redeemLaunchIntent(intentId: String) async throws -> LaunchRedemption {
         var request = try await buildRequest("POST", path: "/api/launch/redeem")
         let body = ["intent_id": intentId]

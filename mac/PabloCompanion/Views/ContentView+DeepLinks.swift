@@ -74,3 +74,44 @@ extension ContentView {
         startSession(fromAppointmentId: launch.appointmentId)
     }
 }
+
+// MARK: - PHI Cleanup
+
+extension ContentView {
+    /// Clears all PHI from in-memory ViewModels on sign-out.
+    func clearAllPHI() {
+        sessionVM.todaySessions = []
+        sessionVM.sessions = []
+        sessionVM.totalSessions = 0
+        sessionVM.hasMoreSessions = false
+        sessionVM.errorMessage = nil
+
+        recordingVM.recordings = []
+        recordingVM.sessionRecordingMap = [:]
+        recordingVM.activeSessionId = nil
+        recordingVM.stopPlayback()
+        recordingVM.userEmail = nil
+
+        transcriptionVM.states = [:]
+        transcriptionVM.pendingUploadCount = 0
+        transcriptionVM.errorMessage = nil
+        transcriptionVM.userEmail = nil
+
+        patientVM.patients = []
+        patientVM.searchText = ""
+
+        practiceVM.dismiss()
+
+        subscriptionVM.subscriptionInfo = nil
+        subscriptionVM.extensionError = nil
+
+        activeSessionId = nil
+        detailSession = nil
+        viewingTranscript = nil
+
+        // A redeemed-but-unconfirmed handoff carries the patient name (PHI) in
+        // its in-flight state; purge it on sign-out alongside everything else.
+        pendingLaunch = nil
+        launchError = nil
+    }
+}
