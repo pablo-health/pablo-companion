@@ -24,7 +24,7 @@ public class CredentialManager
     /// </summary>
     public string? ActiveUserEmail { get; set; }
 
-    public string? GetValue(string key)
+    public virtual string? GetValue(string key)
     {
         try
         {
@@ -39,7 +39,7 @@ public class CredentialManager
         }
     }
 
-    public void SetValue(string key, string value)
+    public virtual void SetValue(string key, string value)
     {
         var vault = new PasswordVault();
         // Remove existing credential if present
@@ -106,6 +106,34 @@ public class CredentialManager
     {
         get => GetValue("tenantID");
         set { if (value != null) SetValue("tenantID", value); else RemoveValue("tenantID"); }
+    }
+
+    /// <summary>
+    /// Stable per-install device identifier (UUIDv4), registered with the backend
+    /// at enrollment and sent on the launch-redeem path via <c>X-Install-ID</c>.
+    /// Deliberately NOT in <see cref="AuthTokenKeys"/>: it is a device identity that
+    /// must survive sign-out/sign-in cycles, so <see cref="ClearAuthTokens"/> leaves
+    /// it in place. Use <see cref="GetOrCreateInstallId"/> to read-or-mint it.
+    /// </summary>
+    public string? InstallId
+    {
+        get => GetValue("installId");
+        set { if (value != null) SetValue("installId", value); else RemoveValue("installId"); }
+    }
+
+    /// <summary>
+    /// Returns the persisted install id, minting a new UUIDv4 on first call and
+    /// storing it. The value is stable for the lifetime of the install and survives
+    /// sign-out (it is not cleared by <see cref="ClearAuthTokens"/>).
+    /// </summary>
+    public string GetOrCreateInstallId()
+    {
+        var existing = GetValue("installId");
+        if (!string.IsNullOrEmpty(existing)) return existing;
+
+        var id = Guid.NewGuid().ToString();
+        SetValue("installId", id);
+        return id;
     }
 
     /// <summary>

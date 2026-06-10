@@ -2,8 +2,9 @@
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap rescap">
+  IgnorableNamespaces="uap uap3 rescap">
 
   <!-- Identity values reserved in Microsoft Partner Center for Pablo Health, LLC.
        Store ID: 9N0260HFX1JC
@@ -63,6 +64,20 @@
             <uap:DisplayName>Pablo</uap:DisplayName>
           </uap:Protocol>
         </uap:Extension>
+
+        <!-- Domain-verified deep-link handler (App URI Handler). Routes
+             https://app.pablo.health/launch/* and https://dev.pablo.health/launch/*
+             to the companion for the session-start handoff. Both hosts are listed
+             so one signed build serves dev and prod. Verification is by the JSON
+             file each host serves at /.well-known/windows-app-web-link listing this
+             package family name. The pablohealth:// scheme above stays registered
+             for the OAuth callback and as the Firefox fallback. -->
+        <uap3:Extension Category="windows.appUriHandler">
+          <uap3:AppUriHandler>
+            <uap3:Host Name="app.pablo.health" />
+            <uap3:Host Name="dev.pablo.health" />
+          </uap3:AppUriHandler>
+        </uap3:Extension>
       </Extensions>
     </Application>
   </Applications>

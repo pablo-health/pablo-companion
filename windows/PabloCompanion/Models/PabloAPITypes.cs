@@ -306,6 +306,30 @@ public sealed record SoapEntryStatus(
     [property: JsonPropertyName("error")] string? Error
 );
 
+// ── Launch handoff types ─────────────────────────────────────────────────────
+
+/// <summary>
+/// Body for <c>POST /api/launch/redeem</c>. The companion presents its existing
+/// Firebase bearer token and the opaque, single-use <c>intent_id</c> it received
+/// via the verified deep link (or legacy scheme fallback).
+/// </summary>
+public sealed record RedeemLaunchIntentRequest(
+    [property: JsonPropertyName("intent_id")] string IntentId
+);
+
+/// <summary>
+/// Success response from <c>POST /api/launch/redeem</c>. <c>PatientName</c> is PHI;
+/// it is shown once in the confirmation window and never persisted to disk.
+/// A <c>410 Gone</c> (already redeemed / expired / unknown) surfaces as a
+/// <see cref="PabloException"/> rather than this shape.
+/// </summary>
+public sealed record RedeemLaunchIntentResponse(
+    [property: JsonPropertyName("appointment_id")] string AppointmentId,
+    [property: JsonPropertyName("patient_name")] string? PatientName,
+    [property: JsonPropertyName("video_url")] string? VideoUrl,
+    [property: JsonPropertyName("session_id")] string? SessionId
+);
+
 // ── Error type ───────────────────────────────────────────────────────────────
 
 public class PabloException : Exception
