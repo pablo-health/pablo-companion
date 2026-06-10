@@ -20,11 +20,15 @@
     <DefineConstants>DISABLE_XAML_GENERATED_MAIN</DefineConstants>
 
     <!-- MSIX Store packaging.
-         Framework-dependent: WinAppSDK runtime ships as a separate package
-         (Microsoft.WindowsAppRuntime.1.8), declared in Package.appxmanifest.
-         Smaller package, Store auto-installs the framework dependency. -->
+         WinAppSDK stays framework-dependent: Store auto-installs the
+         Microsoft.WindowsAppRuntime.1.8 dependency declared in Package.appxmanifest.
+         .NET runtime is self-contained: bundled into the MSIX so we don't depend
+         on the user having .NET 10 Desktop Runtime installed. Store policy 10.2.4.1
+         requires disclosing any non-integrated runtime in the first two lines of the
+         Store description — bundling avoids the disclosure (and the rejection). -->
     <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsPackageType>MSIX</WindowsPackageType>
+    <SelfContained>true</SelfContained>
     <!-- Don't auto-generate the .msix on every build — slows dev loop.
          Use `dotnet publish` or VS Publish wizard to produce the Store package. -->
     <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
