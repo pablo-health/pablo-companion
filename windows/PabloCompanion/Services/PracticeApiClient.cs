@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -23,6 +24,12 @@ public sealed class PracticeApiClient
     private readonly CredentialManager _credentials;
 
     public string BaseUrl { get; set; }
+
+    /// <summary>
+    /// Raised when an authenticated request comes back 401. AuthViewModel listens
+    /// and triggers a refresh-or-sign-out so the UI returns to the login screen.
+    /// </summary>
+    public event Action? UnauthenticatedDetected;
 
     public PracticeApiClient(CredentialManager credentials)
     {
@@ -54,6 +61,7 @@ public sealed class PracticeApiClient
 
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == HttpStatusCode.Unauthorized) UnauthenticatedDetected?.Invoke();
             var body = await response.Content.ReadAsStringAsync();
             throw new PabloException((ushort)response.StatusCode, body);
         }
@@ -89,6 +97,7 @@ public sealed class PracticeApiClient
 
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == HttpStatusCode.Unauthorized) UnauthenticatedDetected?.Invoke();
             var body = await response.Content.ReadAsStringAsync();
             throw new PabloException((ushort)response.StatusCode, body);
         }

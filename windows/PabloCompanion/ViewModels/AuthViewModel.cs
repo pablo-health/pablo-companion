@@ -45,6 +45,7 @@ public partial class AuthViewModel : ObservableObject
     private System.Threading.Timer? _refreshTimer;
     private string? _pkceCodeVerifier;
     private string? _oauthState;
+    private bool _isHandlingAuthFailure;
     private static readonly HttpClient s_httpClient = new();
 
     [ObservableProperty]
@@ -84,6 +85,11 @@ public partial class AuthViewModel : ObservableObject
         _protocolListener = protocolListener;
         _inactivityMonitor.OnTimeout += OnInactivityTimeout;
         _inactivityMonitor.OnScreenLocked += OnInactivityTimeout;
+        // When the server invalidates our session mid-flight (401), drive the
+        // UI back to the login screen instead of leaving the user on a page
+        // that can no longer load data. Mirrors macOS getValidToken → signOut.
+        _apiClient.UnauthenticatedDetected += OnApiUnauthenticated;
+        _practiceApiClient.UnauthenticatedDetected += OnApiUnauthenticated;
 
         // Restore saved server URL if non-empty; otherwise stay on the default.
         // Show the "Connect to a different server" panel only when the saved URL
@@ -108,6 +114,35 @@ public partial class AuthViewModel : ObservableObject
             var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
             if (recordingVm.ActiveSessionId != null) return;
             SignOut();
+        });
+    }
+
+    /// <summary>
+    /// Fires when an API client gets a 401 on an authenticated request. Signs the
+    /// user out so MainWindow swaps back to LoginPage — refreshing the Firebase
+    /// token wouldn't help here. The backend enforces a server-side idle timeout
+    /// (HIPAA §164.312(a)(2)(iii)) keyed on auth_time, and a Firebase refresh
+    /// re-issues a token with the same auth_time, so the revoked-session tombstone
+    /// still rejects it (see backend/app/auth/idle_session.py). Only a fresh
+    /// sign-in (new auth_time) recovers. The proactive refresh timer above already
+    /// handles natural id_token expiry, so a 401 here means real backend rejection.
+    /// Debounced so parallel 401s from concurrent requests don't stack.
+    /// </summary>
+    private void OnApiUnauthenticated()
+    {
+        App.UiDispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_isHandlingAuthFailure) return;
+            if (this.AuthState != AuthState.Authenticated) return;
+            _isHandlingAuthFailure = true;
+            try
+            {
+                SignOut();
+            }
+            finally
+            {
+                _isHandlingAuthFailure = false;
+            }
         });
     }
 

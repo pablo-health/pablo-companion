@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -28,6 +29,14 @@ public class APIClient
     private readonly CredentialManager _credentials;
 
     public string BaseUrl { get; set; }
+
+    /// <summary>
+    /// Raised when an authenticated request comes back 401. AuthViewModel listens
+    /// and triggers a refresh-or-sign-out so the UI returns to the login screen
+    /// instead of leaving the user stuck on a page that can't load data.
+    /// Not raised for HealthCheck (unauthenticated endpoint).
+    /// </summary>
+    public event Action? UnauthenticatedDetected;
 
     public APIClient(CredentialManager credentials)
     {
@@ -66,6 +75,7 @@ public class APIClient
 
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == HttpStatusCode.Unauthorized) UnauthenticatedDetected?.Invoke();
             await HandleErrorResponse(response);
         }
 
@@ -384,6 +394,7 @@ public class APIClient
 
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == HttpStatusCode.Unauthorized) UnauthenticatedDetected?.Invoke();
             // Throws PabloException with backend error code populated when present.
             // Lets UploadFromPendingAsync branch on INVALID_STATUS for self-heal.
             await HandleErrorResponse(response);
