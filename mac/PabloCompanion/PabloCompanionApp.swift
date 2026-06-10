@@ -1,3 +1,4 @@
+import CompanionAuthCore
 import CoreText
 import ScreenCaptureKit
 import Sparkle
@@ -11,6 +12,10 @@ struct PabloCompanionApp: App {
     private let updaterController: SPUStandardUpdaterController
 
     init() {
+        // Point the device-auth core at the app's keychain identity before
+        // anything touches DeviceKey (sign-in enrollment, request signing).
+        AuthCoreConfig.bundleID = AppConstants.appBundleID
+        AuthCoreConfig.keychainAccessGroup = AppConstants.keychainAccessGroup
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,

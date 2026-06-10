@@ -5,11 +5,18 @@ import PackageDescription
 // The macOS app consumes `PracticeClientCore` as a local package; the
 // `practice-harness` executable drives the same code headless (file audio in,
 // captured audio out) so the real client path can be exercised on Linux CI.
+//
+// `CompanionAuthCore` is the device-binding stack (DPoP proofs, Secure-Enclave /
+// software device key, enrollment payload) shared the same way: the app links
+// it for production signing, and the harness's `dpop` scenario drives the
+// identical code against a deployed backend. macOS-only (CryptoKit + Security),
+// so the harness gates that scenario behind `canImport(CompanionAuthCore)`.
 let package = Package(
     name: "PracticeClientCore",
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "PracticeClientCore", targets: ["PracticeClientCore"]),
+        .library(name: "CompanionAuthCore", targets: ["CompanionAuthCore"]),
         .executable(name: "practice-harness", targets: ["practice-harness"]),
     ],
     dependencies: [
@@ -21,10 +28,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "PracticeClientCore"),
+        .target(name: "CompanionAuthCore"),
         .executableTarget(
             name: "practice-harness",
             dependencies: [
                 "PracticeClientCore",
+                .target(name: "CompanionAuthCore", condition: .when(platforms: [.macOS])),
                 .product(name: "Crypto", package: "swift-crypto"),
             ]
         ),

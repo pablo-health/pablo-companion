@@ -1,4 +1,5 @@
 import AppKit
+import CompanionAuthCore
 import CryptoKit
 import Foundation
 import os

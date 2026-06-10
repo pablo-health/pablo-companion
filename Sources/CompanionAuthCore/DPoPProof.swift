@@ -15,15 +15,15 @@ import os
 /// - payload `{"htm": <METHOD>, "htu": <url w/o query+fragment>, "iat": <unix s>, "jti": <random>}`
 /// - signature ES256 over `base64url(header) + "." + base64url(payload)`, JOSE
 ///   raw `r || s` (64 bytes) — NOT ASN.1/DER.
-enum DPoPProof {
-    private static let logger = Logger(subsystem: AppConstants.appBundleID, category: "DPoPProof")
+public enum DPoPProof {
+    private static let logger = Logger(subsystem: AuthCoreConfig.bundleID, category: "DPoPProof")
 
     /// Builds a signed compact-JWS proof for `method` + `url`, or `nil` if the
     /// device key is unavailable (caller then attaches neither DPoP nor
     /// X-Install-ID — never one without the other).
     ///
     /// `now`/`jti` are injectable for tests; production callers omit them.
-    static func make(
+    public static func make(
         method: String,
         url: URL,
         now: Date = Date(),
@@ -62,7 +62,7 @@ enum DPoPProof {
     /// comparison (RFC 9449 §4.3). The middleware also strips query/fragment from
     /// the claimed `htu` before comparing, so any residual difference is in the
     /// path only — which we preserve verbatim.
-    static func canonicalHTU(_ url: URL) -> String {
+    public static func canonicalHTU(_ url: URL) -> String {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             // No safe normalization possible — fall back to the raw absolute
             // string so signing still produces a deterministic value.
