@@ -239,7 +239,9 @@ public sealed partial class MainWindow : Window
         }
 
         // Minimal shell: no day view in the frame. Drive the recording pipeline
-        // directly (the recording itself lives in RecordingViewModel, not the UI).
+        // directly (the recording itself lives in RecordingViewModel, not the UI),
+        // and surface the live controls in an ephemeral recording window so the user
+        // can see the duration/levels and Stop / End Session.
         _ = StartSessionDirectAsync(appointmentId);
     }
 
@@ -249,6 +251,13 @@ public sealed partial class MainWindow : Window
         var session = await sessionVm.StartSessionFromAppointmentAsync(appointmentId);
         if (session is null) return;
         await sessionVm.StartSessionAsync(session.Id);
+
+        // Only show the recording surface once the mic is actually live. The window
+        // hosts the same controls the day view uses and closes itself when recording
+        // returns to Idle (End Session / sign-out).
+        var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
+        if (recordingVm.State == Models.RecordingUIState.Idle) return;
+        new RecordingWindow().Activate();
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)

@@ -1,0 +1,25 @@
+<Window
+    x:Class="PabloCompanion.Views.RecordingWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PabloCompanion.Views"
+    Title="Recording">
+
+    <Grid Background="{StaticResource PabloCream}"
+          Padding="20"
+          RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="Session in progress"
+                   Style="{StaticResource PabloDisplayMedium}"
+                   HorizontalAlignment="Center" />
+
+        <!-- Live recording controls (duration, levels, Stop / End Session). -->
+        <local:RecordingBanner Grid.Row="1"
+                               x:Name="RecordingBannerControl" />
+    </Grid>
+</Window>
