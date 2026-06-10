@@ -252,7 +252,7 @@ final class AuthViewModel {
         var request = URLRequest(url: exchangeURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: String] = [
+        var body: [String: Any] = [
             "code": code,
             "redirect_uri": redirectURI,
         ]
@@ -260,6 +260,13 @@ final class AuthViewModel {
             body["code_verifier"] = verifier
             pkceCodeVerifier = nil
         }
+
+        // Device enrollment — registers this install so the web dashboard can
+        // recognise it and route handoffs here. Best-effort: the backend treats
+        // `enrollment` as optional and never fails the exchange on a bad payload.
+        let installID = KeychainManager.getOrCreateInstallID()
+        body["enrollment"] = DeviceEnrollment.payload(installID: installID)
+
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
