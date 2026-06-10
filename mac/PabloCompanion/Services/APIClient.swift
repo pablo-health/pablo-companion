@@ -187,6 +187,31 @@ final class APIClient {
         return session
     }
 
+    // MARK: - Launch intent
+
+    /// Redeems a launch intent issued by the web dashboard. The companion
+    /// presents its existing bearer token; the backend verifies the intent is
+    /// unconsumed, unexpired, and bound to this user, marks it consumed, and
+    /// returns the appointment context to confirm with the therapist.
+    ///
+    /// A `410 Gone` (surfaced as `PabloError.apiClient(statusCode: 410, ...)` —
+    /// 410 has no dedicated case in `mapHTTPErrors`, so it falls to the default)
+    /// means the intent is no longer valid — already redeemed via the other
+    /// handoff path, expired, or unknown. Callers should treat that as a benign
+    /// "already handled / link expired", not a hard error.
+    func redeemLaunchIntent(intentId: String) async throws -> LaunchRedemption {
+        var request = try await buildRequest("POST", path: "/api/launch/redeem")
+        let body = ["intent_id": intentId]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let decoded: LaunchRedemption = try handleResponse(data, response)
+        logger.info("Redeemed launch intent")
+        return decoded
+    }
+
     // MARK: - Sessions
 
     /// Fetches today's sessions for the given timezone.
@@ -406,6 +431,10 @@ final class APIClient {
         if authenticated {
             let token = try await requireToken()
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            // Device binding (DPoP proof + X-Install-ID) for enrolled installs.
+            // Centralized here so every authenticated path built through
+            // buildRequest carries the proof — no call site can forget it.
+            Self.attachDeviceBinding(to: &request)
         }
 
         return request

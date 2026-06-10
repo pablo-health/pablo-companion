@@ -26,6 +26,23 @@ func buildMultipartBody(parts: [MultipartFilePart], boundary: String) -> Data {
     return body
 }
 
+/// Context returned by `POST /api/launch/redeem` after a launch intent is
+/// successfully consumed. `patient_name` is PHI — only surfaced inside the
+/// app's confirmation UI, never logged.
+struct LaunchRedemption: Codable, Sendable {
+    let appointmentId: String
+    let patientName: String?
+    let videoUrl: String?
+    let sessionId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case appointmentId = "appointment_id"
+        case patientName = "patient_name"
+        case videoUrl = "video_url"
+        case sessionId = "session_id"
+    }
+}
+
 /// Server configuration returned by the therapy-assistant-platform's /api/config endpoint.
 struct ServerConfig: Codable, Sendable {
     let apiUrl: String

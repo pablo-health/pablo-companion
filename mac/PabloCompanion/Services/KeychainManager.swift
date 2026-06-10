@@ -13,6 +13,7 @@ struct KeychainManager: Sendable {
         case backendAPIURL = "backend_api_url"
         case tenantID = "tenant_id"
         case tokenExpiry = "token_expiry"
+        case installID = "install_id"
     }
 
     private static let serviceName = AppConstants.appBundleID
@@ -108,6 +109,33 @@ struct KeychainManager: Sendable {
         deleteEncryptionKey(forUser: email)
         // Also remove any legacy device-wide key
         deleteEncryptionKey(account: legacyDeviceKeyAccount)
+    }
+
+    // MARK: - Install Identity
+
+    /// Returns the stable per-install identifier, generating and persisting a new
+    /// UUIDv4 on first call. Persisted across sign-outs (excluded from
+    /// `deleteAuthTokens()`) so a single companion install keeps one identity for
+    /// its lifetime — same survive-sign-out treatment as the encryption key.
+    static func getOrCreateInstallID() -> String {
+        if let existing = getToken(forKey: .installID), !existing.isEmpty {
+            return existing
+        }
+        let installID = UUID().uuidString
+        saveToken(installID, forKey: .installID)
+        return installID
+    }
+
+    /// Returns the persisted install identifier *without* creating one. Used by
+    /// the per-request DPoP seam to decide "is this install enrolled?" — a
+    /// request must never mint a fresh install_id as a side effect (the id is
+    /// established at enrollment, alongside the device key). Returns `nil` before
+    /// the first enrollment.
+    static func installID() -> String? {
+        guard let existing = getToken(forKey: .installID), !existing.isEmpty else {
+            return nil
+        }
+        return existing
     }
 
     // MARK: - Per-User Encryption Key

@@ -33,6 +33,9 @@ extension APIClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+        // This endpoint hand-rolls its request (multipart) rather than going
+        // through buildRequest, so attach the device binding explicitly.
+        Self.attachDeviceBinding(to: &request)
 
         onProgress(0.1)
 

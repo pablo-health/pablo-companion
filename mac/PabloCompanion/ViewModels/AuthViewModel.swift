@@ -252,7 +252,7 @@ final class AuthViewModel {
         var request = URLRequest(url: exchangeURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: String] = [
+        var body: [String: Any] = [
             "code": code,
             "redirect_uri": redirectURI,
         ]
@@ -260,6 +260,18 @@ final class AuthViewModel {
             body["code_verifier"] = verifier
             pkceCodeVerifier = nil
         }
+
+        // Device enrollment — registers this install so the web dashboard can
+        // recognise it and route handoffs here. The backend treats `enrollment`
+        // as optional, but a *present* object must be schema-valid (it carries
+        // the required device_public_key_jwk + key_storage); a partial object
+        // would 422 the whole exchange. So attach it only when we can build a
+        // complete payload, and omit it otherwise rather than send a partial.
+        let installID = KeychainManager.getOrCreateInstallID()
+        if let enrollment = DeviceEnrollment.payload(installID: installID) {
+            body["enrollment"] = enrollment
+        }
+
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
