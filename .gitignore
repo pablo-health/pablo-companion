@@ -41,6 +41,11 @@ windows/**/BundleArtifacts/
 
 # Claude Code local settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+windows/scripts/.claude/
+
+# Screenshot outputs from windows/scripts/capture-window.ps1
+windows/scripts/*.png
 
 # Credentials / secrets
 *.p12
