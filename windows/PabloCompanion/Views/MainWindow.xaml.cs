@@ -152,18 +152,19 @@ public sealed partial class MainWindow : Window
         var uri = _deepLinks.TakePending();
         if (uri is null) return;
 
-        var link = LaunchIntentParser.Parse(uri);
-        switch (link.Kind)
+        var (action, intentId) = LaunchIntentParser.Route(uri);
+        switch (action)
         {
-            case LaunchLinkKind.Intent when link.Value is { } intentId:
-                _ = RedeemAndConfirmAsync(intentId);
+            case LaunchAction.Redeem when intentId is { } id:
+                _ = RedeemAndConfirmAsync(id);
                 break;
 
-            case LaunchLinkKind.LegacyAppointment when link.Value is { } appointmentId:
-                // No server-side intent checkpoint on this path — still gate the mic
-                // behind the same affirmative confirmation. We don't have a patient
-                // name without redeeming, so the prompt is the generic form.
-                ShowConfirmation(appointmentId, patientName: null);
+            case LaunchAction.ShowExpired:
+                // Legacy appointment-only link: no intent to redeem, and we no longer
+                // trust the raw appointment id to start a session — so we never fetch
+                // the appointment. Show the same soft, non-PHI expired-link notice the
+                // redeem path uses for a stale intent.
+                ShowExpiredNotice();
                 break;
 
             default:

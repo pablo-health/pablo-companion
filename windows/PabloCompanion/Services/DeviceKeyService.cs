@@ -9,9 +9,12 @@ namespace PabloCompanion.Services;
 /// credential vault so it survives sign-out/sign-in — the same install id and key
 /// identify this device for its lifetime. Today the key is software-backed
 /// (<c>key_storage = "software"</c>); a future hardening pass moves it to the TPM
-/// via the Microsoft Platform Crypto Provider. Per-request DPoP proof signing is a
-/// later stage and is intentionally NOT wired here — this service only mints the
-/// key and exports its public JWK for enrollment.
+/// via the Microsoft Platform Crypto Provider.
+///
+/// Two responsibilities: mint + export the public JWK for enrollment
+/// (<see cref="GetOrCreatePublicJwk"/>), and sign a per-request DPoP proof with the
+/// stored private key (<see cref="TryCreateProof"/>) so authenticated requests carry
+/// proof-of-possession once the server enforces it.
 /// </summary>
 public sealed class DeviceKeyService
 {
@@ -53,22 +56,51 @@ public sealed class DeviceKeyService
         };
     }
 
-    private ECDsa LoadOrCreateKey()
+    /// <summary>
+    /// Signs a DPoP proof for an authenticated backend request bound to
+    /// <paramref name="method"/> + <paramref name="url"/>, returning the compact JWS.
+    /// Returns <c>null</c> when this install has no device key yet (i.e. it has never
+    /// enrolled) — the caller must then send NEITHER the proof nor the
+    /// <c>X-Install-ID</c> header, since an install id without a matching proof is a
+    /// guaranteed 401 under server enforcement.
+    ///
+    /// Unlike <see cref="GetOrCreatePublicJwk"/>, this does NOT mint a key: signing a
+    /// proof for a never-enrolled device would attach proof material the backend has
+    /// no public key to verify.
+    /// </summary>
+    public string? TryCreateProof(string method, string url)
+    {
+        using var ecdsa = LoadExistingKey();
+        if (ecdsa is null) return null;
+        return DpopProof.Create(ecdsa, method, url);
+    }
+
+    /// <summary>
+    /// Loads the persisted device private key, or <c>null</c> if none is stored or the
+    /// stored blob is unreadable. Never mints — see <see cref="TryCreateProof"/>.
+    /// </summary>
+    private ECDsa? LoadExistingKey()
     {
         var stored = _credentials.GetValue(PrivateKeyVaultKey);
-        if (!string.IsNullOrEmpty(stored))
+        if (string.IsNullOrEmpty(stored)) return null;
+
+        try
         {
-            try
-            {
-                var ecdsa = ECDsa.Create();
-                ecdsa.ImportPkcs8PrivateKey(Convert.FromBase64String(stored), out _);
-                return ecdsa;
-            }
-            catch (Exception)
-            {
-                // Corrupt / unreadable — regenerate below.
-            }
+            var ecdsa = ECDsa.Create();
+            ecdsa.ImportPkcs8PrivateKey(Convert.FromBase64String(stored), out _);
+            return ecdsa;
         }
+        catch (Exception)
+        {
+            // Corrupt / unreadable — treat as not-enrolled rather than throwing.
+            return null;
+        }
+    }
+
+    private ECDsa LoadOrCreateKey()
+    {
+        var existing = LoadExistingKey();
+        if (existing is not null) return existing;
 
         var created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var pkcs8 = created.ExportPkcs8PrivateKey();

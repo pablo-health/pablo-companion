@@ -27,6 +27,7 @@ public class APIClient
     private const string DefaultBaseUrl = "https://api.pablo.health";
 
     private readonly CredentialManager _credentials;
+    private readonly DeviceKeyService _deviceKey;
 
     public string BaseUrl { get; set; }
 
@@ -38,9 +39,13 @@ public class APIClient
     /// </summary>
     public event Action? UnauthenticatedDetected;
 
-    public APIClient(CredentialManager credentials)
+    public APIClient(CredentialManager credentials, DeviceKeyService? deviceKey = null)
     {
         _credentials = credentials;
+        // Default-construct from the same credential vault when DI doesn't supply one
+        // (keeps the single-arg signature the tests use working). The device key only
+        // signs DPoP proofs; it touches the vault lazily, so this is cheap.
+        _deviceKey = deviceKey ?? new DeviceKeyService(credentials);
         // Seed from the previously discovered backend URL so a restored session
         // starts on the correct env before AuthViewModel.DiscoverServerConfigAsync runs.
         BaseUrl = credentials.BackendApiUrl ?? DefaultBaseUrl;
@@ -64,9 +69,63 @@ public class APIClient
         if (authenticated)
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GetToken());
+            AttachDeviceBinding(request);
         }
 
         return request;
+    }
+
+    /// <summary>
+    /// Attaches the device-binding headers (<c>DPoP</c> proof + <c>X-Install-ID</c>) to
+    /// an authenticated request when, and only when, this install is enrolled — i.e. an
+    /// install id is persisted AND a device key exists to sign a fresh proof for this
+    /// exact method + URL.
+    ///
+    /// The two headers are coupled by design. The server's DPoP middleware treats an
+    /// <c>X-Install-ID</c> with no valid proof as a hard 401, so we never send the id
+    /// without a proof — not when unenrolled, and not when signing throws. Either both
+    /// headers go on the request, or neither does and it falls through as a legacy
+    /// Firebase-bearer request (which the middleware passes). See
+    /// <c>docs/design/companion-dpop-binding.md</c>.
+    /// </summary>
+    private void AttachDeviceBinding(HttpRequestMessage request)
+    {
+        if (request.RequestUri is null) return;
+
+        var (proof, installId) = BuildDeviceBinding(
+            request.Method.Method, request.RequestUri.ToString());
+        if (proof is null || installId is null) return;
+
+        request.Headers.Add("DPoP", proof);
+        request.Headers.Add("X-Install-ID", installId);
+    }
+
+    /// <summary>
+    /// Computes the device-binding header pair for a request, or <c>(null, null)</c>
+    /// when this install isn't enrolled (no install id, no key) or signing fails. The
+    /// pair is all-or-nothing on purpose: returning a non-null install id with a null
+    /// proof would let a caller attach the id alone, which the server's DPoP middleware
+    /// rejects with a 401. Internal so the enrollment-state matrix is unit-testable
+    /// without a live <see cref="HttpClient"/>.
+    /// </summary>
+    internal (string? Proof, string? InstallId) BuildDeviceBinding(string method, string url)
+    {
+        var installId = _credentials.InstallId;
+        if (string.IsNullOrEmpty(installId)) return (null, null);
+
+        try
+        {
+            var proof = _deviceKey.TryCreateProof(method, url);
+            // No key yet (never enrolled) → neither header.
+            return string.IsNullOrEmpty(proof) ? (null, null) : (proof, installId);
+        }
+        catch (Exception ex)
+        {
+            // A signing failure must not leave the id header on alone (guaranteed 401);
+            // drop both and let the request go out as a legacy bearer request.
+            App.LogException("APIClient.BuildDeviceBinding", ex);
+            return (null, null);
+        }
     }
 
     private async Task<T> SendAsync<T>(HttpRequestMessage request)
@@ -297,20 +356,14 @@ public class APIClient
     /// Throws <see cref="PabloException"/> with <c>StatusCode == 410</c> when the
     /// intent is no longer valid (already redeemed via the other path, expired,
     /// or unknown) — callers treat that as a benign "already handled / expired".
-    /// The <c>X-Install-ID</c> header identifies this enrolled device; it is sent
-    /// so the redeem path keeps working once per-request DPoP proofs are enforced
-    /// server-side.
+    /// Like every authenticated request, the device-binding headers (<c>DPoP</c> +
+    /// <c>X-Install-ID</c>) are attached by <see cref="CreateRequest"/> when this
+    /// install is enrolled, so the redeem path keeps working under server-side proof
+    /// enforcement.
     /// </summary>
     public virtual async Task<RedeemLaunchIntentResponse> RedeemLaunchIntentAsync(string intentId)
     {
         using var request = CreateRequest(HttpMethod.Post, "/api/launch/redeem");
-
-        var installId = _credentials.InstallId;
-        if (!string.IsNullOrEmpty(installId))
-        {
-            request.Headers.Add("X-Install-ID", installId);
-        }
-
         var body = JsonSerializer.Serialize(new RedeemLaunchIntentRequest(intentId), JsonOptions);
         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
         return await SendAsync<RedeemLaunchIntentResponse>(request);
@@ -418,6 +471,9 @@ public class APIClient
         request.Headers.Add("X-Client-Type", ClientTypeHeader);
         request.Headers.Add("X-Client-Version", ClientVersion);
         request.Headers.Add("X-Client-Platform", ClientPlatform);
+        // This route builds its own request (multipart) instead of going through
+        // CreateRequest, so attach the DPoP / X-Install-ID pair on the same seam.
+        AttachDeviceBinding(request);
 
         var response = await Http.SendAsync(request);
 

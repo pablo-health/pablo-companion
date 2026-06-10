@@ -35,6 +35,26 @@ public readonly record struct LaunchLink(LaunchLinkKind Kind, string? Value)
 }
 
 /// <summary>
+/// What the UI should do with a parsed deep link. Keeps the dispatch decision
+/// (redeem vs. show-expired vs. ignore) free of UI/network types so it is testable.
+/// </summary>
+public enum LaunchAction
+{
+    /// <summary>Nothing to do — not a session-handoff link.</summary>
+    Ignore,
+
+    /// <summary>Redeem the carried intent id via <c>POST /api/launch/redeem</c>.</summary>
+    Redeem,
+
+    /// <summary>
+    /// Show the soft, non-PHI expired-link notice without any network fetch. Used for
+    /// the legacy appointment-only link, which has no intent to redeem and which we no
+    /// longer trust to start a session from a raw appointment id.
+    /// </summary>
+    ShowExpired,
+}
+
+/// <summary>
 /// Pure parsing logic for the companion's two deep-link entry points:
 ///   * domain-verified App URI Handler links: <c>https://&lt;host&gt;/launch/&lt;intent_id&gt;</c>
 ///   * legacy custom scheme: <c>pablohealth://session/start?intent=&lt;id&gt;</c>
@@ -99,6 +119,24 @@ public static class LaunchIntentParser
         }
 
         return LaunchLink.None;
+    }
+
+    /// <summary>
+    /// Maps a parsed link to the UI action and the id the action needs. The legacy
+    /// appointment-only link resolves to <see cref="LaunchAction.ShowExpired"/> with no
+    /// id — there is no intent to redeem and we deliberately do not fetch the raw
+    /// appointment. Convenience over <see cref="Parse"/> so callers don't re-implement
+    /// the dispatch switch (and so it can be unit-tested without UI).
+    /// </summary>
+    public static (LaunchAction Action, string? IntentId) Route(Uri? uri)
+    {
+        var link = Parse(uri);
+        return link.Kind switch
+        {
+            LaunchLinkKind.Intent when link.Value is { } id => (LaunchAction.Redeem, id),
+            LaunchLinkKind.LegacyAppointment => (LaunchAction.ShowExpired, null),
+            _ => (LaunchAction.Ignore, null),
+        };
     }
 
     private static bool IsVerifiedHost(string host)

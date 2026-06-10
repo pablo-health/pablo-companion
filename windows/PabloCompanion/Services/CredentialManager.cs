@@ -24,7 +24,7 @@ public class CredentialManager
     /// </summary>
     public string? ActiveUserEmail { get; set; }
 
-    public string? GetValue(string key)
+    public virtual string? GetValue(string key)
     {
         try
         {
@@ -39,7 +39,7 @@ public class CredentialManager
         }
     }
 
-    public void SetValue(string key, string value)
+    public virtual void SetValue(string key, string value)
     {
         var vault = new PasswordVault();
         // Remove existing credential if present
