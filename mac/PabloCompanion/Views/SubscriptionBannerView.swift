@@ -184,6 +184,23 @@ struct SubscriptionBannerView: View {
         .background(Color.pabloCream)
 }
 
+#Preview("Trial — Unlimited Sessions") {
+    let vm = SubscriptionViewModel()
+    vm.subscriptionInfo = SubscriptionInfo(
+        status: .trial,
+        plan: "solo",
+        trialSessionsUsed: 5,
+        trialSessionsLimit: 0,
+        trialDaysLimit: 90,
+        trialStart: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86400 * 10)),
+        graceExtensionAvailable: false,
+        graceExtensionExpiresAt: nil
+    )
+    return SubscriptionBannerView(viewModel: vm)
+        .frame(width: 500)
+        .background(Color.pabloCream)
+}
+
 #Preview("Past Due") {
     let vm = SubscriptionViewModel()
     vm.subscriptionInfo = SubscriptionInfo(

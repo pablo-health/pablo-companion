@@ -111,9 +111,10 @@ public partial class SubscriptionViewModel : ObservableObject
         }
     }
 
+    // 0 = no session cap (unlimited); treat as nil so the banner omits the counter.
     public int? TrialSessionsRemaining =>
         Info is { TrialSessionsUsed: { } used, TrialSessionsLimit: { } limit }
-            ? Math.Max(0, limit - used)
+            ? (limit == 0 ? null : Math.Max(0, limit - used))
             : null;
 
     public int? TrialDaysRemaining
@@ -124,6 +125,8 @@ public partial class SubscriptionViewModel : ObservableObject
                 Info?.TrialDaysLimit is not { } daysLimit ||
                 !DateTimeOffset.TryParse(startStr, out var start))
                 return null;
+
+            if (daysLimit == 0) return null;  // 0 = no time cap
 
             var elapsed = (int)(DateTimeOffset.UtcNow - start).TotalDays;
             return Math.Max(0, daysLimit - elapsed);

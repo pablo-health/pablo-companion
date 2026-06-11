@@ -107,22 +107,24 @@ final class SubscriptionViewModel {
         }
     }
 
-    /// Sessions remaining in trial, or nil if not applicable.
+    /// Sessions remaining in trial, or nil if not applicable or if the limit is 0 (unlimited).
     var trialSessionsRemaining: Int? {
         guard let info = subscriptionInfo,
               let used = info.trialSessionsUsed,
               let limit = info.trialSessionsLimit
         else { return nil }
+        if limit == 0 { return nil }  // 0 = no session cap
         return max(0, limit - used)
     }
 
-    /// Days remaining in trial, or nil if not applicable.
+    /// Days remaining in trial, or nil if not applicable or if the limit is 0 (unlimited).
     var trialDaysRemaining: Int? {
         guard let info = subscriptionInfo,
               let startString = info.trialStart,
               let startDate = parseISO8601(startString),
               let daysLimit = info.trialDaysLimit
         else { return nil }
+        if daysLimit == 0 { return nil }  // 0 = no time cap
         let elapsed = Calendar.current.dateComponents([.day], from: startDate, to: Date()).day ?? 0
         return max(0, daysLimit - elapsed)
     }
