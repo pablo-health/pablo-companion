@@ -113,7 +113,7 @@ final class SubscriptionViewModel {
               let used = info.trialSessionsUsed,
               let limit = info.trialSessionsLimit
         else { return nil }
-        if limit == 0 { return nil }  // 0 = no session cap
+        if limit == 0 { return nil } // 0 = no session cap
         return max(0, limit - used)
     }
 
@@ -124,7 +124,7 @@ final class SubscriptionViewModel {
               let startDate = parseISO8601(startString),
               let daysLimit = info.trialDaysLimit
         else { return nil }
-        if daysLimit == 0 { return nil }  // 0 = no time cap
+        if daysLimit == 0 { return nil } // 0 = no time cap
         let elapsed = Calendar.current.dateComponents([.day], from: startDate, to: Date()).day ?? 0
         return max(0, daysLimit - elapsed)
     }
