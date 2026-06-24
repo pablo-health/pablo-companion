@@ -16,7 +16,7 @@ jobs:
   release:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set version from tag
         run: |
@@ -46,7 +46,7 @@ jobs:
           security list-keychains -d user -s $KEYCHAIN_PATH
 
       - name: Cache SPM
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: mac/SourcePackages
           key: spm-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
