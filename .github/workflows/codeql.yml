@@ -25,7 +25,7 @@ jobs:
       swift: ${{ github.event_name != 'pull_request' || steps.filter.outputs.swift == 'true' }}
       csharp: ${{ github.event_name != 'pull_request' || steps.filter.outputs.csharp == 'true' }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         if: github.event_name == 'pull_request'
@@ -42,17 +42,17 @@ jobs:
     if: needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@0e9f55954318745b37b7933c693bc093f7336125 # v4.35.1
+        uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         with:
           languages: swift
           queries: security-extended
 
       - name: Cache SPM dependencies
         id: spm-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: mac/SourcePackages
           key: ${{ runner.os }}-spm-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -78,7 +78,7 @@ jobs:
             build
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@0e9f55954318745b37b7933c693bc093f7336125 # v4.35.1
+        uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         with:
           category: /language:swift
 
@@ -88,10 +88,10 @@ jobs:
     if: needs.changes.outputs.csharp == 'true'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.0.0
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.0.0
         with:
           dotnet-version: '10.0.x'
 
@@ -99,7 +99,7 @@ jobs:
         run: git clone --depth 1 https://github.com/pablo-health/AudioCaptureKit.git ../AudioCaptureKit
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@0e9f55954318745b37b7933c693bc093f7336125 # v4.35.1
+        uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         with:
           languages: csharp
           queries: security-extended
@@ -114,6 +114,6 @@ jobs:
           dotnet build windows/PabloCompanion/PabloCompanion.csproj -c Debug -p:Platform=x64 --no-restore
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@0e9f55954318745b37b7933c693bc093f7336125 # v4.35.1
+        uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         with:
           category: /language:csharp
