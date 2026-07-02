@@ -29,7 +29,7 @@ The desktop companion app for therapists — macOS and Windows. Sits on the desk
 
 | Repo | Role |
 |------|------|
-| `pablo-health/audiotake2` | AudioCaptureKit — audio recording engine (already has Pablo branding); auth pattern for macOS inherited from here |
+| `pablo-health/AudioCaptureKit` | Audio recording engine (already has Pablo branding); the macOS auth pattern comes from here |
 | `pablo-health/pablo` | Next.js frontend + FastAPI backend |
 
 ---
@@ -73,11 +73,11 @@ pablo-health/pablo-companion/
 | macOS networking | URLSession, Codable |
 | Windows UI | WinUI 3 / C# (.NET 10) |
 | Windows networking | HttpClient, System.Text.Json |
-| Audio (macOS) | AudioCaptureKit (from `audiotake2`) |
+| Audio (macOS) | AudioCaptureKit |
 | Audio (Windows) | AudioCaptureKit C# (WASAPI) |
 | Transcription (macOS) | Cloud (backend) |
 | Transcription (Windows) | Cloud (backend) |
-| Auth (macOS) | Inherited from `audiotake2` |
+| Auth (macOS) | Pattern from AudioCaptureKit |
 | Auth (Windows) | CredentialManager / loopback OAuth |
 | Calendar | Pablo backend owns the schedule — no client-side calendar sync |
 | Video launch | URL schemes (`zoommtg://`, `msteams://`), browser for Google Meet |
@@ -131,7 +131,7 @@ Pablo Bear guides new therapists through first-time setup before reaching the da
 
 Steps: account login → mic permission → screen recording permission → video platform detection → test recording → "You're ready" celebration
 
-Beads epic: `PABLO-D-112` (`bd show PABLO-D-112`). Legacy notes in `docs/repo-setup-questions.md`.
+Beads epic: `PABLO-D-112` (`bd show PABLO-D-112`).
 
 ---
 
@@ -212,7 +212,7 @@ git config user.email "kurtn@pablo.health"
 
 ## Swift / Xcode Conventions (mac/)
 
-- **Deployment target**: macOS 14+ (Sonoma) — confirm against `audiotake2` target
+- **Deployment target**: macOS 14+ (Sonoma) — confirm against `AudioCaptureKit` target
 - **Swift version**: 6.0
 - **Concurrency**: `async/await` throughout — no completion handlers in new code
 - **@MainActor**: All ViewModels that update `@Published` properties
@@ -236,7 +236,7 @@ final class SessionListViewModel: ObservableObject {
 
 - `NSWorkspace.shared.open(_:)` for video call URL scheme launch
 - AudioCaptureKit requires `NSMicrophoneUsageDescription` in `Info.plist`
-- Screen recording entitlement likely required — verify against `audiotake2`
+- Screen recording entitlement likely required — verify against `AudioCaptureKit`
 - `@AppStorage` for lightweight user preferences
 - Menu bar presence TBD — useful for session status at a glance
 

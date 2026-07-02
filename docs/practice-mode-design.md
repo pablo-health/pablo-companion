@@ -270,7 +270,7 @@ If Gemini's built-in voices aren't warm/expressive enough for Pablo Bear, the ba
 Client mic → backend → Whisper STT → Gemini flash-lite (text) → ElevenLabs TTS → backend → client
 ```
 
-Flash-lite is the same model already deployed for EHR navigation routing (`therapy-assistant-platform/backend/app/settings.py:305`), with different config:
+Flash-lite is the same model already deployed for EHR navigation routing (`pablo/backend/app/settings.py:305`), with different config:
 
 | Setting | EHR Navigation | Practice Mode |
 |---------|---------------|---------------|

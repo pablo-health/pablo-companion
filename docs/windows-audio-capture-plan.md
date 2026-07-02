@@ -1,5 +1,12 @@
 # Windows Audio Recording — Feature Parity with macOS
 
+> **History:** This plan is superseded. It assumes a shared Rust core
+> (`pablo-core`) exposed to C# via UniFFI — that core was removed. Windows audio
+> capture now uses a native C# implementation directly, with no Rust crates or
+> FFI layer. The WASAPI/mixing/encryption design below is still useful as
+> background, but the `pablo-core` / `PabloCoreMethods.*` embedding approach it
+> describes was abandoned.
+
 ## Context
 
 The macOS app captures mic + system audio during therapy sessions via AudioCaptureKit (Swift Package). The Windows app has no recording capability. AudioCaptureKit already has a **Windows Rust implementation** (`audio-capture-core` + `audio-capture-windows` crates) with WASAPI mic capture, loopback system audio, stereo mixing, and AES-256-GCM encryption — but no C# bindings. This plan embeds those crates into `pablo-core` and exposes them via UniFFI so the WinUI 3 app can use them through the existing `PabloCoreMethods.*` pattern.

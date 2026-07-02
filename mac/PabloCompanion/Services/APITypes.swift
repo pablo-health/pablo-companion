@@ -43,14 +43,14 @@ struct LaunchRedemption: Codable, Sendable {
     }
 }
 
-/// Server configuration returned by the therapy-assistant-platform's /api/config endpoint.
+/// Server configuration returned by the Pablo backend's /api/config endpoint.
 struct ServerConfig: Codable, Sendable {
     let apiUrl: String
     let firebaseApiKey: String?
     let firebaseProjectId: String?
 }
 
-/// Fetches runtime configuration from the therapy-assistant-platform.
+/// Fetches runtime configuration from the Pablo backend.
 /// This discovers the backend API URL so the user doesn't have to enter it manually.
 func fetchServerConfig(authServerURL: String) async throws -> ServerConfig {
     let base = authServerURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))

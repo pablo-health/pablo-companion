@@ -149,14 +149,13 @@ Present to the user:
 Applied by **hipaa-reviewer** for every task touching data models, API calls, or PHI-related code:
 
 ```
-[ ] PHI fields handled only in pablo-core — never logged, never sent to non-HIPAA endpoints?
+[ ] PHI kept out of logs, crash reports, and any non-HIPAA endpoint?
 [ ] Patient/session data access audit-logged?
 [ ] Multi-tenant isolation maintained (clinician scoping — no cross-clinician data leakage)?
 [ ] No PHI in log statements, crash reports, or error messages?
-[ ] New API endpoints in pablo-core have auth guards?
+[ ] Client calls to PHI backend endpoints carry a valid auth token?
 [ ] Credentials stored in platform-native secure storage (Keychain on macOS)?
 [ ] Audio recordings handled securely — no temp files left on disk unencrypted?
-[ ] FFI boundary does not leak PHI into Rust panic messages or stack traces?
 ```
 
 **Any HIPAA concern is a blocking issue.** No PR until all items are resolved.

@@ -4,6 +4,11 @@ _Created: 2026-03-03_
 _Status: READY FOR IMPLEMENTATION_
 _Target repo: pablo-health/AudioCaptureKit_
 
+> **History:** The "Rust core" referenced below no longer exists — the shared
+> Rust/UniFFI core was removed, and downstream audio processing now happens
+> server-side on the Pablo backend. AudioCaptureKit's own job (capture + write
+> separate files) is unaffected by that change.
+
 ---
 
 ## 1. Context

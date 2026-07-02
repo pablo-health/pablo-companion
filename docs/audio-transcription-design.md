@@ -3,6 +3,13 @@
 _Created: 2026-03-03_
 _Status: DRAFT — awaiting review_
 
+> **History:** This design predates the removal of the shared Rust core. Pablo
+> Companion no longer has a Rust/UniFFI core — both platforms use native HTTP
+> clients (URLSession on macOS, HttpClient on Windows) and transcription now runs
+> server-side on the Pablo backend. References below to a "Rust core",
+> `whisper-rs`, `core/`, or on-device ASR describe the originally-proposed
+> architecture, not what shipped.
+
 ---
 
 ## 1. Problem Statement
