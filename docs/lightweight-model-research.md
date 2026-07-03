@@ -1,5 +1,10 @@
 # Lightweight Model Research: Agentic SOAP Note Entry
 
+> **History:** This research predates the removal of the shared Rust core.
+> References below to a "Rust core" describe the original architecture; the
+> companion app is now fully native per platform with no Rust/UniFFI layer, and
+> this EHR-automation work runs server-side on the Pablo backend.
+
 ## Problem Statement
 
 After Pablo generates SOAP notes, therapists must manually enter them into their EHR system (e.g., SimplePractice, TherapyNotes, Jane App). We want to automate this using Playwright browser automation with an LLM handling the dynamic navigation intelligence.

@@ -18,7 +18,7 @@ Orchestrate an entire beads epic through a 4-phase workflow: analyze dependencie
 ## Examples
 
 ```
-/epic THERAPY-z2q
+/epic PABLO-D-z2q
 /epic SOAP note improvements
 /epic authentication overhaul
 ```
@@ -41,7 +41,7 @@ When the user invokes this skill:
 ### Step 1: Resolve the Epic
 
 1. Parse the input to determine if it's an epic ID or search term
-2. If it looks like an ID (e.g., `THERAPY-z2q`), run `bd show <id>`
+2. If it looks like an ID (e.g., `PABLO-D-z2q`), run `bd show <id>`
 3. If it's a search term, run `bd search <term>` to find matching epics
 4. If multiple matches, ask the user to select one
 5. If no matches, suggest creating a new epic with `bd create`

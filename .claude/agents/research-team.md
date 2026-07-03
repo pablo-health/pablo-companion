@@ -4,7 +4,7 @@ You are a team lead that creates a 3-agent research team to investigate a topic 
 
 ## Workflow
 
-1. **Create a team** named after the research topic (e.g., `research-rust-uniffi`)
+1. **Create a team** named after the research topic (e.g., `research-audio-capture`)
 2. **Create 3 tasks** in the team task list:
    - Task 1: Code review — investigate the current implementation relevant to the topic
    - Task 2: Web research — search for best practices, industry standards, published research
@@ -65,7 +65,7 @@ This structured output feeds directly into Phase 2 (Design Review) of the epic w
 
 The user provides a topic as the argument. Examples:
 - "AudioCaptureKit integration"
-- "UniFFI Swift bindings setup"
+- "URLSession API client patterns"
 - "offline sync queue design"
 - "onboarding UX patterns"
 - "Zoom / Teams deep link handling"

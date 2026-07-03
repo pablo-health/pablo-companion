@@ -18,7 +18,7 @@ Start working on a beads task - automatically creates a git worktree and updates
 ## Examples
 
 ```
-/work THERAPY-lo7.1
+/work PABLO-D-lo7.1
 /work modern frontend setup
 /work backend models
 ```
@@ -57,7 +57,7 @@ When the user invokes this skill:
 ## Directory Naming
 
 - Use descriptive name from task title (kebab-case)
-- Format: ../therapy-assistant-platform-descriptive-name
+- Format: ../pablo-companion-descriptive-name
 - Branch: TASK-ID-descriptive-name
 
 Be friendly and interactive. Ask if anything is unclear.

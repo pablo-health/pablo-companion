@@ -155,9 +155,9 @@ Response 200: (full Patient object)
 
 ## Domain C: Session Scheduling
 
-**Status: NEW — requires backend implementation.**
+**Status: Implemented and in use** (`APIClient.swift`, `APIClient.cs`).
 
-These endpoints enable the companion's day view and session lifecycle. The backend currently has no concept of "scheduled" sessions — sessions only exist after a transcript is uploaded.
+These endpoints enable the companion's day view and session lifecycle. The backend now models "scheduled" sessions that exist before a transcript is uploaded.
 
 ### Session Status Lifecycle
 
@@ -428,7 +428,7 @@ Errors:
 
 ## Domain F: User Preferences
 
-**Status: NEW — requires backend implementation.**
+**Status: Implemented and in use** (`APIClient.swift`, `APIClient.cs`).
 
 ### `GET /api/users/me/preferences`
 
@@ -501,56 +501,45 @@ HTTP status codes:
 
 ## Companion Client Architecture
 
-All backend communication routes through `core/src/api_client.rs` (Rust), exposed to Swift via UniFFI.
+Each platform talks to the shared Pablo REST API through its own native HTTP client — no shared core, no FFI layer:
 
-### FFI Pattern
+- **macOS** — `mac/PabloCompanion/Services/APIClient.swift` (URLSession + Codable)
+- **Windows** — `windows/PabloCompanion/Services/APIClient.cs` (HttpClient + System.Text.Json)
 
-Every API function accepts `base_url` and `token` as parameters. Rust never stores tokens — they stay in platform-native secure storage (Keychain) until call time.
-
-```rust
-// Rust (core/src/api_client.rs)
-pub async fn fetch_today_sessions(
-    base_url: String,
-    token: String,
-    timezone: String,
-) -> Result<Vec<Session>, PabloError> { ... }
-```
+Both clients implement the same endpoints against the same contract, so their method sets stay in parity. Tokens live in platform-native secure storage (Keychain on macOS, Credential Manager on Windows) and are attached as `Authorization: Bearer <token>` at request time — never persisted by the client layer beyond the OS keystore.
 
 ```swift
-// Swift calls via UniFFI-generated function
-let sessions = try await fetchTodaySessions(
-    baseUrl: backendURL,
-    token: authVM.getValidToken(),
+// Swift (APIClient.swift)
+let sessions = try await apiClient.fetchTodaySessions(
     timezone: TimeZone.current.identifier
 )
 ```
 
-### Existing Swift Methods to Port to Rust
+```csharp
+// C# (APIClient.cs)
+var sessions = await apiClient.FetchTodaySessionsAsync(timezone);
+```
 
-| Swift method | Rust equivalent |
-|-------------|-----------------|
-| `APIClient.healthCheck()` | `health_check(base_url)` |
-| `APIClient.fetchPatients()` | `fetch_patients(base_url, token, search, page, page_size)` |
-| `APIClient.uploadRecording()` | `upload_recording(base_url, token, file_path)` |
+### Endpoint → Client Method Map
 
-### New Rust API Methods
-
-| Function | Endpoint |
-|----------|----------|
-| `fetch_today_sessions()` | `GET /api/sessions/today` |
-| `create_session()` | `POST /api/sessions/schedule` |
-| `update_session_status()` | `PATCH /api/sessions/{id}/status` |
-| `update_session()` | `PATCH /api/sessions/{id}` |
-| `upload_transcript()` | `POST /api/sessions/{id}/transcript` |
-| `fetch_session()` | `GET /api/sessions/{id}` |
-| `fetch_sessions()` | `GET /api/sessions` |
-| `finalize_session()` | `PATCH /api/sessions/{id}/finalize` |
-| `create_patient()` | `POST /api/patients` |
-| `fetch_preferences()` | `GET /api/users/me/preferences` |
-| `save_preferences()` | `PUT /api/users/me/preferences` |
-| `fetch_user()` | `GET /api/users/me` |
-| `check_baa_status()` | `GET /api/users/me/baa-status` |
-| `accept_baa()` | `POST /api/users/me/accept-baa` |
+| Endpoint | Swift (`APIClient.swift`) | C# (`APIClient.cs`) |
+|----------|---------------------------|---------------------|
+| `GET /api/health` | `healthCheck()` | `HealthCheckAsync()` |
+| `GET /api/patients` | `fetchPatients()` | `FetchPatientsAsync()` |
+| `POST /api/patients` | `createPatient()` | `CreatePatientAsync()` |
+| `GET /api/sessions/today` | `fetchTodaySessions()` | `FetchTodaySessionsAsync()` |
+| `POST /api/sessions/schedule` | `createSession()` | `CreateSessionAsync()` |
+| `PATCH /api/sessions/{id}/status` | `updateSessionStatus()` | `UpdateSessionStatusAsync()` |
+| `PATCH /api/sessions/{id}` | `updateSession()` | `UpdateSessionAsync()` |
+| `POST /api/sessions/{id}/transcript` | `uploadTranscript()` | `UploadTranscriptAsync()` |
+| `GET /api/sessions/{id}` | `fetchSession()` | `FetchSessionAsync()` |
+| `GET /api/sessions` | `fetchSessions()` | `FetchSessionsAsync()` |
+| `PATCH /api/sessions/{id}/finalize` | `finalizeSession()` | `FinalizeSessionAsync()` |
+| `GET /api/users/me/preferences` | `fetchPreferences()` | `FetchPreferencesAsync()` |
+| `PUT /api/users/me/preferences` | `savePreferences()` | `SavePreferencesAsync()` |
+| `GET /api/users/me` | `fetchUserProfile()` | `FetchUserProfileAsync()` |
+| `GET /api/users/me/baa-status` | `fetchBaaStatus()` | `FetchBaaStatusAsync()` |
+| `POST /api/users/me/accept-baa` | `acceptBaa()` | `AcceptBaaAsync()` |
 
 ---
 

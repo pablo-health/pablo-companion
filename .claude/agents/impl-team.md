@@ -42,23 +42,23 @@ Create a team named after the work (e.g., `impl-audio-capture`).
 
 ## make check
 
-`make check` runs all of the following:
-- `cargo test` — Rust core unit tests
-- `cargo clippy` — Rust linting
-- `xcodebuild test` — Swift/macOS tests (when applicable to the task)
+`make check` runs `lint-swift` + `build-mac` (SwiftLint + SwiftFormat lint, then
+a macOS build). Run
+`make test-mac` for the Swift/macOS test suite, and `make check-windows`
+(`build-windows` + `test-windows`) for the Windows side when a task touches it.
 
-All must pass. Zero warnings policy on Rust; zero warnings policy on Swift.
+All must pass. Zero warnings policy on Swift.
 
 ## HIPAA Security Checklist
 
 Applied by **reviewer** for every task touching data models, API calls, or PHI-related code:
 
 ```
-[ ] PHI fields handled only in pablo-core — never logged, never sent to non-HIPAA endpoints?
+[ ] PHI kept out of logs, crash reports, and any non-HIPAA endpoint?
 [ ] Patient/session data access audit-logged?
 [ ] Multi-tenant isolation maintained (clinician scoping — no cross-clinician data leakage)?
 [ ] No PHI in log statements, crash reports, or error messages?
-[ ] New API endpoints in pablo-core have auth guards?
+[ ] Client calls to PHI backend endpoints carry a valid auth token?
 [ ] Credentials stored in platform-native secure storage (Keychain on macOS)?
 [ ] Audio recordings handled securely — no temp files left on disk unencrypted?
 ```

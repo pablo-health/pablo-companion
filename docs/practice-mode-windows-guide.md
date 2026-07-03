@@ -23,7 +23,7 @@ A therapist conducts a simulated therapy session with **Pablo Bear** (AI patient
 
 | Document | Location | Purpose |
 |----------|----------|---------|
-| **Backend API contract** | `therapy-assistant-platform/docs/practice-mode-api.md` | Full REST + WebSocket protocol spec |
+| **Backend API contract** | `pablo/docs/practice-mode-api.md` | Full REST + WebSocket protocol spec |
 | **Design doc** | `pablo-companion/docs/practice-mode-design.md` | Architecture, HIPAA analysis, phased delivery |
 | **macOS implementation** | `pablo-companion/mac/PabloCompanion/` (see file list below) | Reference for parity |
 
@@ -53,7 +53,7 @@ The macOS client is fully implemented. Use it as the reference for behavior and 
 
 ## 4. API Contract Summary
 
-Full spec is in `therapy-assistant-platform/docs/practice-mode-api.md`. Key points:
+Full spec is in `pablo/docs/practice-mode-api.md`. Key points:
 
 ### REST Endpoints
 
