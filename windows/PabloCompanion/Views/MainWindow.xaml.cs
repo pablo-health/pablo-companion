@@ -70,6 +70,18 @@ public sealed partial class MainWindow : Window
 
         _apiClient = App.Services.GetRequiredService<APIClient>();
 
+        // Keep the backend session alive while a recording is active — capture
+        // is local and uploads happen at stop, so without this the server-side
+        // idle timeout can kill the session mid-recording.
+        var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
+        var keepAlive = App.Services.GetRequiredService<SessionKeepAliveService>();
+        recordingVm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(RecordingViewModel.ActiveSessionId)) return;
+            if (recordingVm.ActiveSessionId != null) keepAlive.Start();
+            else keepAlive.Stop();
+        };
+
         // Refresh subscription status when a 403 is detected
         var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
         sessionVm.PropertyChanged += (_, e) =>

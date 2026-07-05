@@ -89,6 +89,19 @@ public partial class TranscriptionViewModel : ObservableObject
         PendingUploadCount = _pendingStore.GetAll().Length;
 
         ActiveSessionId = sessionId;
+
+        // Cheap read-only liveness probe before moving the audio. If the
+        // server-side session has already idled out, the upload can only 401 —
+        // surface the re-auth flow now (VerifySessionAliveAsync raises it) and
+        // leave the entry queued. It drains via the retry loop after sign-in.
+        if (!await _apiClient.VerifySessionAliveAsync())
+        {
+            State = TranscriptionState.PendingUpload;
+            ProgressMessage = "Session expired — sign in to resume the upload";
+            App.Log($"Skipping audio upload for session={sessionId}: server session is no longer active");
+            return;
+        }
+
         State = TranscriptionState.Uploading;
         Progress = 0.1;
         ProgressMessage = "Uploading audio to Pablo...";

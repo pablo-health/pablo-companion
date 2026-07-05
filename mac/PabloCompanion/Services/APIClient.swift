@@ -14,6 +14,19 @@ final class APIClient {
     /// Optional closure to provide a Bearer token for authenticated requests.
     var getToken: (@Sendable () async throws -> String)?
 
+    /// Fired when an authenticated request comes back 401. Mirrors the Windows
+    /// `UnauthenticatedDetected` event: the auth layer listens and drives the UI
+    /// back to sign-in instead of leaving callers to retry a session the server
+    /// has already rejected. A Firebase token refresh cannot recover here — the
+    /// backend's idle timeout is keyed on `auth_time`, which a refresh preserves —
+    /// so only a fresh interactive sign-in helps. `idleTimeout` is true when the
+    /// body's structured `error.code` is `IDLE_TIMEOUT`, so the UI can say
+    /// "expired due to inactivity" rather than a generic auth failure.
+    var onAuthRejected: ((_ idleTimeout: Bool) -> Void)?
+
+    /// Structured error code the backend attaches to idle-timeout 401s.
+    static let idleTimeoutCode = "IDLE_TIMEOUT"
+
     private static let clientVersion = "0.9.1"
     private static let minServerVersion = "0.9.0"
 
@@ -399,13 +412,15 @@ final class APIClient {
 
     // MARK: - Private Helpers
 
-    /// Builds a URLRequest with standard headers.
+    /// Builds a URLRequest with standard headers. Internal (not private) so
+    /// same-type extensions in other files can build requests the standard
+    /// way instead of hand-rolling them.
     /// - Parameters:
     ///   - method: HTTP method (GET, POST, PATCH, PUT, DELETE).
     ///   - path: API path (e.g. "/api/sessions"). Appended to `baseURLString`.
     ///   - authenticated: Whether to include the Authorization header. Defaults to `true`.
     /// - Returns: A configured URLRequest.
-    private func buildRequest(
+    func buildRequest(
         _ method: String,
         path: String,
         authenticated: Bool = true
@@ -441,7 +456,8 @@ final class APIClient {
     }
 
     /// Decodes a successful HTTP response body into the requested type.
-    private func handleResponse<T: Decodable>(_ data: Data, _: URLResponse) throws -> T {
+    /// Internal (not private) for the same extension-file reason as `buildRequest`.
+    func handleResponse<T: Decodable>(_ data: Data, _: URLResponse) throws -> T {
         do {
             return try jsonDecoder.decode(T.self, from: data)
         } catch let DecodingError.keyNotFound(key, context) {

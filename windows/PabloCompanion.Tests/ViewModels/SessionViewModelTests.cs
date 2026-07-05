@@ -131,6 +131,9 @@ public sealed class SessionViewModelTests : IDisposable
 
         public StubApiClient(CredentialManager credentials) : base(credentials) { }
 
+        // Keep the pre-upload liveness probe off the real network in tests.
+        public override Task<bool> VerifySessionAliveAsync() => Task.FromResult(true);
+
         public override Task<Session> UpdateSessionStatusAsync(string sessionId, SessionStatus status)
         {
             PatchCallCount++;

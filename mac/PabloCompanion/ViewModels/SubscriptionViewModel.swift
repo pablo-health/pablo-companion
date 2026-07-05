@@ -26,8 +26,10 @@ final class SubscriptionViewModel {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken
+                let onAuthRejected = apiClient.onAuthRejected
                 apiClient = APIClient(baseURL: backendURL)
                 apiClient.getToken = token
+                apiClient.onAuthRejected = onAuthRejected
             }
         }
     }
@@ -41,8 +43,12 @@ final class SubscriptionViewModel {
 
     // MARK: - Auth
 
-    func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
+    func configureAuth(
+        getToken: @escaping @Sendable () async throws -> String,
+        onAuthRejected: ((Bool) -> Void)? = nil
+    ) {
         apiClient.getToken = getToken
+        apiClient.onAuthRejected = onAuthRejected
     }
 
     // MARK: - Fetch
@@ -68,12 +74,12 @@ final class SubscriptionViewModel {
         do {
             subscriptionInfo = try await apiClient.extendSubscription()
             logger.info("Grace extension granted")
-        } catch let error as APIError {
-            extensionError = switch error {
-            case .serverError(statusCode: 409, _): "Extension already used"
-            default: "Something went wrong. Please contact support@pablo.health"
-            }
-            logger.error("Failed to request extension: HTTP error")
+        } catch PabloError.conflictState {
+            extensionError = "Extension already used"
+            logger.error("Failed to request extension: already used")
+        } catch let error as PabloError {
+            extensionError = "Something went wrong. Please contact support@pablo.health"
+            logger.error("Failed to request extension: \(error.localizedDescription)")
         } catch {
             extensionError = "Network error — check your connection and try again"
             logger.error("Failed to request extension: \(error)")

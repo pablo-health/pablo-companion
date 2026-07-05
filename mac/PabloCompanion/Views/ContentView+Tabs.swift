@@ -30,6 +30,10 @@ extension ContentView {
                     recordingVM.activeSessionId = nil
                     activeSessionId = nil
                     if let sessionId {
+                        // Queue the audio on disk BEFORE any network call —
+                        // endSession can 401 into the forced sign-out flow,
+                        // and the recording must already be safe when it does.
+                        queueSessionAudioForUpload(sessionId)
                         _ = await sessionVM.endSession(sessionId)
                         let segments = recordingVM.allRecordingsForSession(sessionId)
                         if !segments.isEmpty {

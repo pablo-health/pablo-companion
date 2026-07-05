@@ -59,8 +59,14 @@ final class PracticeViewModel {
 
     // MARK: - Auth
 
-    func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
+    func configureAuth(
+        getToken: @escaping @Sendable () async throws -> String,
+        onAuthRejected: ((Bool) -> Void)? = nil
+    ) {
         apiClient.getToken = getToken
+        // The practice client has no error envelope; a 401 here is a plain
+        // server-side session rejection (never a parsed idle-timeout code).
+        apiClient.onUnauthorized = onAuthRejected.map { handler in { handler(false) } }
     }
 
     // MARK: - Topic loading

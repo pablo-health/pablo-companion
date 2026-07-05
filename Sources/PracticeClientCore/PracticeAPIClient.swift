@@ -12,6 +12,11 @@ public final class PracticeAPIClient {
     public var baseURL = "https://api.pablo.health"
     public var getToken: (@Sendable () async throws -> String)?
 
+    /// Fired when an authenticated request comes back 401 — the server has
+    /// rejected the session (e.g. server-side idle timeout), so a token
+    /// refresh won't help and the host app should route to re-auth.
+    public var onUnauthorized: (() -> Void)?
+
     /// Value sent as `X-Client-Type`. The app overrides this with its real
     /// version; the headless runner keeps the default.
     public var clientType = "pablo-companion/dev"
@@ -48,6 +53,9 @@ public final class PracticeAPIClient {
             throw APIError.invalidResponse
         }
         guard (200 ... 299).contains(httpResponse.statusCode) else {
+            if httpResponse.statusCode == 401 {
+                onUnauthorized?()
+            }
             let message = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw APIError.serverError(statusCode: httpResponse.statusCode, message: message)
         }

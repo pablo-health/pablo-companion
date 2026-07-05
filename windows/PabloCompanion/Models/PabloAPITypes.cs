@@ -330,6 +330,20 @@ public sealed record RedeemLaunchIntentResponse(
     [property: JsonPropertyName("session_id")] string? SessionId
 );
 
+// ── Session liveness ─────────────────────────────────────────────────────────
+
+/// <summary>
+/// Response from <c>GET /api/auth/session</c> and <c>POST /api/auth/session/touch</c>.
+/// <c>Enforced</c> is false when the server-side idle control is disabled and the
+/// client should rely on its local activity clock alone. <c>SecondsRemaining</c>
+/// is time left before the session idles out absent further requests.
+/// Mirrors <c>SessionLiveness</c> in PabloAPITypes.swift.
+/// </summary>
+public sealed record SessionLiveness(
+    bool Enforced,
+    bool Active,
+    int? SecondsRemaining);
+
 // ── Error type ───────────────────────────────────────────────────────────────
 
 public class PabloException : Exception

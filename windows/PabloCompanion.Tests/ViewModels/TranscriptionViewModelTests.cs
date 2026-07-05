@@ -133,6 +133,29 @@ public sealed class TranscriptionViewModelTests : IDisposable
     }
 
     /// <summary>
+    /// A dead server-side session (idle timeout) must not burn an upload
+    /// attempt: the entry stays queued with no retry penalty, and the audio
+    /// never leaves the disk until re-auth. The probe itself surfaces the
+    /// re-auth flow via <c>UnauthenticatedDetected</c> inside APIClient.
+    /// </summary>
+    [Fact]
+    public async Task UploadAudioAsync_WhenServerSessionDead_SkipsUploadAndKeepsEntryQueued()
+    {
+        SeedRecording("session-7");
+        var api = new StubApiClient(_credentials) { SessionAlive = false };
+        var vm = MakeVm(api, MakePendingStore());
+
+        await vm.UploadAudioAsync("session-7");
+
+        Assert.Equal(1, api.ProbeCallCount);
+        Assert.Equal(0, api.CallCount);
+        Assert.Equal(TranscriptionState.PendingUpload, vm.State);
+        var entry = MakePendingStore().Get("session-7");
+        Assert.NotNull(entry);
+        Assert.Equal(0, entry!.RetryCount);
+    }
+
+    /// <summary>
     /// Simulates the PR #68 fallout: a session got into PendingTranscriptionStore
     /// while its backend status was still "recording", so /upload-audio returns
     /// 400 INVALID_STATUS. The self-heal in UploadFromPendingAsync should PATCH
@@ -202,6 +225,17 @@ public sealed class TranscriptionViewModelTests : IDisposable
         public int CallCount { get; private set; }
         public string? LastSessionId { get; private set; }
         public bool FailNext { get; set; }
+
+        // Session-liveness probe (server-side idle timeout). Defaults to alive
+        // so the pre-upload probe never reaches the real network in tests.
+        public bool SessionAlive { get; set; } = true;
+        public int ProbeCallCount { get; private set; }
+
+        public override Task<bool> VerifySessionAliveAsync()
+        {
+            ProbeCallCount++;
+            return Task.FromResult(SessionAlive);
+        }
 
         // INVALID_STATUS self-heal path
         public bool ThrowInvalidStatusOnNextUpload { get; set; }

@@ -129,9 +129,12 @@ public partial class AuthViewModel : ObservableObject
     /// still rejects it (see backend/app/auth/idle_session.py). Only a fresh
     /// sign-in (new auth_time) recovers. The proactive refresh timer above already
     /// handles natural id_token expiry, so a 401 here means real backend rejection.
+    /// <paramref name="errorCode"/> is the body's structured error code;
+    /// <see cref="APIClient.IdleTimeoutCode"/> gets a distinct "expired due to
+    /// inactivity" message on the login screen instead of a generic auth failure.
     /// Debounced so parallel 401s from concurrent requests don't stack.
     /// </summary>
-    private void OnApiUnauthenticated()
+    private void OnApiUnauthenticated(string? errorCode)
     {
         App.UiDispatcherQueue?.TryEnqueue(() =>
         {
@@ -141,6 +144,7 @@ public partial class AuthViewModel : ObservableObject
             try
             {
                 SignOut();
+                ErrorMessage = SessionRejectedMessage(errorCode);
             }
             finally
             {
@@ -148,6 +152,16 @@ public partial class AuthViewModel : ObservableObject
             }
         });
     }
+
+    /// <summary>
+    /// User-facing message for a server-side session rejection. Idle timeouts get
+    /// a distinct message so the therapist knows why they were signed out.
+    /// Mirrors <c>AuthViewModel.sessionRejectedMessage</c> on macOS.
+    /// </summary>
+    internal static string SessionRejectedMessage(string? errorCode) =>
+        errorCode == APIClient.IdleTimeoutCode
+            ? "Your session expired due to inactivity. Please sign in again."
+            : "Your session is no longer valid. Please sign in again.";
 
     /// <summary>
     /// Attempts to restore a saved session on app launch.

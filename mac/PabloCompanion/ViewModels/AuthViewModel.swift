@@ -157,6 +157,14 @@ final class AuthViewModel {
         logger.info("User signed out")
     }
 
+    // MARK: - Server Session Rejection
+
+    /// Guards against parallel 401s (concurrent requests) stacking sign-outs.
+    /// Stored here (extensions can't add storage); the handler lives in
+    /// `AuthViewModel+SessionExpiry.swift`.
+    @ObservationIgnored
+    var isHandlingAuthRejection = false
+
     // MARK: - Token Access
 
     /// Returns a valid ID token, refreshing if needed. Throws on failure.

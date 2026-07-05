@@ -32,12 +32,23 @@ public class APIClient
     public string BaseUrl { get; set; }
 
     /// <summary>
+    /// Structured error code the backend attaches to idle-timeout 401s. The
+    /// server-side idle session cannot be revived by a token refresh (the
+    /// tombstone is keyed on <c>auth_time</c>, which a refresh preserves) —
+    /// only a fresh interactive sign-in recovers.
+    /// </summary>
+    public const string IdleTimeoutCode = "IDLE_TIMEOUT";
+
+    /// <summary>
     /// Raised when an authenticated request comes back 401. AuthViewModel listens
-    /// and triggers a refresh-or-sign-out so the UI returns to the login screen
-    /// instead of leaving the user stuck on a page that can't load data.
+    /// and signs the user out so the UI returns to the login screen instead of
+    /// leaving the user stuck on a page that can't load data. The argument is the
+    /// structured <c>error.code</c> from the response body (null when absent);
+    /// <see cref="IdleTimeoutCode"/> means the server-side idle session expired,
+    /// which gets a distinct user-facing message.
     /// Not raised for HealthCheck (unauthenticated endpoint).
     /// </summary>
-    public event Action? UnauthenticatedDetected;
+    public event Action<string?>? UnauthenticatedDetected;
 
     public APIClient(CredentialManager credentials, DeviceKeyService? deviceKey = null)
     {
@@ -134,13 +145,31 @@ public class APIClient
 
         if (!response.IsSuccessStatusCode)
         {
-            if (response.StatusCode == HttpStatusCode.Unauthorized) UnauthenticatedDetected?.Invoke();
-            await HandleErrorResponse(response);
+            await RaiseAndThrowErrorAsync(response);
         }
 
         var body = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<T>(body, JsonOptions)
             ?? throw new InvalidOperationException($"Failed to deserialize response as {typeof(T).Name}");
+    }
+
+    /// <summary>
+    /// Raises <see cref="UnauthenticatedDetected"/> for a 401 — carrying the
+    /// parsed <c>error.code</c> so listeners can distinguish an idle-timeout
+    /// from a generic auth failure — then throws the mapped
+    /// <see cref="PabloException"/>. Authenticated routes only; HealthCheck
+    /// keeps using <see cref="HandleErrorResponse"/> so an unauthenticated
+    /// endpoint can never trigger a sign-out.
+    /// </summary>
+    private async Task RaiseAndThrowErrorAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            var (_, errorCode) = TryParseErrorEnvelope(body);
+            UnauthenticatedDetected?.Invoke(errorCode);
+        }
+        await HandleErrorResponse(response);
     }
 
     private static async Task HandleErrorResponse(HttpResponseMessage response)
@@ -163,8 +192,9 @@ public class APIClient
     /// <summary>
     /// Parses the standard backend error envelope (<c>{error: {code, message, details}}</c>)
     /// into <c>(message, code)</c>. Returns (null, null) for non-JSON or unrecognized bodies.
+    /// Internal so the envelope shapes (including the idle-timeout code) are unit-testable.
     /// </summary>
-    private static (string? message, string? code) TryParseErrorEnvelope(string body)
+    internal static (string? message, string? code) TryParseErrorEnvelope(string body)
     {
         if (string.IsNullOrWhiteSpace(body)) return (null, null);
         try
@@ -425,6 +455,59 @@ public class APIClient
         return await SendAsync<SubscriptionInfo>(request);
     }
 
+    // ── Session liveness ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Read-only peek at the server-side idle session. Does NOT extend the
+    /// session — checking liveness must not keep it alive.
+    /// </summary>
+    public virtual async Task<SessionLiveness> FetchSessionStatusAsync()
+    {
+        using var request = CreateRequest(HttpMethod.Get, "/api/auth/session");
+        return await SendAsync<SessionLiveness>(request);
+    }
+
+    /// <summary>
+    /// Explicit keep-alive: refreshes the server-side idle heartbeat. Used
+    /// while a recording is active, when the app makes no other backend calls
+    /// and would otherwise idle out mid-session.
+    /// </summary>
+    public virtual async Task<SessionLiveness> TouchSessionAsync()
+    {
+        using var request = CreateRequest(HttpMethod.Post, "/api/auth/session/touch");
+        return await SendAsync<SessionLiveness>(request);
+    }
+
+    /// <summary>
+    /// Probes session liveness and reports whether it is safe to proceed with
+    /// an authenticated call. Returns false only when the server positively
+    /// says the session is dead (dead peek, or a 401 on the probe itself —
+    /// <see cref="UnauthenticatedDetected"/> has already been raised in both
+    /// cases). Network or parsing failures return true: the probe is advisory
+    /// and must never block work that has its own retry path.
+    /// </summary>
+    public virtual async Task<bool> VerifySessionAliveAsync()
+    {
+        try
+        {
+            var status = await FetchSessionStatusAsync();
+            if (status.Enforced && !status.Active)
+            {
+                UnauthenticatedDetected?.Invoke(IdleTimeoutCode);
+                return false;
+            }
+            return true;
+        }
+        catch (PabloException ex) when (ex.StatusCode == 401)
+        {
+            return false;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
+
     // ── Transcripts ─────────────────────────────────────────────────────────
 
     public async Task<TranscriptUploadResponse> UploadTranscriptAsync(string sessionId, string format, string content)
@@ -479,10 +562,9 @@ public class APIClient
 
         if (!response.IsSuccessStatusCode)
         {
-            if (response.StatusCode == HttpStatusCode.Unauthorized) UnauthenticatedDetected?.Invoke();
             // Throws PabloException with backend error code populated when present.
             // Lets UploadFromPendingAsync branch on INVALID_STATUS for self-heal.
-            await HandleErrorResponse(response);
+            await RaiseAndThrowErrorAsync(response);
         }
 
         var body = await response.Content.ReadAsStringAsync();

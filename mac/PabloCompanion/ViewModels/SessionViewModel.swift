@@ -58,8 +58,10 @@ final class SessionViewModel {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken
+                let onAuthRejected = apiClient.onAuthRejected
                 apiClient = APIClient(baseURL: backendURL)
                 apiClient.getToken = token
+                apiClient.onAuthRejected = onAuthRejected
             }
         }
     }
@@ -73,9 +75,50 @@ final class SessionViewModel {
 
     // MARK: - Auth
 
-    /// Configures the API client with a token provider for authenticated requests.
-    func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
+    /// Configures the API client with a token provider for authenticated
+    /// requests, and optionally a handler fired when the server rejects the
+    /// session (401) so the UI can bounce to re-auth.
+    func configureAuth(
+        getToken: @escaping @Sendable () async throws -> String,
+        onAuthRejected: ((Bool) -> Void)? = nil
+    ) {
         apiClient.getToken = getToken
+        apiClient.onAuthRejected = onAuthRejected
+    }
+
+    // MARK: - Session keep-alive
+
+    /// How often to refresh the server-side idle heartbeat while recording.
+    /// The server window is 15 minutes; 4 minutes keeps a comfortable margin
+    /// even if one touch is lost to a network blip.
+    static let keepAliveInterval: Duration = .seconds(240)
+
+    /// Keeps the backend idle session alive for the duration of a recording.
+    ///
+    /// During a recording the app makes no other backend calls (capture is
+    /// local; upload happens at stop), so without a deliberate heartbeat the
+    /// server-side idle timeout can tombstone the session right before the
+    /// stop-time upload. An active recording is genuine user activity — the
+    /// local inactivity lock is already suspended while recording — so the
+    /// server session should stay alive too.
+    ///
+    /// Runs until cancelled (the caller scopes it to the active recording).
+    /// Starts with a read-only liveness probe so a session that is already
+    /// dead surfaces the re-auth flow immediately; each subsequent touch that
+    /// hits a 401 does the same via the client's `onAuthRejected` hook. Other
+    /// failures are ignored — the next tick retries, and a lost heartbeat
+    /// must never interfere with the recording itself.
+    func keepSessionAliveWhileRecording() async {
+        guard await apiClient.verifySessionAlive() else { return }
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.keepAliveInterval)
+            guard !Task.isCancelled else { break }
+            do {
+                _ = try await apiClient.touchSession()
+            } catch {
+                logger.warning("Session keep-alive touch failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Today's appointments

@@ -175,6 +175,7 @@ public partial class App : Application
         services.AddSingleton<Services.InactivityMonitor>();
         services.AddSingleton<Services.EhrNavigator>();
 
+        services.AddSingleton<Services.SessionKeepAliveService>();
         services.AddSingleton<Services.PracticeApiClient>();
         services.AddSingleton<Services.ProtocolActivationListener>();
         services.AddSingleton<Services.DeepLinkRouter>();
