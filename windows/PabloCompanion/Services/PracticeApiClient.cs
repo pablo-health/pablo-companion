@@ -27,9 +27,12 @@ public sealed class PracticeApiClient
 
     /// <summary>
     /// Raised when an authenticated request comes back 401. AuthViewModel listens
-    /// and triggers a refresh-or-sign-out so the UI returns to the login screen.
+    /// and signs the user out so the UI returns to the login screen. Carries the
+    /// structured <c>error.code</c> from the response body (null when absent) so
+    /// an idle-timeout gets its distinct message — same contract as
+    /// <see cref="APIClient.UnauthenticatedDetected"/>.
     /// </summary>
-    public event Action? UnauthenticatedDetected;
+    public event Action<string?>? UnauthenticatedDetected;
 
     public PracticeApiClient(CredentialManager credentials)
     {
@@ -61,8 +64,9 @@ public sealed class PracticeApiClient
 
         if (!response.IsSuccessStatusCode)
         {
-            if (response.StatusCode == HttpStatusCode.Unauthorized) UnauthenticatedDetected?.Invoke();
             var body = await response.Content.ReadAsStringAsync();
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                UnauthenticatedDetected?.Invoke(APIClient.TryParseErrorEnvelope(body).code);
             throw new PabloException((ushort)response.StatusCode, body);
         }
 
@@ -97,8 +101,9 @@ public sealed class PracticeApiClient
 
         if (!response.IsSuccessStatusCode)
         {
-            if (response.StatusCode == HttpStatusCode.Unauthorized) UnauthenticatedDetected?.Invoke();
             var body = await response.Content.ReadAsStringAsync();
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                UnauthenticatedDetected?.Invoke(APIClient.TryParseErrorEnvelope(body).code);
             throw new PabloException((ushort)response.StatusCode, body);
         }
     }

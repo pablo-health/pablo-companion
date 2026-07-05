@@ -16,8 +16,10 @@ final class PatientViewModel {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken
+                let onAuthRejected = apiClient.onAuthRejected
                 apiClient = APIClient(baseURL: backendURL)
                 apiClient.getToken = token
+                apiClient.onAuthRejected = onAuthRejected
             }
         }
     }
@@ -29,9 +31,14 @@ final class PatientViewModel {
         self.apiClient = APIClient()
     }
 
-    /// Configures the API client with a token provider for authenticated requests.
-    func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
+    /// Configures the API client with a token provider for authenticated
+    /// requests and an optional handler for server-side session rejection.
+    func configureAuth(
+        getToken: @escaping @Sendable () async throws -> String,
+        onAuthRejected: ((Bool) -> Void)? = nil
+    ) {
         apiClient.getToken = getToken
+        apiClient.onAuthRejected = onAuthRejected
     }
 
     /// Debug status visible in the UI during development.

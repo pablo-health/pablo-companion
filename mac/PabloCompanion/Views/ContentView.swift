@@ -91,7 +91,18 @@ struct ContentView: View {
         }
         .onChange(of: authVM.authState) { _, newState in
             if case .unauthenticated = newState {
-                clearAllPHI()
+                if activeSessionId != nil {
+                    // Forced sign-out mid-recording (e.g. the server rejected
+                    // the session): stop capture and queue the audio on disk
+                    // BEFORE purging in-memory PHI, so nothing is lost and the
+                    // upload resumes after re-auth.
+                    Task {
+                        await stopAndQueueActiveRecording()
+                        clearAllPHI()
+                    }
+                } else {
+                    clearAllPHI()
+                }
             }
             if case .authenticated = newState {
                 drainPendingDeepLink()
@@ -112,7 +123,15 @@ struct ContentView: View {
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { break }
                 await transcriptionVM.retryPendingUploads()
+                await transcriptionVM.retryPendingAudioUploads()
             }
+        }
+        .task(id: activeSessionId) {
+            // Keep the backend session alive while a recording is active —
+            // capture is local and uploads happen at stop, so without this the
+            // server-side idle timeout can kill the session mid-recording.
+            guard activeSessionId != nil else { return }
+            await sessionVM.keepSessionAliveWhileRecording()
         }
         .task {
             // Subscription status refresh — every 10 minutes.
@@ -254,11 +273,21 @@ struct ContentView: View {
             }
         }
 
-        uploadVM.configureAuth { [authVM] in try await authVM.getValidToken() }
-        patientVM.configureAuth { [authVM] in try await authVM.getValidToken() }
-        sessionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
-        practiceVM.configureAuth { [authVM] in try await authVM.getValidToken() }
-        subscriptionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
+        // A 401 on any authenticated call routes to sign-out + re-auth prompt.
+        // The server-side idle timeout can't be recovered by a token refresh,
+        // so surfacing sign-in immediately beats retrying into a dead session.
+        let getToken: @Sendable () async throws -> String = { [authVM] in
+            try await authVM.getValidToken()
+        }
+        let onAuthRejected: (Bool) -> Void = { [authVM] idleTimeout in
+            authVM.handleAuthRejected(idleTimeout: idleTimeout)
+        }
+
+        uploadVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
+        patientVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
+        sessionVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
+        practiceVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
+        subscriptionVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
 
         // Scope encryption keys to the signed-in user
         let email = authVM.authenticatedEmail
@@ -279,7 +308,7 @@ struct ContentView: View {
         checkVersionCompatibility()
 
         transcriptionVM.backendURL = uploadVM.backendURL
-        transcriptionVM.configureAuth { [authVM] in try await authVM.getValidToken() }
+        transcriptionVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
         await resumeAllPendingUploads()
         await subscriptionVM.refreshStatus()
 

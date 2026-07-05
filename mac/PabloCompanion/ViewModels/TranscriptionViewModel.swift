@@ -60,8 +60,10 @@ final class TranscriptionViewModel {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken
+                let onAuthRejected = apiClient.onAuthRejected
                 apiClient = APIClient(baseURL: backendURL)
                 apiClient.getToken = token
+                apiClient.onAuthRejected = onAuthRejected
             }
         }
     }
@@ -91,9 +93,14 @@ final class TranscriptionViewModel {
         UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool ?? true
     }
 
-    /// Configures the API client with a token provider for authenticated requests.
-    func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
+    /// Configures the API client with a token provider for authenticated
+    /// requests and an optional handler for server-side session rejection.
+    func configureAuth(
+        getToken: @escaping @Sendable () async throws -> String,
+        onAuthRejected: ((Bool) -> Void)? = nil
+    ) {
         apiClient.getToken = getToken
+        apiClient.onAuthRejected = onAuthRejected
     }
 
     // MARK: - Public API
@@ -146,6 +153,16 @@ final class TranscriptionViewModel {
             systemPath: recording.systemPCMFileURL?.path,
             isEncrypted: recording.isEncrypted
         )
+
+        // Cheap read-only liveness probe before moving the audio. If the
+        // server-side session has already idled out, the upload can only 401 —
+        // surface the re-auth flow now (verifySessionAlive fires it) and leave
+        // the entry queued. It drains via the retry loop after sign-in.
+        guard await apiClient.verifySessionAlive() else {
+            states[recording.id] = .failed(message: "Session expired — sign in to resume the upload")
+            logger.warning("Skipping audio upload: server session is no longer active")
+            return
+        }
 
         states[recording.id] = .running
         logger.info("Uploading audio to backend for server-side transcription")

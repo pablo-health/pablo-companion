@@ -9,8 +9,10 @@ final class UploadViewModel {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken
+                let onAuthRejected = apiClient.onAuthRejected
                 apiClient = APIClient(baseURL: backendURL)
                 apiClient.getToken = token
+                apiClient.onAuthRejected = onAuthRejected
             }
         }
     }
@@ -25,9 +27,14 @@ final class UploadViewModel {
         self.apiClient = APIClient()
     }
 
-    /// Configures the API client with a token provider for authenticated uploads.
-    func configureAuth(getToken: @escaping @Sendable () async throws -> String) {
+    /// Configures the API client with a token provider for authenticated
+    /// uploads and an optional handler for server-side session rejection.
+    func configureAuth(
+        getToken: @escaping @Sendable () async throws -> String,
+        onAuthRejected: ((Bool) -> Void)? = nil
+    ) {
         apiClient.getToken = getToken
+        apiClient.onAuthRejected = onAuthRejected
     }
 
     func checkBackendHealth() async {

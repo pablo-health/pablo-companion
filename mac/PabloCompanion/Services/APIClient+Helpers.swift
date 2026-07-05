@@ -18,6 +18,10 @@ extension APIClient {
 
         switch statusCode {
         case 401:
+            // Surface the rejection to the auth layer (sign-out + re-auth
+            // prompt) before throwing. IDLE_TIMEOUT means the server-side
+            // idle session expired — a token refresh cannot revive it.
+            onAuthRejected?(envelope?.code == Self.idleTimeoutCode)
             throw PabloError.unauthenticated
         case 403:
             throw PabloError.forbidden

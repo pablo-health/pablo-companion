@@ -357,6 +357,24 @@ struct HealthStatus: Codable, Sendable {
     }
 }
 
+// MARK: - Session Liveness Types
+
+/// Response from `GET /api/auth/session` and `POST /api/auth/session/touch`.
+/// `enforced` is false when the server-side idle control is disabled and the
+/// client should rely on its local activity clock alone. `secondsRemaining`
+/// is time left before the session idles out absent further requests.
+struct SessionLiveness: Codable, Sendable {
+    let enforced: Bool
+    let active: Bool
+    let secondsRemaining: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case enforced
+        case active
+        case secondsRemaining = "seconds_remaining"
+    }
+}
+
 // MARK: - SOAP Entry Types
 
 struct SoapEntryRequest: Codable, Sendable {
