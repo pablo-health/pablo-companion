@@ -49,10 +49,13 @@ enum PHISanitizer {
     private static let phiPatterns: [(String, String)] = [
         (#"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"#, "[PHONE]"),
         (#"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"#, "[EMAIL]"),
-        (#"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"#, "[DATE]"),
-        (#"\d{4}-\d{2}-\d{2}"#, "[DATE]"),
+        // SSN must run before the date patterns: xxx-xx-xxxx would otherwise
+        // be partially consumed as a date (23-45-6789 → [DATE]), leaking the
+        // leading digit(s) and losing the [SSN] tag.
         (#"\b\d{3}-\d{2}-\d{4}\b"#, "[SSN]"),
         (#"\b\d{9}\b"#, "[SSN]"),
+        (#"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"#, "[DATE]"),
+        (#"\d{4}-\d{2}-\d{2}"#, "[DATE]"),
         (#"(?i)\bMRN[:\-\s#]*\d{4,10}\b"#, "[MRN]"),
         (#"\b[A-Z]\d{2}\.?\d{0,4}\b"#, "[DX]"),
     ]
