@@ -9,7 +9,11 @@ import FoundationNetworking
 public final class PracticeAPIClient {
     private let logger = PracticeLog(category: "PracticeAPIClient")
 
-    public var baseURL = "https://api.pablo.health"
+    /// Fallback base URL. In normal operation the host app overwrites this
+    /// with the value discovered from `/api/config` at launch; it only matters
+    /// if that discovery fails with no cached override, so it points at the
+    /// live production host rather than an unresolvable one.
+    public var baseURL = "https://app.pablo.health"
     public var getToken: (@Sendable () async throws -> String)?
 
     /// Fired when an authenticated request comes back 401 — the server has
