@@ -13,7 +13,10 @@ import PackageDescription
 // so the harness gates that scenario behind `canImport(CompanionAuthCore)`.
 let package = Package(
     name: "PracticeClientCore",
-    platforms: [.macOS(.v13)],
+    // macOS 14 floor: the `record` scenario drives AudioCaptureKit's
+    // CoreAudio-tap capture graph, which requires macOS 14. Matches the app's
+    // own deployment target.
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "PracticeClientCore", targets: ["PracticeClientCore"]),
         .library(name: "CompanionAuthCore", targets: ["CompanionAuthCore"]),
@@ -26,6 +29,10 @@ let package = Package(
         // the version unifies with the macOS app's transitive pin (4.x via
         // AudioCaptureKit) when the app consumes this as a local package.
         .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0" ..< "5.0.0"),
+        // Real capture graph (mic + system mix -> WAV + PCM sidecars). The
+        // `record` scenario drives it headless via a file-backed capture source,
+        // so the shipping recording path is exercised without live hardware.
+        .package(url: "https://github.com/pablo-health/AudioCaptureKit.git", from: "1.1.2"),
     ],
     targets: [
         .target(name: "PracticeClientCore"),
@@ -41,6 +48,11 @@ let package = Package(
                 "CompanionSessionCore",
                 .target(name: "CompanionAuthCore", condition: .when(platforms: [.macOS])),
                 .product(name: "Crypto", package: "swift-crypto"),
+                .product(
+                    name: "AudioCaptureKit",
+                    package: "AudioCaptureKit",
+                    condition: .when(platforms: [.macOS])
+                ),
             ]
         ),
         .testTarget(

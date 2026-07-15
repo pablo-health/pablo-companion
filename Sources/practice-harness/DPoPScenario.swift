@@ -71,7 +71,7 @@ enum DPoPScenario {
 
 private struct Driver {
     let baseURL: String
-    var idToken: String
+    let idToken: String
     let refreshToken: String
     let expectEnforced: Bool
     let expectLaunch: Bool
@@ -88,47 +88,27 @@ private struct Driver {
 
     func run() async throws {
         var checks: [Check] = []
-        var idToken = self.idToken
         let installID = UUID().uuidString.lowercased()
+        let client = DeviceBoundClient(baseURL: baseURL, installID: installID)
         log("install_id for this run: \(installID)")
 
         // ── 1. Enrollment via the real OAuth code exchange ──────────────
-        let code = try await postJSON(
-            path: "/api/auth/native/code",
-            body: [
-                "id_token": idToken,
-                "refresh_token": refreshToken,
-                "redirect_uri": redirectURI,
-            ]
+        let enrollment = try await client.enroll(
+            idToken: idToken,
+            refreshToken: refreshToken,
+            redirectURI: redirectURI
         )
-        guard let oneTimeCode = code.json?["code"] as? String, code.status == 200 else {
-            throw DriverError("native/code failed: \(code.status) \(code.bodyPrefix)")
-        }
-
-        guard let enrollment = DeviceEnrollment.payload(installID: installID) else {
-            throw DriverError("DeviceEnrollment.payload returned nil — no device key could be provisioned")
-        }
-        let storage = (enrollment["key_storage"] as? String) ?? "?"
-        log("Enrollment payload built (key_storage=\(storage))")
-
-        let exchange = try await postJSON(
-            path: "/api/auth/native/exchange",
-            body: [
-                "code": oneTimeCode,
-                "redirect_uri": redirectURI,
-                "enrollment": enrollment,
-            ]
-        )
+        let idToken = enrollment.idToken
+        log("Enrollment payload built (key_storage=\(enrollment.keyStorage))")
         checks.append(Check(
             name: "enrollment accepted at /native/exchange",
-            ok: exchange.status == 200,
-            detail: "status \(exchange.status)"
+            ok: enrollment.exchangeStatus == 200,
+            detail: "status \(enrollment.exchangeStatus)"
         ))
-        if let fresh = exchange.json?["id_token"] as? String { idToken = fresh }
 
         // ── 2. Signed request with the real proof ───────────────────────
-        let devices = try await request(
-            "GET", path: "/api/users/me/devices", idToken: idToken, installID: installID
+        let devices = try await client.request(
+            "GET", path: "/api/users/me/devices", idToken: idToken
         )
         let listed = (try? JSONSerialization.jsonObject(with: devices.body)) as? [[String: Any]]
         let found = listed?.contains { $0["install_id"] as? String == installID } ?? false
@@ -149,13 +129,13 @@ private struct Driver {
                   let proof = DPoPProof.make(method: "GET", url: url)
             else { throw DriverError("could not build replay proof") }
 
-            let first = try await request(
+            let first = try await client.request(
                 "GET", path: "/api/users/me/devices", idToken: idToken,
-                installID: installID, presetProof: proof
+                presetProof: proof
             )
-            let replayed = try await request(
+            let replayed = try await client.request(
                 "GET", path: "/api/users/me/devices", idToken: idToken,
-                installID: installID, presetProof: proof
+                presetProof: proof
             )
             checks.append(Check(
                 name: "replayed jti rejected",
@@ -163,9 +143,9 @@ private struct Driver {
                 detail: "first \(first.status), replay \(replayed.status)"
             ))
 
-            let bare = try await request(
+            let bare = try await client.request(
                 "GET", path: "/api/users/me/devices", idToken: idToken,
-                installID: installID, omitProof: true
+                omitProof: true
             )
             checks.append(Check(
                 name: "install id without proof rejected",
@@ -179,8 +159,8 @@ private struct Driver {
         // ── 4. Launch intent: issue + signed redeem, single-use ──────────
         if expectLaunch {
             let noise = String(UUID().uuidString.prefix(8)).lowercased()
-            let patient = try await request(
-                "POST", path: "/api/patients", idToken: idToken, installID: installID,
+            let patient = try await client.request(
+                "POST", path: "/api/patients", idToken: idToken,
                 jsonBody: ["first_name": "E2E", "last_name": "DPoP-\(noise)", "status": "active"]
             )
             guard patient.status == 201 || patient.status == 200,
@@ -188,13 +168,13 @@ private struct Driver {
             else { throw DriverError("patient create failed: \(patient.status) \(patient.bodyPrefix)") }
 
             let start = Date().addingTimeInterval(3600)
-            let appt = try await request(
-                "POST", path: "/api/appointments", idToken: idToken, installID: installID,
+            let appt = try await client.request(
+                "POST", path: "/api/appointments", idToken: idToken,
                 jsonBody: [
                     "patient_id": patientID,
                     "title": "E2E dpop launch",
-                    "start_at": iso8601(start),
-                    "end_at": iso8601(start.addingTimeInterval(50 * 60)),
+                    "start_at": client.iso8601(start),
+                    "end_at": client.iso8601(start.addingTimeInterval(50 * 60)),
                     "duration_minutes": 50,
                     "session_type": "individual",
                 ]
@@ -203,8 +183,8 @@ private struct Driver {
                   let appointmentID = appt.json?["id"] as? String
             else { throw DriverError("appointment create failed: \(appt.status) \(appt.bodyPrefix)") }
 
-            let intent = try await request(
-                "POST", path: "/api/launch/intent", idToken: idToken, installID: installID,
+            let intent = try await client.request(
+                "POST", path: "/api/launch/intent", idToken: idToken,
                 jsonBody: ["appointment_id": appointmentID]
             )
             let intentID = intent.json?["intent_id"] as? String
@@ -215,8 +195,8 @@ private struct Driver {
             ))
 
             if let intentID {
-                let redeem = try await request(
-                    "POST", path: "/api/launch/redeem", idToken: idToken, installID: installID,
+                let redeem = try await client.request(
+                    "POST", path: "/api/launch/redeem", idToken: idToken,
                     jsonBody: ["intent_id": intentID]
                 )
                 let boundAppointment = redeem.json?["appointment_id"] as? String
@@ -226,8 +206,8 @@ private struct Driver {
                     detail: "status \(redeem.status), appointment \(boundAppointment ?? "nil")"
                 ))
 
-                let again = try await request(
-                    "POST", path: "/api/launch/redeem", idToken: idToken, installID: installID,
+                let again = try await client.request(
+                    "POST", path: "/api/launch/redeem", idToken: idToken,
                     jsonBody: ["intent_id": intentID]
                 )
                 checks.append(Check(
@@ -243,76 +223,12 @@ private struct Driver {
         try summarize(checks)
     }
 
-    // MARK: - HTTP plumbing
-
-    private struct Response {
-        let status: Int
-        let body: Data
-        var json: [String: Any]? {
-            (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
-        }
-        var bodyPrefix: String { String(decoding: body.prefix(200), as: UTF8.self) }
-    }
-
-    /// Unauthenticated JSON POST (the native code/exchange endpoints).
-    private func postJSON(path: String, body: [String: Any]) async throws -> Response {
-        guard let url = URL(string: baseURL + path) else { throw DriverError("bad url \(path)") }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        return try await send(request)
-    }
-
-    /// Authenticated request carrying the device binding exactly like the app:
-    /// `Authorization: Bearer` + `X-Install-ID` + a fresh `DPoP` proof from the
-    /// real `DPoPProof.make` (or a caller-supplied proof for replay tests, or
-    /// no proof at all for the negative test).
-    private func request(
-        _ method: String,
-        path: String,
-        idToken: String,
-        installID: String,
-        jsonBody: [String: Any]? = nil,
-        presetProof: String? = nil,
-        omitProof: Bool = false
-    ) async throws -> Response {
-        guard let url = URL(string: baseURL + path) else { throw DriverError("bad url \(path)") }
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(installID, forHTTPHeaderField: "X-Install-ID")
-        if !omitProof {
-            guard let proof = presetProof ?? DPoPProof.make(method: method, url: url) else {
-                throw DriverError("DPoPProof.make returned nil for \(method) \(path)")
-            }
-            request.setValue(proof, forHTTPHeaderField: "DPoP")
-        }
-        if let jsonBody {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: jsonBody)
-        }
-        return try await send(request)
-    }
-
-    private func send(_ request: URLRequest) async throws -> Response {
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw DriverError("non-HTTP response from \(request.url?.path ?? "?")")
-        }
-        return Response(status: http.statusCode, body: data)
-    }
-
-    private func iso8601(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
-    }
-
     private func summarize(_ checks: [Check]) throws {
         let pad = checks.map(\.name.count).max() ?? 0
         let lines = checks
-            .map { "  [\($0.ok ? "PASS" : "FAIL")] \($0.name.padding(toLength: pad, withPad: " ", startingAt: 0))  \($0.detail)" }
+            .map {
+                "  [\($0.ok ? "PASS" : "FAIL")] \($0.name.padding(toLength: pad, withPad: " ", startingAt: 0))  \($0.detail)"
+            }
             .joined(separator: "\n")
         log("""
         ───── dpop gate summary ─────
@@ -333,8 +249,13 @@ private struct Driver {
 
 private struct DriverError: LocalizedError {
     let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
+    init(_ message: String) {
+        self.message = message
+    }
+
+    var errorDescription: String? {
+        message
+    }
 }
 
 #endif
