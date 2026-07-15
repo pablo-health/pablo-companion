@@ -306,11 +306,32 @@ private struct Driver {
                 return Check(name: "SOAP generated", ok: false, detail: "session status 'failed'")
             }
             if lastStatus == "pending_review" {
-                return evaluateSoap(poll.json?["note"] as? [String: Any])
+                let note = poll.json?["note"] as? [String: Any]
+                dumpNote(note)
+                return evaluateSoap(note)
             }
             try await Task.sleep(nanoseconds: 5_000_000_000)
         }
         return Check(name: "SOAP generated", ok: false, detail: "deadline hit (last status '\(lastStatus)')")
+    }
+
+    /// Logs the generated SOAP note so a run can be eyeballed against the fixture
+    /// audio. The session is always one the harness itself created in the pinned
+    /// test tenant from synthetic `say` audio — never a real patient's note.
+    private func dumpNote(_ note: [String: Any]?) {
+        guard let note else {
+            RecordScenario.log("generated note: nil")
+            return
+        }
+        let content = note["content"] ?? [:]
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: content, options: [.prettyPrinted, .sortedKeys]
+        ), let text = String(data: data, encoding: .utf8) else { return }
+        RecordScenario.log("""
+        ───── generated SOAP (note_type=\(note["note_type"] ?? "?")) ─────
+        \(text)
+        ──────────────────────────────────────
+        """)
     }
 
     /// Ports `sectionHasContent` from `asr-integration.spec.ts`: the embedded note
@@ -349,7 +370,15 @@ private struct Driver {
     /// bare strings — the distinction the first prod run surfaced.
     private func sentenceHasText(_ value: Any) -> Bool {
         guard let object = value as? [String: Any], let text = object["text"] as? String else { return false }
-        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        // A sentence only counts as *audio-derived* content when it is anchored to
+        // a transcript segment. The SOAP LLM emits well-formed placeholder
+        // sentences ("No transcript provided.") with confidence 0 and no source
+        // segments when transcription came back empty — the earlier prod run
+        // passed the gate on exactly that. Require a real transcript anchor.
+        let hasSource = !((object["source_segment_ids"] as? [Any])?.isEmpty ?? true)
+        let confidence = (object["confidence_score"] as? NSNumber)?.doubleValue ?? 0
+        return hasSource || confidence > 0
     }
 
     // MARK: - Summary

@@ -68,6 +68,7 @@ public struct AudioUploadClient: Sendable {
         sessionId: String,
         therapistAudioURL: URL,
         clientAudioURL: URL?,
+        sampleRate: Int = 48000,
         onProgress: @Sendable (Double) -> Void
     ) async throws -> AudioUploadResponse {
         let bearer = try await token()
@@ -89,11 +90,15 @@ public struct AudioUploadClient: Sendable {
 
         onProgress(0.1)
 
+        // The sidecars are headerless PCM: mic is mono, system audio is stereo.
+        // Prepend an accurate WAV header per channel so the audio is
+        // self-describing — the backend no longer has to guess the format
+        // (its guess, always-stereo, corrupts the mono mic channel).
         var parts = try [MultipartFilePart(
             fieldName: "therapist_audio",
-            fileName: therapistAudioURL.lastPathComponent,
+            fileName: Self.wavName(therapistAudioURL),
             mimeType: "audio/wav",
-            data: Data(contentsOf: therapistAudioURL)
+            data: Self.wavData(Data(contentsOf: therapistAudioURL), sampleRate: sampleRate, channels: 1)
         )]
 
         onProgress(0.3)
@@ -101,9 +106,9 @@ public struct AudioUploadClient: Sendable {
         if let clientAudioURL, let clientData = try? Data(contentsOf: clientAudioURL) {
             parts.append(MultipartFilePart(
                 fieldName: "client_audio",
-                fileName: clientAudioURL.lastPathComponent,
+                fileName: Self.wavName(clientAudioURL),
                 mimeType: "audio/wav",
-                data: clientData
+                data: Self.wavData(clientData, sampleRate: sampleRate, channels: 2)
             ))
         }
 
@@ -134,6 +139,7 @@ public struct AudioUploadClient: Sendable {
         sessionId: String,
         therapistAudioURL: URL,
         clientAudioURL: URL?,
+        sampleRate: Int = 48000,
         recoveryStatus: String = "recording_complete",
         onProgress: @Sendable (Double) -> Void = { _ in }
     ) async throws -> AudioUploadResponse {
@@ -142,6 +148,7 @@ public struct AudioUploadClient: Sendable {
                 sessionId: sessionId,
                 therapistAudioURL: therapistAudioURL,
                 clientAudioURL: clientAudioURL,
+                sampleRate: sampleRate,
                 onProgress: onProgress
             )
         } catch let error as SessionUploadError where Self.isInvalidStatus(error) {
@@ -153,6 +160,7 @@ public struct AudioUploadClient: Sendable {
                 sessionId: sessionId,
                 therapistAudioURL: therapistAudioURL,
                 clientAudioURL: clientAudioURL,
+                sampleRate: sampleRate,
                 onProgress: onProgress
             )
             #if canImport(os)
@@ -185,6 +193,17 @@ public struct AudioUploadClient: Sendable {
 
     private static func isInvalidStatus(_ error: SessionUploadError) -> Bool {
         error.statusCode == 400 && error.code == "INVALID_STATUS"
+    }
+
+    /// Wraps headerless PCM in a WAV header; passes through anything already RIFF.
+    private static func wavData(_ data: Data, sampleRate: Int, channels: Int) -> Data {
+        guard data.prefix(4) != Data("RIFF".utf8) else { return data }
+        return WAVEncoder.wrap(pcm: data, sampleRate: sampleRate, channels: channels)
+    }
+
+    /// Names the uploaded part `.wav` (the bytes now carry a real WAV header).
+    private static func wavName(_ url: URL) -> String {
+        url.deletingPathExtension().appendingPathExtension("wav").lastPathComponent
     }
 
     /// Throws ``SessionUploadError`` for any non-2xx response, parsing the

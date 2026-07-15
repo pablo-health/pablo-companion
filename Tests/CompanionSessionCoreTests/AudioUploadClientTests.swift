@@ -93,7 +93,7 @@ struct AudioUploadClientTests {
         #expect(body.contains("Content-Type: audio/wav"))
         #expect(body.contains("mic-bytes"))
         #expect(body.contains("system-bytes"))
-        #expect(body.contains("filename=\"rec_mic.pcm\""))
+        #expect(body.contains("filename=\"rec_mic.wav\""))
     }
 
     @Test("Missing optional client audio still uploads the therapist part")
@@ -217,9 +217,11 @@ struct AudioUploadClientTests {
 
 // MARK: - Test doubles
 
-/// Decodes UTF-8 request-body bytes to a string for substring assertions.
+/// Decodes request-body bytes for substring assertions. Uses Latin-1 (never
+/// fails, maps every byte 1:1) because the multipart body now carries binary
+/// WAV headers — a UTF-8 decode would return nil on those bytes.
 private func bodyString(_ data: Data) -> String {
-    String(data: data, encoding: .utf8) ?? ""
+    String(data: data, encoding: .isoLatin1) ?? ""
 }
 
 /// Records that the binding closure ran (thread-safe).
