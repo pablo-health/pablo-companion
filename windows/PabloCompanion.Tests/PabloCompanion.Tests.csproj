@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PabloCompanion\PabloCompanion.csproj" />
+    <ProjectReference Include="..\RecordHarness\RecordHarness.csproj" />
     <ProjectReference Include="..\..\..\AudioCaptureKit\csharp\AudioCapture\AudioCapture.csproj" />
   </ItemGroup>
 </Project>
