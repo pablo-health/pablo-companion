@@ -17,6 +17,7 @@ let package = Package(
     products: [
         .library(name: "PracticeClientCore", targets: ["PracticeClientCore"]),
         .library(name: "CompanionAuthCore", targets: ["CompanionAuthCore"]),
+        .library(name: "CompanionSessionCore", targets: ["CompanionSessionCore"]),
         .executable(name: "practice-harness", targets: ["practice-harness"]),
     ],
     dependencies: [
@@ -29,13 +30,22 @@ let package = Package(
     targets: [
         .target(name: "PracticeClientCore"),
         .target(name: "CompanionAuthCore"),
+        // The real session audio-upload wire path (multipart body, device-binding
+        // attach, INVALID_STATUS self-heal), shared by the app and the harness so
+        // neither drifts. Foundation-only; auth + binding are injected.
+        .target(name: "CompanionSessionCore"),
         .executableTarget(
             name: "practice-harness",
             dependencies: [
                 "PracticeClientCore",
+                "CompanionSessionCore",
                 .target(name: "CompanionAuthCore", condition: .when(platforms: [.macOS])),
                 .product(name: "Crypto", package: "swift-crypto"),
             ]
+        ),
+        .testTarget(
+            name: "CompanionSessionCoreTests",
+            dependencies: ["CompanionSessionCore"]
         ),
     ]
 )

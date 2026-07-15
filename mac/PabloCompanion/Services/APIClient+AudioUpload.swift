@@ -1,18 +1,31 @@
+import CompanionSessionCore
 import Foundation
 import PracticeClientCore
 
-// MARK: - Audio Upload (native URLSession multipart)
+// MARK: - Audio Upload (shared CompanionSessionCore wire path)
 
 extension APIClient {
-    /// Uploads therapist and client audio files to the backend for server-side transcription.
-    /// Uses native URLSession multipart/form-data since this endpoint is not in pablo-core.
+    /// The shared upload client, bound to this `APIClient`'s auth + device
+    /// binding. The same `AudioUploadClient` type is what the headless e2e
+    /// harness drives, so the multipart body, the `audio/wav`-on-raw-PCM mime,
+    /// and the `INVALID_STATUS` self-heal can't drift between app and test.
+    private var audioUploadClient: AudioUploadClient {
+        AudioUploadClient(
+            baseURLString: baseURLString,
+            token: { [self] in try await requireToken() },
+            attachBinding: { APIClient.attachDeviceBinding(to: &$0) },
+            logSubsystem: AppConstants.appBundleID
+        )
+    }
+
+    /// Uploads therapist and client audio files to the backend for server-side
+    /// transcription.
     ///
     /// - Parameters:
-    ///   - sessionId: The backend session UUID (must be in `recording_complete` status).
+    ///   - sessionId: The backend session UUID (must be in `recording_complete`).
     ///   - therapistAudioURL: Path to the mic PCM/WAV sidecar file.
-    ///   - clientAudioURL: Path to the system audio PCM/WAV sidecar file (optional).
-    ///   - onProgress: Progress callback (0.0-1.0). Simulated since URLSession upload
-    ///     progress requires delegate-based uploads.
+    ///   - clientAudioURL: Path to the system audio PCM/WAV sidecar (optional).
+    ///   - onProgress: Progress callback (0.0-1.0).
     /// - Returns: `AudioUploadResponse` with the session's new status.
     func uploadAudio(
         sessionId: String,
@@ -20,60 +33,63 @@ extension APIClient {
         clientAudioURL: URL?,
         onProgress: @Sendable @escaping (Double) -> Void
     ) async throws -> AudioUploadResponse {
-        let token = try await requireToken()
-
-        let endpoint = "\(baseURLString)/api/sessions/\(sessionId)/upload-audio"
-        guard let url = URL(string: endpoint) else {
-            throw APIError.invalidResponse
+        do {
+            return try await audioUploadClient.uploadAudio(
+                sessionId: sessionId,
+                therapistAudioURL: therapistAudioURL,
+                clientAudioURL: clientAudioURL,
+                onProgress: onProgress
+            )
+        } catch let error as SessionUploadError {
+            throw mapUploadError(error)
         }
+    }
 
-        let boundary = UUID().uuidString
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
-        // This endpoint hand-rolls its request (multipart) rather than going
-        // through buildRequest, so attach the device binding explicitly.
-        Self.attachDeviceBinding(to: &request)
-
-        onProgress(0.1)
-
-        var parts = try [MultipartFilePart(
-            fieldName: "therapist_audio",
-            fileName: therapistAudioURL.lastPathComponent,
-            mimeType: "audio/wav",
-            data: Data(contentsOf: therapistAudioURL)
-        )]
-
-        onProgress(0.3)
-
-        if let clientAudioURL, let clientData = try? Data(contentsOf: clientAudioURL) {
-            parts.append(MultipartFilePart(
-                fieldName: "client_audio",
-                fileName: clientAudioURL.lastPathComponent,
-                mimeType: "audio/wav",
-                data: clientData
-            ))
+    /// Uploads audio with the shared `INVALID_STATUS` self-heal: if the backend
+    /// rejects because the session is still `recording`, it is PATCHed to
+    /// `recording_complete` and the upload is retried once. This control flow
+    /// lives in `CompanionSessionCore` so the harness exercises the same recovery.
+    func uploadAudioWithSelfHeal(
+        sessionId: String,
+        therapistAudioURL: URL,
+        clientAudioURL: URL?,
+        onProgress: @Sendable @escaping (Double) -> Void
+    ) async throws -> AudioUploadResponse {
+        do {
+            return try await audioUploadClient.uploadWithSelfHeal(
+                sessionId: sessionId,
+                therapistAudioURL: therapistAudioURL,
+                clientAudioURL: clientAudioURL,
+                onProgress: onProgress
+            )
+        } catch let error as SessionUploadError {
+            throw mapUploadError(error)
         }
+    }
 
-        onProgress(0.5)
-
-        request.httpBody = buildMultipartBody(parts: parts, boundary: boundary)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        onProgress(0.9)
-
-        // Route non-2xx through the shared error mapper so callers see a typed
-        // PabloError with the backend's structured `error.code` populated.
-        // Lets `uploadAudioToBackend` branch on `INVALID_STATUS` for self-heal.
-        // mapHTTPErrors also performs the `URLResponse` -> `HTTPURLResponse` cast.
-        try mapHTTPErrors(data: data, response: response)
-
-        let decoded = try JSONDecoder().decode(AudioUploadResponse.self, from: data)
-        onProgress(1.0)
-        logger.info("Audio uploaded for session \(sessionId)")
-        return decoded
+    /// Maps a `CompanionSessionCore.SessionUploadError` back onto the app's
+    /// `PabloError` contract, preserving the 401 → `onAuthRejected` side-effect
+    /// that the shared error mapper (`mapHTTPErrors`) applies to every other path.
+    private func mapUploadError(_ error: SessionUploadError) -> PabloError {
+        let message = error.message ?? "Unknown error"
+        switch error.statusCode {
+        case 401:
+            onAuthRejected?(error.code == Self.idleTimeoutCode)
+            return .unauthenticated
+        case 403:
+            return .forbidden
+        case 404:
+            return .notFound(resource: message)
+        case 409:
+            return .conflictState(message: message)
+        case 426:
+            return .updateRequired(message: message)
+        default:
+            return .apiClient(
+                statusCode: UInt16(max(0, error.statusCode)),
+                message: message,
+                code: error.code
+            )
+        }
     }
 }

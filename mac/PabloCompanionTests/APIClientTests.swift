@@ -1,3 +1,4 @@
+import CompanionSessionCore
 import Foundation
 import Testing
 @testable import Pablo
