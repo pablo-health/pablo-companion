@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using PabloCompanion.Core;
 using PabloCompanion.Models;
 
 namespace PabloCompanion.Services;
@@ -28,6 +29,14 @@ public class APIClient
 
     private readonly CredentialManager _credentials;
     private readonly DeviceKeyService _deviceKey;
+
+    /// <summary>
+    /// The session audio-upload wire path, shared with the headless end-to-end
+    /// runner via <c>PabloCompanion.Core</c> so the two cannot drift. Its base URL
+    /// and device binding are read through delegates, so a backend rediscovery or a
+    /// fresh enrollment is picked up on the next request.
+    /// </summary>
+    private readonly AudioUploadClient _uploadClient;
 
     public string BaseUrl { get; set; }
 
@@ -60,6 +69,19 @@ public class APIClient
         // Seed from the previously discovered backend URL so a restored session
         // starts on the correct env before AuthViewModel.DiscoverServerConfigAsync runs.
         BaseUrl = credentials.BackendApiUrl ?? DefaultBaseUrl;
+
+        _uploadClient = new AudioUploadClient(
+            baseUrl: () => BaseUrl,
+            token: () => Task.FromResult(GetToken()),
+            attachBinding: AttachDeviceBinding,
+            clientHeaders: new Dictionary<string, string>
+            {
+                ["X-Client-Type"] = ClientTypeHeader,
+                ["X-Client-Version"] = ClientVersion,
+                ["X-Client-Platform"] = ClientPlatform,
+            },
+            http: Http,
+            log: App.Log);
     }
 
     private string GetToken()
@@ -522,8 +544,9 @@ public class APIClient
     // ── Audio Upload ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Uploads therapist and client audio files to the backend for server-side transcription.
-    /// Uses native HttpClient multipart/form-data since this endpoint is not in pablo-core.
+    /// Uploads therapist and client audio files to the backend for server-side
+    /// transcription. The headerless PCM sidecars are given accurate WAV headers on
+    /// the way out — see <see cref="WAVEncoder"/> for why that matters.
     /// </summary>
     /// <param name="sessionId">Backend session UUID (must be in recording_complete status).</param>
     /// <param name="therapistAudioPath">Path to the mic PCM/WAV file.</param>
@@ -533,51 +556,48 @@ public class APIClient
         string therapistAudioPath,
         string? clientAudioPath = null)
     {
-        var token = GetToken();
-        var url = $"{BaseUrl}/api/sessions/{sessionId}/upload-audio";
-
-        using var content = new MultipartFormDataContent();
-
-        var therapistStream = new StreamContent(File.OpenRead(therapistAudioPath));
-        therapistStream.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        content.Add(therapistStream, "therapist_audio", Path.GetFileName(therapistAudioPath));
-
-        if (clientAudioPath != null && File.Exists(clientAudioPath))
+        try
         {
-            var clientStream = new StreamContent(File.OpenRead(clientAudioPath));
-            clientStream.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-            content.Add(clientStream, "client_audio", Path.GetFileName(clientAudioPath));
+            return await _uploadClient.UploadAudioAsync(sessionId, therapistAudioPath, clientAudioPath);
         }
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        request.Headers.Add("X-Client-Type", ClientTypeHeader);
-        request.Headers.Add("X-Client-Version", ClientVersion);
-        request.Headers.Add("X-Client-Platform", ClientPlatform);
-        // This route builds its own request (multipart) instead of going through
-        // CreateRequest, so attach the DPoP / X-Install-ID pair on the same seam.
-        AttachDeviceBinding(request);
-
-        var response = await Http.SendAsync(request);
-
-        if (!response.IsSuccessStatusCode)
+        catch (SessionUploadException ex)
         {
-            // Throws PabloException with backend error code populated when present.
-            // Lets UploadFromPendingAsync branch on INVALID_STATUS for self-heal.
-            await RaiseAndThrowErrorAsync(response);
+            throw TranslateUploadError(ex);
         }
+    }
 
-        var body = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<AudioUploadResponse>(body, JsonOptions)
-            ?? throw new InvalidOperationException("Failed to parse audio upload response");
+    /// <summary>
+    /// Uploads audio, healing a <c>400 INVALID_STATUS</c> rejection once by PATCHing
+    /// the session to <c>recording_complete</c> and retrying. Used by the pending-upload
+    /// drain, where a session from a build that uploaded before its status PATCH landed
+    /// would otherwise be stuck rejecting forever.
+    /// </summary>
+    public virtual async Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
+        string sessionId,
+        string therapistAudioPath,
+        string? clientAudioPath = null)
+    {
+        try
+        {
+            return await _uploadClient.UploadWithSelfHealAsync(sessionId, therapistAudioPath, clientAudioPath);
+        }
+        catch (SessionUploadException ex)
+        {
+            throw TranslateUploadError(ex);
+        }
+    }
+
+    /// <summary>
+    /// Maps a core upload failure onto the app's <see cref="PabloException"/> so
+    /// callers branch on one error type, and — as <see cref="RaiseAndThrowErrorAsync"/>
+    /// does for every other authenticated route — raises
+    /// <see cref="UnauthenticatedDetected"/> on a 401 so the UI returns to sign-in.
+    /// </summary>
+    private PabloException TranslateUploadError(SessionUploadException ex)
+    {
+        if (ex.StatusCode == 401)
+            UnauthenticatedDetected?.Invoke(ex.ErrorCode);
+
+        return new PabloException((ushort)ex.StatusCode, ex.Message, ex.ErrorCode);
     }
 }
-
-/// <summary>
-/// Response from POST /api/sessions/{session_id}/upload-audio.
-/// </summary>
-public sealed record AudioUploadResponse(
-    string Id,
-    string Status,
-    string Queue,
-    string Message);

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using PabloCompanion.Services;
+using PabloCompanion.Core;
 
 namespace PabloCompanion.Tests.Services;
 

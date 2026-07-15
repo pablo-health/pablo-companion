@@ -214,35 +214,15 @@ public partial class TranscriptionViewModel : ObservableObject
 
         try
         {
-            await _apiClient.UploadAudioAsync(item.SessionId, mic.Path, sys?.Path);
+            // Self-healing upload: a session whose status PATCH never landed is
+            // still "recording" server-side and rejects its audio with 400
+            // INVALID_STATUS. The core client PATCHes it to recording_complete and
+            // retries once; anything else lands here and takes the retry/backoff path.
+            await _apiClient.UploadAudioWithSelfHealAsync(item.SessionId, mic.Path, sys?.Path);
             _pendingStore.Remove(item.SessionId);
             PendingUploadCount = _pendingStore.GetAll().Length;
             App.Log($"  upload OK session={item.SessionId} retry={item.RetryCount}");
             return true;
-        }
-        catch (PabloException ex) when (IsInvalidStatus(ex))
-        {
-            // Backend rejected because session is still in "recording" — usually a
-            // session from a buggy build where EndSessionAsync uploaded before the
-            // status PATCH. Heal it: PATCH to recording_complete, retry the upload
-            // once. If either step fails, fall back to the normal retry/backoff path.
-            App.Log($"  upload 400 INVALID_STATUS session={item.SessionId} — attempting self-heal");
-            try
-            {
-                await _apiClient.UpdateSessionStatusAsync(item.SessionId, SessionStatus.RecordingComplete);
-                await _apiClient.UploadAudioAsync(item.SessionId, mic.Path, sys?.Path);
-                _pendingStore.Remove(item.SessionId);
-                PendingUploadCount = _pendingStore.GetAll().Length;
-                App.Log($"  upload OK session={item.SessionId} (self-healed)");
-                return true;
-            }
-            catch (Exception innerEx)
-            {
-                _pendingStore.IncrementRetry(item.SessionId);
-                ErrorMessage = $"Audio upload failed: {innerEx.Message}";
-                App.Log($"  upload FAIL session={item.SessionId} retry={item.RetryCount}->{item.RetryCount + 1} self-heal-failed type={innerEx.GetType().Name}{FormatStatusCode(innerEx.Message)}");
-                return false;
-            }
         }
         catch (Exception ex)
         {
@@ -252,9 +232,6 @@ public partial class TranscriptionViewModel : ObservableObject
             return false;
         }
     }
-
-    private static bool IsInvalidStatus(PabloException ex) =>
-        ex.StatusCode == 400 && ex.ErrorCode == "INVALID_STATUS";
 
     /// <summary>
     /// Extracts only the HTTP status digits from the upload exception (e.g. "(401)").

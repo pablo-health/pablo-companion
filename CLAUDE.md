@@ -57,6 +57,10 @@ pablo-health/pablo-companion/
 │   │   ├── ViewModels/
 │   │   ├── Views/
 │   │   └── Services/        # APIClient, RecordingService, etc.
+│   ├── PabloCompanion.Core/ # WinUI-free classlib: audio upload wire path
+│   │                        # (AudioUploadClient, WAVEncoder), DPoP + enrollment.
+│   │                        # Plain net10.0-windows — no UseWinUI, no WindowsAppSDK,
+│   │                        # no PasswordVault — so headless runners can use it too.
 │   └── PabloCompanion.Tests/
 ├── docs/
 ├── Makefile

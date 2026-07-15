@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using PabloCompanion.Core;
 
 namespace PabloCompanion.Services;
 
