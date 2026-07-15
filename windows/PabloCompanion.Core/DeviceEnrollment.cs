@@ -19,6 +19,43 @@ public static class DeviceEnrollment
     public const string Platform = "windows";
 
     /// <summary>
+    /// The <c>key_storage</c> value for a software-held private key. The backend's
+    /// enum is <c>hardware | software</c>; Windows is software-backed until TPM
+    /// keys land.
+    /// </summary>
+    public const string SoftwareKeyStorage = "software";
+
+    /// <summary>
+    /// Exports <paramref name="key"/>'s public half as an RFC 7517 JWK
+    /// (<c>kty/crv/x/y</c>) — the exact shape the backend enrollment contract
+    /// expects. The backend computes the RFC 7638 thumbprint itself, so no
+    /// <c>kid</c>/<c>jkt</c> is sent.
+    ///
+    /// Lives here so the app's vault-held key and a runner's ephemeral key produce
+    /// byte-identical JWKs; a second implementation is exactly the drift this
+    /// shared core exists to prevent.
+    /// </summary>
+    public static Dictionary<string, string> PublicJwk(ECDsa key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        var parameters = key.ExportParameters(includePrivateParameters: false);
+
+        // P-256 field elements are 32 bytes; export returns fixed-width
+        // big-endian Q.X / Q.Y for the named curve.
+        return new Dictionary<string, string>
+        {
+            ["kty"] = "EC",
+            ["crv"] = "P-256",
+            ["x"] = Base64Url(parameters.Q.X!),
+            ["y"] = Base64Url(parameters.Q.Y!),
+        };
+    }
+
+    private static string Base64Url(byte[] bytes) =>
+        Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+    /// <summary>
     /// SHA-256 hex digest (lowercase) of the given hostname. Returns null for a
     /// null/blank hostname so the caller can omit the field rather than send a
     /// hash of the empty string.
