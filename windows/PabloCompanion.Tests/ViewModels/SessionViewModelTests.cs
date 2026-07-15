@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using AudioCapture.Models;
+using PabloCompanion.Core;
 using PabloCompanion.Models;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
@@ -144,7 +145,9 @@ public sealed class SessionViewModelTests : IDisposable
             return Task.FromResult(MakeSession(sessionId, status));
         }
 
-        public override Task<AudioUploadResponse> UploadAudioAsync(
+        // The drain calls the self-healing entry point; the INVALID_STATUS heal it
+        // wraps is covered against the wire in AudioUploadClientTests.
+        public override Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
             string sessionId, string therapistAudioPath, string? clientAudioPath = null)
         {
             UploadCallCount++;

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace PabloCompanion.Services;
+namespace PabloCompanion.Core;
 
 /// <summary>
 /// Builds the device-enrollment fields piggy-backed on the OAuth code exchange
@@ -32,26 +32,36 @@ public static class DeviceEnrollment
     }
 
     /// <summary>
-    /// Assembles the enrollment payload sent alongside the auth code. Reads (and
-    /// mints, if needed) the stable install id from <paramref name="credentials"/>,
-    /// derives <c>os_version</c> / <c>hostname_hash</c> from the local machine, and
-    /// includes the device public JWK + key-storage class from
-    /// <paramref name="deviceKey"/>. Field names match the backend's enrollment
-    /// contract exactly (the backend requires the JWK + key_storage, so they are
-    /// always sent).
+    /// Assembles the enrollment payload sent alongside the auth code. Field names
+    /// match the backend's enrollment contract exactly (the backend requires the
+    /// JWK + key_storage, so they are always sent); <c>os_version</c> and
+    /// <c>hostname_hash</c> are derived from the local machine.
+    ///
+    /// Takes the identity material as plain values rather than reading it from the
+    /// credential vault, so this stays usable by a headless runner signing with an
+    /// ephemeral in-memory key — and so this assembly never depends on WinRT.
     /// </summary>
+    /// <param name="installId">Stable per-install id. The app supplies the vault-persisted
+    /// one; a runner supplies a fresh id per run.</param>
+    /// <param name="devicePublicKeyJwk">Device public key as an RFC 7517 JWK (<c>kty/crv/x/y</c>).</param>
+    /// <param name="keyStorage">How the private key is held, e.g. <c>"software"</c>.</param>
     public static Dictionary<string, object?> BuildPayload(
-        CredentialManager credentials,
-        DeviceKeyService deviceKey)
+        string installId,
+        IReadOnlyDictionary<string, string> devicePublicKeyJwk,
+        string keyStorage)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(installId);
+        ArgumentNullException.ThrowIfNull(devicePublicKeyJwk);
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyStorage);
+
         return new Dictionary<string, object?>
         {
-            ["install_id"] = credentials.GetOrCreateInstallId(),
+            ["install_id"] = installId,
             ["platform"] = Platform,
             ["os_version"] = Environment.OSVersion.Version.ToString(),
             ["hostname_hash"] = HashHostname(Environment.MachineName),
-            ["device_public_key_jwk"] = deviceKey.GetOrCreatePublicJwk(),
-            ["key_storage"] = DeviceKeyService.KeyStorage,
+            ["device_public_key_jwk"] = devicePublicKeyJwk,
+            ["key_storage"] = keyStorage,
         };
     }
 }

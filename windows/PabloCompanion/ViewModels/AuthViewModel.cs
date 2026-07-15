@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
+using PabloCompanion.Core;
 using PabloCompanion.Services;
 
 namespace PabloCompanion.ViewModels;
@@ -353,7 +354,10 @@ public partial class AuthViewModel : ObservableObject
         // sign-in — the companion re-enrolls on a later launch.
         try
         {
-            bodyObj["enrollment"] = DeviceEnrollment.BuildPayload(_credentials, _deviceKey);
+            bodyObj["enrollment"] = DeviceEnrollment.BuildPayload(
+                _credentials.GetOrCreateInstallId(),
+                _deviceKey.GetOrCreatePublicJwk(),
+                DeviceKeyService.KeyStorage);
         }
         catch (Exception ex)
         {
