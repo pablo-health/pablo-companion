@@ -199,21 +199,25 @@ public partial class TranscriptionViewModel : ObservableObject
 
     private async Task<bool> UploadFromPendingAsync(PendingTranscription item)
     {
-        AesGcmEncryptor? encryptor = null;
-        if (item.IsEncrypted)
-        {
-            var keyBytes = _credentials.GetOrCreateUserEncryptionKey();
-            if (keyBytes != null)
-                encryptor = new AesGcmEncryptor(keyBytes, "device-key");
-        }
-
-        using var mic = await PcmDecryptor.PrepareForUploadAsync(item.MicPath, encryptor);
-        using DecryptedPcm? sys = item.SystemPath != null && File.Exists(item.SystemPath)
-            ? await PcmDecryptor.PrepareForUploadAsync(item.SystemPath, encryptor)
-            : null;
-
         try
         {
+            AesGcmEncryptor? encryptor = null;
+            if (item.IsEncrypted)
+            {
+                var keyBytes = _credentials.GetOrCreateUserEncryptionKey();
+                if (keyBytes != null)
+                    encryptor = new AesGcmEncryptor(keyBytes, "device-key");
+            }
+
+            // Decryption runs inside the try on purpose: a missing key throws, and that
+            // has to land on the retry path below rather than escape. Neither caller of
+            // this method wraps it, so an escaping throw would abort the whole resume
+            // pass and strand every remaining item behind this one.
+            using var mic = await PcmDecryptor.PrepareForUploadAsync(item.MicPath, encryptor);
+            using DecryptedPcm? sys = item.SystemPath != null && File.Exists(item.SystemPath)
+                ? await PcmDecryptor.PrepareForUploadAsync(item.SystemPath, encryptor)
+                : null;
+
             // Self-healing upload: a session whose status PATCH never landed is
             // still "recording" server-side and rejects its audio with 400
             // INVALID_STATUS. The core client PATCHes it to recording_complete and
