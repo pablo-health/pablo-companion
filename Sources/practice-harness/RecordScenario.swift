@@ -333,19 +333,23 @@ private struct Driver {
     private func sectionHasContent(_ section: [String: Any]?) -> Bool {
         guard let section else { return false }
         for value in section.values {
-            if let text = value as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let array = value as? [Any], array.contains(where: sentenceHasText) {
                 return true
             }
-            if let array = value as? [[String: Any]],
-               array
-               .contains(where: {
-                   ($0["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-               })
-            {
+            if sentenceHasText(value) {
                 return true
             }
         }
         return false
+    }
+
+    /// Mirrors `sentenceHasText` from `asr-integration.spec.ts`: a value counts
+    /// as content when it is an object carrying a non-empty `text` string. SOAP
+    /// section values are `{text: …}` sentence objects (or arrays of them), not
+    /// bare strings — the distinction the first prod run surfaced.
+    private func sentenceHasText(_ value: Any) -> Bool {
+        guard let object = value as? [String: Any], let text = object["text"] as? String else { return false }
+        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: - Summary
