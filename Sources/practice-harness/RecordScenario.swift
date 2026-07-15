@@ -370,7 +370,15 @@ private struct Driver {
     /// bare strings — the distinction the first prod run surfaced.
     private func sentenceHasText(_ value: Any) -> Bool {
         guard let object = value as? [String: Any], let text = object["text"] as? String else { return false }
-        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        // A sentence only counts as *audio-derived* content when it is anchored to
+        // a transcript segment. The SOAP LLM emits well-formed placeholder
+        // sentences ("No transcript provided.") with confidence 0 and no source
+        // segments when transcription came back empty — the earlier prod run
+        // passed the gate on exactly that. Require a real transcript anchor.
+        let hasSource = !((object["source_segment_ids"] as? [Any])?.isEmpty ?? true)
+        let confidence = (object["confidence_score"] as? NSNumber)?.doubleValue ?? 0
+        return hasSource || confidence > 0
     }
 
     // MARK: - Summary
