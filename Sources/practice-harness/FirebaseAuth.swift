@@ -57,8 +57,36 @@ struct FirebaseAuth {
         else {
             throw AuthError.shape("TOTP fallback requires FB_EMAIL, FB_PASSWORD, FB_TOTP_SECRET")
         }
-        let (id, rt) = try await signInWithMfa(email: email, password: password, totpSecret: totpSecret)
-        return MintResult(idToken: id, refreshToken: rt, mode: "totp-mfa")
+        // The Firebase Auth blocking function is scaled to zero on non-prod
+        // projects (cost), so the first mfaSignIn:finalize after it idles down
+        // cold-starts and Identity Platform reports "BLOCKING_FUNCTION_ERROR_
+        // RESPONSE: Cloud function deadline exceeded". It's warm on the next
+        // try. Retry the whole MFA sign-in (fresh pending credential + fresh
+        // TOTP each attempt) rather than fail the run on a cold start.
+        var lastError: Error?
+        for attempt in 1 ... 4 {
+            do {
+                let (id, rt) = try await signInWithMfa(
+                    email: email, password: password, totpSecret: totpSecret
+                )
+                return MintResult(idToken: id, refreshToken: rt, mode: "totp-mfa")
+            } catch let error where Self.isBlockingFunctionColdStart(error) {
+                lastError = error
+                FileHandle.standardError.write(Data(
+                    "mfaSignIn:finalize hit a cold blocking function (attempt \(attempt)/4) — warming, retrying\n".utf8
+                ))
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+            }
+        }
+        throw lastError ?? AuthError.shape("MFA sign-in failed after cold-start retries")
+    }
+
+    /// True for the transient "blocking function scaled to zero" cold-start
+    /// failure — retryable once the function warms. Any other auth error
+    /// (bad creds, wrong TOTP, 401) is NOT retried here.
+    private static func isBlockingFunctionColdStart(_ error: Error) -> Bool {
+        guard case let AuthError.http(_, _, body) = error else { return false }
+        return body.contains("BLOCKING_FUNCTION_ERROR_RESPONSE") || body.contains("deadline exceeded")
     }
 
     // MARK: - Refresh-token exchange (securetoken)

@@ -17,40 +17,59 @@ public enum WAVEncoder {
         channels: Int,
         bitsPerSample: Int = 16
     ) -> Data {
+        var out = header(
+            dataByteCount: pcm.count,
+            sampleRate: sampleRate,
+            channels: channels,
+            bitsPerSample: bitsPerSample
+        )
+        out.append(pcm)
+        return out
+    }
+
+    /// The 44-byte canonical RIFF/WAVE header for a `data` chunk of exactly
+    /// `dataByteCount` bytes.
+    ///
+    /// Split out from ``wrap(pcm:sampleRate:channels:bitsPerSample:)`` so a
+    /// large PCM sidecar can be turned into a WAV on disk without ever holding
+    /// the samples in memory: write this header, then stream the PCM bytes in
+    /// after it (see the signed-URL upload path, which must not buffer a
+    /// multi-hundred-MB session).
+    public static func header(
+        dataByteCount: Int,
+        sampleRate: Int,
+        channels: Int,
+        bitsPerSample: Int = 16
+    ) -> Data {
         let byteRate = sampleRate * channels * bitsPerSample / 8
         let blockAlign = channels * bitsPerSample / 8
-        let dataSize = UInt32(pcm.count)
+        let dataSize = UInt32(dataByteCount)
         let chunkSize = 36 + dataSize
 
         var header = Data(capacity: 44)
         header.append(contentsOf: Array("RIFF".utf8))
-        header.appendUInt32LE(chunkSize)
+        appendUInt32LE(chunkSize, to: &header)
         header.append(contentsOf: Array("WAVE".utf8))
         header.append(contentsOf: Array("fmt ".utf8))
-        header.appendUInt32LE(16) // PCM fmt chunk size
-        header.appendUInt16LE(1) // audio format = PCM
-        header.appendUInt16LE(UInt16(channels))
-        header.appendUInt32LE(UInt32(sampleRate))
-        header.appendUInt32LE(UInt32(byteRate))
-        header.appendUInt16LE(UInt16(blockAlign))
-        header.appendUInt16LE(UInt16(bitsPerSample))
+        appendUInt32LE(16, to: &header) // PCM fmt chunk size
+        appendUInt16LE(1, to: &header) // audio format = PCM
+        appendUInt16LE(UInt16(channels), to: &header)
+        appendUInt32LE(UInt32(sampleRate), to: &header)
+        appendUInt32LE(UInt32(byteRate), to: &header)
+        appendUInt16LE(UInt16(blockAlign), to: &header)
+        appendUInt16LE(UInt16(bitsPerSample), to: &header)
         header.append(contentsOf: Array("data".utf8))
-        header.appendUInt32LE(dataSize)
-
-        var out = header
-        out.append(pcm)
-        return out
-    }
-}
-
-private extension Data {
-    mutating func appendUInt32LE(_ value: UInt32) {
-        var le = value.littleEndian
-        Swift.withUnsafeBytes(of: &le) { append(contentsOf: $0) }
+        appendUInt32LE(dataSize, to: &header)
+        return header
     }
 
-    mutating func appendUInt16LE(_ value: UInt16) {
+    private static func appendUInt32LE(_ value: UInt32, to data: inout Data) {
         var le = value.littleEndian
-        Swift.withUnsafeBytes(of: &le) { append(contentsOf: $0) }
+        Swift.withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
+    }
+
+    private static func appendUInt16LE(_ value: UInt16, to data: inout Data) {
+        var le = value.littleEndian
+        Swift.withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
     }
 }
