@@ -200,7 +200,10 @@ private struct Driver {
             let uploaded = try await uploadClient.uploadWithSelfHeal(
                 sessionId: sessionID,
                 therapistAudioURL: recording.micURL,
-                clientAudioURL: recording.systemURL
+                clientAudioURL: recording.systemURL,
+                // The fixtures are generated at 48 kHz and the capture graph runs
+                // at that rate, so the harness stamps 48 kHz explicitly.
+                sampleRate: 48000
             )
             checks.append(Check(
                 name: "upload accepted + transcribing",
