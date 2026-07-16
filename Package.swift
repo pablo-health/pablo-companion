@@ -32,7 +32,12 @@ let package = Package(
         // Real capture graph (mic + system mix -> WAV + PCM sidecars). The
         // `record` scenario drives it headless via a file-backed capture source,
         // so the shipping recording path is exercised without live hardware.
-        .package(url: "https://github.com/pablo-health/AudioCaptureKit.git", from: "1.1.2"),
+        // TEMP (AAC bring-up — revert to a tagged release before merge): build
+        // against the streaming-AAC encoder branch so CI can resolve it.
+        .package(
+            url: "https://github.com/pablo-health/AudioCaptureKit.git",
+            branch: "feature/streaming-aac-sidecars"
+        ),
     ],
     targets: [
         .target(name: "PracticeClientCore"),

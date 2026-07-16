@@ -1,13 +1,13 @@
 {
-  "originHash" : "137d896e2fa77dcc60b0db6a8b42cfe734fb6de1d7c8de17ad7aeb24cb9ef25e",
+  "originHash" : "17b6053e078e67f10ab3e39edaca9f1495e0ac79d21985674f1e75c0877da024",
   "pins" : [
     {
       "identity" : "audiocapturekit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pablo-health/AudioCaptureKit.git",
       "state" : {
-        "revision" : "82408daf7f23ef02d1639c1440a322a932b509d1",
-        "version" : "1.1.2"
+        "branch" : "feature/streaming-aac-sidecars",
+        "revision" : "882c10a34aac1863240789c59fb83ba49f9546de"
       }
     },
     {
