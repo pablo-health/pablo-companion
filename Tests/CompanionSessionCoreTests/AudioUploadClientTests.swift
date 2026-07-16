@@ -71,6 +71,7 @@ struct AudioUploadClientTests {
             sessionId: "sess-1",
             therapistAudioURL: fx.mic,
             clientAudioURL: fx.system,
+            sampleRate: 48000,
             onProgress: { _ in }
         )
 
@@ -105,7 +106,8 @@ struct AudioUploadClientTests {
         recorder.enqueue(status: 200, json: #"{"id":"s","status":"transcribing","queue":null,"message":null}"#)
 
         _ = try await makeClient().uploadAudio(
-            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil, onProgress: { _ in }
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil, sampleRate: 48000,
+            onProgress: { _ in }
         )
         let body = try bodyString(#require(recorder.captured.first).capturedBody)
         #expect(body.contains("name=\"therapist_audio\""))
@@ -123,7 +125,8 @@ struct AudioUploadClientTests {
         var caught: SessionUploadError?
         do {
             _ = try await makeClient().uploadAudio(
-                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil, onProgress: { _ in }
+                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil, sampleRate: 48000,
+                onProgress: { _ in }
             )
         } catch let error as SessionUploadError {
             caught = error
@@ -180,7 +183,8 @@ struct AudioUploadClientTests {
         )
 
         let response = try await makeClient().uploadWithSelfHeal(
-            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 48000
         )
         #expect(response.status == "transcribing")
 
@@ -219,6 +223,35 @@ struct AudioUploadClientTests {
         #expect(finalizeReq.value(forHTTPHeaderField: "DPoP") == "proof-abc")
     }
 
+    @Test("Signed-URL: the WAV header carries the passed sample rate, not a hardcoded 48 kHz")
+    func signedUploadStampsPassedSampleRate() async throws {
+        let fx = try Fixtures()
+        defer { fx.cleanup() }
+        let recorder = StubURLProtocol.install()
+        defer { StubURLProtocol.reset() }
+        recorder.enqueue(status: 201, json: Self.initJSON)
+        recorder.enqueue(status: 200, json: "") // therapist PUT
+        recorder.enqueue(status: 200, json: "") // client PUT
+        recorder.enqueue(
+            status: 202,
+            json: #"{"id":"s","status":"transcribing","provider":"assemblyai","queue":"","message":"queued"}"#
+        )
+
+        // A Bluetooth-HFP-style negotiated rate, deliberately not 48 kHz — this
+        // is exactly the mismatch the old hardcoded default mislabeled.
+        _ = try await makeClient().uploadWithSelfHeal(
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 24000
+        )
+
+        // WAV sample rate is a little-endian UInt32 at byte offset 24.
+        let body = try #require(recorder.captured[1].capturedBody)
+        #expect(body.count >= 28)
+        let sr = body.subdata(in: 24 ..< 28)
+        let rate = UInt32(sr[0]) | (UInt32(sr[1]) << 8) | (UInt32(sr[2]) << 16) | (UInt32(sr[3]) << 24)
+        #expect(rate == 24000)
+    }
+
     @Test("Signed-URL finalize INVALID_STATUS heals: PATCH then re-finalize, no re-upload")
     func signedUploadHealsInvalidStatus() async throws {
         let fx = try Fixtures()
@@ -233,7 +266,8 @@ struct AudioUploadClientTests {
         recorder.enqueue(status: 200, json: #"{"id":"s","status":"transcribing","queue":null,"message":"healed"}"#)
 
         let response = try await makeClient().uploadWithSelfHeal(
-            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 48000
         )
         #expect(response.message == "healed")
 
@@ -265,7 +299,8 @@ struct AudioUploadClientTests {
         var caught: SessionUploadError?
         do {
             _ = try await makeClient().uploadWithSelfHeal(
-                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system
+                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+                sampleRate: 48000
             )
         } catch let error as SessionUploadError {
             caught = error
@@ -290,7 +325,8 @@ struct AudioUploadClientTests {
         var caught: SessionUploadError?
         do {
             _ = try await makeClient().uploadWithSelfHeal(
-                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system
+                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+                sampleRate: 48000
             )
         } catch let error as SessionUploadError {
             caught = error
@@ -310,7 +346,8 @@ struct AudioUploadClientTests {
         var caught: SessionUploadError?
         do {
             _ = try await makeClient().uploadWithSelfHeal(
-                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil
+                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil,
+                sampleRate: 48000
             )
         } catch let error as SessionUploadError {
             caught = error

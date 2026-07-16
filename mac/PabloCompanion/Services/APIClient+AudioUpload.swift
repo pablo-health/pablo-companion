@@ -31,6 +31,7 @@ extension APIClient {
         sessionId: String,
         therapistAudioURL: URL,
         clientAudioURL: URL?,
+        sampleRate: Int,
         onProgress: @Sendable @escaping (Double) -> Void
     ) async throws -> AudioUploadResponse {
         do {
@@ -38,6 +39,7 @@ extension APIClient {
                 sessionId: sessionId,
                 therapistAudioURL: therapistAudioURL,
                 clientAudioURL: clientAudioURL,
+                sampleRate: sampleRate,
                 onProgress: onProgress
             )
         } catch let error as SessionUploadError {
@@ -53,6 +55,7 @@ extension APIClient {
         sessionId: String,
         therapistAudioURL: URL,
         clientAudioURL: URL?,
+        sampleRate: Int,
         onProgress: @Sendable @escaping (Double) -> Void
     ) async throws -> AudioUploadResponse {
         do {
@@ -60,6 +63,7 @@ extension APIClient {
                 sessionId: sessionId,
                 therapistAudioURL: therapistAudioURL,
                 clientAudioURL: clientAudioURL,
+                sampleRate: sampleRate,
                 onProgress: onProgress
             )
         } catch let error as SessionUploadError {
