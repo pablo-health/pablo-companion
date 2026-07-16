@@ -130,11 +130,21 @@ public struct AudioUploadClient: Sendable {
         return decoded
     }
 
-    /// Uploads audio, healing a `400 INVALID_STATUS` rejection once.
+    /// The shared upload entry point for the app and the harness. Routes to the
+    /// signed-URL direct-to-storage path (``uploadAudioViaSignedURL``), healing a
+    /// `400 INVALID_STATUS` rejection once.
     ///
-    /// The backend rejects the upload while the session is still `recording`;
-    /// the heal PATCHes it to `recoveryStatus` (default `recording_complete`) and
-    /// retries the upload a single time. Any other error propagates unchanged.
+    /// Why signed-URL, not multipart: a full-length session is hundreds of MB.
+    /// The multipart path (``uploadAudio``) sends it as one POST through the
+    /// app's load balancer, whose request-size ceiling 413s the request before
+    /// it reaches the app. The signed-URL path PUTs each channel straight to
+    /// object storage, so only two small backend JSON calls (init + finalize)
+    /// traverse the load balancer.
+    ///
+    /// The heal mirrors the multipart one: the backend rejects finalize while
+    /// the session is still `recording`; healing PATCHes it to `recoveryStatus`
+    /// (default `recording_complete`) and re-finalizes once. Because the audio
+    /// is already in storage by then, the heal never re-uploads it.
     public func uploadWithSelfHeal(
         sessionId: String,
         therapistAudioURL: URL,
@@ -143,31 +153,14 @@ public struct AudioUploadClient: Sendable {
         recoveryStatus: String = "recording_complete",
         onProgress: @Sendable (Double) -> Void = { _ in }
     ) async throws -> AudioUploadResponse {
-        do {
-            return try await uploadAudio(
-                sessionId: sessionId,
-                therapistAudioURL: therapistAudioURL,
-                clientAudioURL: clientAudioURL,
-                sampleRate: sampleRate,
-                onProgress: onProgress
-            )
-        } catch let error as SessionUploadError where Self.isInvalidStatus(error) {
-            #if canImport(os)
-            logger.warning("Upload returned INVALID_STATUS — attempting self-heal")
-            #endif
-            try await updateSessionStatus(sessionId: sessionId, status: recoveryStatus)
-            let response = try await uploadAudio(
-                sessionId: sessionId,
-                therapistAudioURL: therapistAudioURL,
-                clientAudioURL: clientAudioURL,
-                sampleRate: sampleRate,
-                onProgress: onProgress
-            )
-            #if canImport(os)
-            logger.info("Audio upload succeeded after self-heal")
-            #endif
-            return response
-        }
+        try await uploadAudioViaSignedURL(
+            sessionId: sessionId,
+            therapistAudioURL: therapistAudioURL,
+            clientAudioURL: clientAudioURL,
+            sampleRate: sampleRate,
+            recoveryStatus: recoveryStatus,
+            onProgress: onProgress
+        )
     }
 
     /// PATCHes `POST /api/sessions/{id}/status` to `status` (raw wire value).
@@ -221,5 +214,183 @@ public struct AudioUploadClient: Sendable {
             code: envelope?.code,
             message: envelope?.message ?? rawBody
         )
+    }
+}
+
+// MARK: - Signed-URL direct-to-storage upload
+
+extension AudioUploadClient {
+    /// Uploads both channels via signed URLs straight to object storage, then
+    /// finalizes — the path that keeps a full-length session off the app's
+    /// load balancer (see ``uploadWithSelfHeal`` for the why).
+    ///
+    /// Flow: `POST …/upload-audio/init` (Bearer + DPoP) mints two signed PUT
+    /// recipes → each channel's WAV is `PUT` **directly to storage** (no Bearer,
+    /// no DPoP — the signed URL is the auth), **streamed from disk** so the
+    /// hundreds-of-MB session never enters the heap → `POST …/upload-audio/
+    /// finalize` (Bearer + DPoP) verifies both blobs and starts transcription.
+    ///
+    /// Both channels are required: finalize 400s if either blob is missing.
+    public func uploadAudioViaSignedURL(
+        sessionId: String,
+        therapistAudioURL: URL,
+        clientAudioURL: URL?,
+        sampleRate: Int = 48000,
+        recoveryStatus: String = "recording_complete",
+        onProgress: @Sendable (Double) -> Void = { _ in }
+    ) async throws -> AudioUploadResponse {
+        // The capture graph always writes a system (client) channel next to the
+        // mic; finalize verifies both blobs and 400s if one is missing, so a
+        // caller with no client audio must fail up front, not opaquely at
+        // finalize after two backend round-trips.
+        guard let clientAudioURL else {
+            throw SessionUploadError(
+                statusCode: -1,
+                code: nil,
+                message: "Signed-URL upload requires both therapist and client audio channels"
+            )
+        }
+
+        onProgress(0.05)
+        let initResponse = try await initSignedUpload(sessionId: sessionId)
+        onProgress(0.15)
+
+        // Produce the exact WAV bytes the backend/transcription expects (mic =
+        // mono, system = stereo) as files on disk, so the PUT streams from disk.
+        let therapist = try Self.wavFileForUpload(source: therapistAudioURL, sampleRate: sampleRate, channels: 1)
+        defer { if therapist.isTemp { try? FileManager.default.removeItem(at: therapist.url) } }
+        let client = try Self.wavFileForUpload(source: clientAudioURL, sampleRate: sampleRate, channels: 2)
+        defer { if client.isTemp { try? FileManager.default.removeItem(at: client.url) } }
+
+        try await putChannel(initResponse.therapist.upload, fileURL: therapist.url, label: "therapist")
+        onProgress(0.55)
+        try await putChannel(initResponse.client.upload, fileURL: client.url, label: "client")
+        onProgress(0.85)
+
+        // Finalize checks session status; it can 400 INVALID_STATUS just as the
+        // multipart path did (session still `recording`). Heal once — the blobs
+        // are already in storage, so this never re-uploads the audio.
+        do {
+            let done = try await finalizeSignedUpload(sessionId: sessionId)
+            onProgress(1.0)
+            return done
+        } catch let error as SessionUploadError where Self.isInvalidStatus(error) {
+            #if canImport(os)
+            logger.warning("Finalize returned INVALID_STATUS — attempting self-heal")
+            #endif
+            try await updateSessionStatus(sessionId: sessionId, status: recoveryStatus)
+            let done = try await finalizeSignedUpload(sessionId: sessionId)
+            #if canImport(os)
+            logger.info("Audio finalize succeeded after self-heal")
+            #endif
+            onProgress(1.0)
+            return done
+        }
+    }
+
+    // MARK: - Steps
+
+    private func initSignedUpload(sessionId: String) async throws -> AudioUploadInitResponse {
+        let bearer = try await token()
+        let endpoint = "\(baseURLString)/api/sessions/\(sessionId)/upload-audio/init"
+        guard let url = URL(string: endpoint) else {
+            throw SessionUploadError(statusCode: -1, code: nil, message: "Invalid init URL")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+        attachBinding(&request)
+
+        let (data, response) = try await session.data(for: request)
+        try Self.throwIfError(data: data, response: response)
+        return try JSONDecoder().decode(AudioUploadInitResponse.self, from: data)
+    }
+
+    /// PUTs one channel's file straight to object storage using the signed
+    /// recipe. No Bearer/DPoP — the signed URL is the auth — and the request
+    /// goes to the storage host directly, bypassing the app's load balancer.
+    private func putChannel(_ target: UploadTarget, fileURL: URL, label: String) async throws {
+        guard let url = URL(string: target.url) else {
+            throw SessionUploadError(statusCode: -1, code: nil, message: "Invalid \(label) signed upload URL")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = target.method
+        // Replay exactly the signed headers (Content-Type + the
+        // x-goog-content-length-range). Adding or dropping any makes GCS reject
+        // the PUT with 403 SignatureDoesNotMatch.
+        for (name, value) in target.headers {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+
+        // Stream from disk — never load the ~hundreds-of-MB channel into memory.
+        let (data, response) = try await session.upload(for: request, fromFile: fileURL)
+        try Self.throwIfError(data: data, response: response)
+        #if canImport(os)
+        logger.info("PUT \(label, privacy: .public) channel to storage")
+        #endif
+    }
+
+    private func finalizeSignedUpload(sessionId: String) async throws -> AudioUploadResponse {
+        let bearer = try await token()
+        let endpoint = "\(baseURLString)/api/sessions/\(sessionId)/upload-audio/finalize"
+        guard let url = URL(string: endpoint) else {
+            throw SessionUploadError(statusCode: -1, code: nil, message: "Invalid finalize URL")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
+        attachBinding(&request)
+
+        let (data, response) = try await session.data(for: request)
+        try Self.throwIfError(data: data, response: response)
+        return try JSONDecoder().decode(AudioUploadResponse.self, from: data)
+    }
+
+    // MARK: - WAV-on-disk
+
+    /// Prepares one channel's upload body as a file on disk so the PUT streams
+    /// from disk instead of buffering the whole session in memory.
+    ///
+    /// - If `source` already starts with `RIFF`, it is a real WAV: return it
+    ///   unchanged (PUT the source directly, `isTemp: false`).
+    /// - Otherwise `source` is headerless little-endian PCM (the capture's
+    ///   sidecar): write a WAV header sized to the source, then copy the PCM in
+    ///   1 MiB chunks. Returns the temp URL with `isTemp: true` so the caller
+    ///   deletes it after the upload. Memory stays flat regardless of length.
+    static func wavFileForUpload(
+        source: URL,
+        sampleRate: Int,
+        channels: Int
+    ) throws -> (url: URL, isTemp: Bool) {
+        let reader = try FileHandle(forReadingFrom: source)
+        defer { try? reader.close() }
+
+        let magic = try reader.read(upToCount: 4) ?? Data()
+        if magic == Data("RIFF".utf8) {
+            return (source, false)
+        }
+
+        let byteCount = try (FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int) ?? 0
+        let header = WAVEncoder.header(dataByteCount: byteCount, sampleRate: sampleRate, channels: channels)
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pablo-upload-\(UUID().uuidString).wav")
+        guard FileManager.default.createFile(atPath: tempURL.path, contents: nil) else {
+            throw SessionUploadError(statusCode: -1, code: nil, message: "Could not stage WAV for upload")
+        }
+        let writer = try FileHandle(forWritingTo: tempURL)
+        defer { try? writer.close() }
+
+        try reader.seek(toOffset: 0)
+        try writer.write(contentsOf: header)
+        let chunkSize = 1 << 20 // 1 MiB — bounded memory regardless of session length
+        while true {
+            let chunk = try reader.read(upToCount: chunkSize) ?? Data()
+            if chunk.isEmpty { break }
+            try writer.write(contentsOf: chunk)
+        }
+        return (tempURL, true)
     }
 }
