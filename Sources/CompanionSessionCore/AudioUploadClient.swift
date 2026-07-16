@@ -190,7 +190,8 @@ public struct AudioUploadClient: Sendable {
 
     /// Wraps headerless PCM in a WAV header; passes through anything already RIFF.
     private static func wavData(_ data: Data, sampleRate: Int, channels: Int) -> Data {
-        guard data.prefix(4) != Data("RIFF".utf8) else { return data }
+        // Already a self-describing container (WAV or ADTS AAC)? Pass through.
+        if data.prefix(4) == Data("RIFF".utf8) || isADTSSync(data) { return data }
         return WAVEncoder.wrap(pcm: data, sampleRate: sampleRate, channels: channels)
     }
 
@@ -353,8 +354,10 @@ extension AudioUploadClient {
     /// Prepares one channel's upload body as a file on disk so the PUT streams
     /// from disk instead of buffering the whole session in memory.
     ///
-    /// - If `source` already starts with `RIFF`, it is a real WAV: return it
-    ///   unchanged (PUT the source directly, `isTemp: false`).
+    /// - If `source` is already a self-describing container — a `RIFF` WAV or an
+    ///   ADTS AAC stream — return it unchanged (PUT the source directly,
+    ///   `isTemp: false`); the backend/transcription reads the format from the
+    ///   bytes.
     /// - Otherwise `source` is headerless little-endian PCM (the capture's
     ///   sidecar): write a WAV header sized to the source, then copy the PCM in
     ///   1 MiB chunks. Returns the temp URL with `isTemp: true` so the caller
@@ -368,7 +371,9 @@ extension AudioUploadClient {
         defer { try? reader.close() }
 
         let magic = try reader.read(upToCount: 4) ?? Data()
-        if magic == Data("RIFF".utf8) {
+        // Self-describing containers pass through untouched: RIFF (WAV) or an
+        // ADTS AAC frame sync (0xFF 0xFn with the layer bits clear).
+        if magic == Data("RIFF".utf8) || isADTSSync(magic) {
             return (source, false)
         }
 
@@ -392,5 +397,13 @@ extension AudioUploadClient {
             try writer.write(contentsOf: chunk)
         }
         return (tempURL, true)
+    }
+
+    /// True if `bytes` starts with an ADTS AAC frame sync: a 12-bit syncword
+    /// (0xFFF) followed by a zero layer field — byte 0 == 0xFF and
+    /// (byte 1 & 0xF6) == 0xF0.
+    static func isADTSSync(_ bytes: Data) -> Bool {
+        bytes.count >= 2 && bytes[bytes.startIndex] == 0xFF
+            && (bytes[bytes.startIndex + 1] & 0xF6) == 0xF0
     }
 }

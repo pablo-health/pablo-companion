@@ -268,7 +268,8 @@ private struct Driver {
             enableMicCapture: true,
             enableSystemCapture: true,
             mixingStrategy: .separated,
-            exportRawPCM: true
+            exportRawPCM: true,
+            sidecarFormat: .aacADTS
         )
 
         let session = CompositeCaptureSession(

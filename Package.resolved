@@ -1,13 +1,13 @@
 {
-  "originHash" : "137d896e2fa77dcc60b0db6a8b42cfe734fb6de1d7c8de17ad7aeb24cb9ef25e",
+  "originHash" : "0bfe5c5762da2c511e265e8ecf0d6cdbf4c7c6236887f2e1b32f564ee57c39e3",
   "pins" : [
     {
       "identity" : "audiocapturekit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pablo-health/AudioCaptureKit.git",
       "state" : {
-        "revision" : "82408daf7f23ef02d1639c1440a322a932b509d1",
-        "version" : "1.1.2"
+        "revision" : "7120710faf7a7f2ace89ba1d69c5b6a4a61ae897",
+        "version" : "1.2.0"
       }
     },
     {

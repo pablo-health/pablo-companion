@@ -32,7 +32,7 @@ let package = Package(
         // Real capture graph (mic + system mix -> WAV + PCM sidecars). The
         // `record` scenario drives it headless via a file-backed capture source,
         // so the shipping recording path is exercised without live hardware.
-        .package(url: "https://github.com/pablo-health/AudioCaptureKit.git", from: "1.1.2"),
+        .package(url: "https://github.com/pablo-health/AudioCaptureKit.git", from: "1.2.0"),
     ],
     targets: [
         .target(name: "PracticeClientCore"),
