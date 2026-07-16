@@ -68,7 +68,7 @@ public struct AudioUploadClient: Sendable {
         sessionId: String,
         therapistAudioURL: URL,
         clientAudioURL: URL?,
-        sampleRate: Int = 48000,
+        sampleRate: Int,
         onProgress: @Sendable (Double) -> Void
     ) async throws -> AudioUploadResponse {
         let bearer = try await token()
@@ -149,7 +149,7 @@ public struct AudioUploadClient: Sendable {
         sessionId: String,
         therapistAudioURL: URL,
         clientAudioURL: URL?,
-        sampleRate: Int = 48000,
+        sampleRate: Int,
         recoveryStatus: String = "recording_complete",
         onProgress: @Sendable (Double) -> Void = { _ in }
     ) async throws -> AudioUploadResponse {
@@ -235,7 +235,7 @@ extension AudioUploadClient {
         sessionId: String,
         therapistAudioURL: URL,
         clientAudioURL: URL?,
-        sampleRate: Int = 48000,
+        sampleRate: Int,
         recoveryStatus: String = "recording_complete",
         onProgress: @Sendable (Double) -> Void = { _ in }
     ) async throws -> AudioUploadResponse {
