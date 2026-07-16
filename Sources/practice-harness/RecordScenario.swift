@@ -151,7 +151,27 @@ private struct Driver {
         ))
 
         // ── 3. Record through the real capture graph from file fixtures ───
-        let recording = try await recordFromFixtures()
+        // During capture the client makes no other backend calls, so on a long
+        // session the server-side idle session would tombstone before the
+        // stop-time upload (init would 401 "Idle session timeout"). Heartbeat
+        // POST /api/auth/session/touch on the same 240s cadence the shipping app
+        // uses (SessionViewModel.keepSessionAliveWhileRecording); touch failures
+        // are ignored so a lost heartbeat never interferes with the capture.
+        let keepAlive = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 240 * 1_000_000_000)
+                if Task.isCancelled { break }
+                _ = try? await client.request("POST", path: "/api/auth/session/touch", idToken: token)
+            }
+        }
+        let recording: RecordingOutcome
+        do {
+            recording = try await recordFromFixtures()
+        } catch {
+            keepAlive.cancel()
+            throw error
+        }
+        keepAlive.cancel()
         checks.append(Check(name: "capture completed", ok: recording.ok, detail: recording.detail))
         checks.append(Check(
             name: "per-channel audio liveness",
