@@ -209,6 +209,11 @@ final class TranscriptionViewModel {
                 sessionId: sessionId,
                 therapistAudioURL: therapistURL,
                 clientAudioURL: clientURL,
+                // The capture rate is negotiated at runtime (Bluetooth HFP can
+                // drop the mic to 8/16/24 kHz), so stamp the WAV with the rate
+                // RecordingService actually detected — not a hardcoded 48 kHz,
+                // which would mislabel the audio and make transcription wrong.
+                sampleRate: Int(recording.sampleRate),
                 onProgress: { _ in }
             )
             logger.info("Audio upload succeeded: \(response.message ?? "ok")")
