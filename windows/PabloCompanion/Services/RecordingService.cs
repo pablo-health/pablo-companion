@@ -16,11 +16,23 @@ public sealed class RecordingService : IDisposable
     private WasapiCaptureSession? _session;
     private CaptureConfiguration? _activeConfig;
     private string? _activeSessionId;
+    private RecordingWatchdog? _watchdog;
 
     public RecordingService(CredentialManager credentials)
     {
         _credentials = credentials;
     }
+
+    /// <summary>
+    /// Raised when the capture stops writing new audio to disk. The capture
+    /// itself reports nothing when it dies, so this is the only warning the
+    /// therapist gets while the session can still be salvaged.
+    /// Mirrors <c>onRecordingStalled</c> on macOS.
+    /// </summary>
+    public event EventHandler? RecordingStalled;
+
+    /// <summary>Raised when a stalled capture starts writing again.</summary>
+    public event EventHandler? RecordingResumed;
 
     public bool IsRecording => _session?.State.Kind == CaptureStateKind.Capturing
                             || _session?.State.Kind == CaptureStateKind.Paused;
@@ -67,6 +79,11 @@ public sealed class RecordingService : IDisposable
         _session.Configure(_activeConfig);
         var result = await _session.StartCaptureAsync();
 
+        _watchdog = new RecordingWatchdog(outputDir);
+        _watchdog.Stalled += (_, e) => RecordingStalled?.Invoke(this, e);
+        _watchdog.Resumed += (_, e) => RecordingResumed?.Invoke(this, e);
+        _watchdog.Start();
+
         return ToLocalRecording(result);
     }
 
@@ -75,6 +92,9 @@ public sealed class RecordingService : IDisposable
         if (_session == null)
             throw new InvalidOperationException("No active recording.");
 
+        // Before the capture winds down, so a final flush can't be misread as a stall.
+        _watchdog?.Stop();
+
         var result = await _session.StopCaptureAsync();
         Cleanup();
         return ToLocalRecording(result);
@@ -82,12 +102,15 @@ public sealed class RecordingService : IDisposable
 
     public void Pause()
     {
+        // A paused capture is supposed to stop growing the file — that isn't a stall.
+        _watchdog?.Stop();
         _session?.PauseCapture();
     }
 
     public void Resume()
     {
         _session?.ResumeCapture();
+        _watchdog?.Start();
     }
 
     public Task<AudioSource[]> GetAvailableDevicesAsync()
@@ -103,6 +126,8 @@ public sealed class RecordingService : IDisposable
 
     private void Cleanup()
     {
+        _watchdog?.Dispose();
+        _watchdog = null;
         _session?.Dispose();
         _session = null;
         _activeConfig = null;
