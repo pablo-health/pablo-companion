@@ -36,13 +36,17 @@ public enum DeviceKey {
     private static let logger = Logger(subsystem: AuthCoreConfig.bundleID, category: "DeviceKey")
 
     /// Keychain account for the persisted software-fallback private key (raw
-    /// P-256 representation). The Secure-Enclave key is persisted by its own
-    /// application tag (below) and never exposes private bytes.
+    /// P-256 representation).
     private static let softwareKeyAccount = "device_signing_key"
-    /// Application tag for the persisted Secure-Enclave key reference.
-    private static var secureEnclaveTag: Data {
-        Data("\(AuthCoreConfig.bundleID).device-key".utf8)
-    }
+    /// Keychain account for the persisted Secure-Enclave key blob. The SE key is
+    /// stored as its opaque `dataRepresentation` — an SE-wrapped blob that only
+    /// this device's Secure Enclave can unwrap; no private bytes leave the SE.
+    ///
+    /// It lives in a `kSecClassGenericPassword` item, NOT `kSecClassKey`.
+    /// Storing the opaque blob under `kSecClassKey` makes `SecItemAdd` report
+    /// success but the item is not retrievable by tag (`errSecItemNotFound` on
+    /// read-back), which silently breaks proof signing on every SE-equipped Mac.
+    private static let secureEnclaveKeyAccount = "secure_enclave_device_key"
 
     /// Adds `kSecAttrAccessGroup` only when the process configured one — an
     /// unentitled process (the harness CLI) must not send the attribute at all.
@@ -101,8 +105,9 @@ public enum DeviceKey {
 
     private static func readSecureEnclaveKeyData() -> Data? {
         let query: [String: Any] = withAccessGroup([
-            kSecClass as String: kSecClassKey,
-            kSecAttrApplicationTag as String: secureEnclaveTag,
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: AuthCoreConfig.bundleID,
+            kSecAttrAccount as String: secureEnclaveKeyAccount,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ])
@@ -115,8 +120,9 @@ public enum DeviceKey {
     @discardableResult
     private static func storeSecureEnclaveKey(_ data: Data) -> Bool {
         let query: [String: Any] = withAccessGroup([
-            kSecClass as String: kSecClassKey,
-            kSecAttrApplicationTag as String: secureEnclaveTag,
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: AuthCoreConfig.bundleID,
+            kSecAttrAccount as String: secureEnclaveKeyAccount,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ])

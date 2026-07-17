@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using PabloCompanion.Core;
 using PabloCompanion.Services;
 
 namespace PabloCompanion.Tests.Services;

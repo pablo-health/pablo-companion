@@ -53,6 +53,12 @@
     <ProjectReference Include="..\..\..\AudioCaptureKit\csharp\AudioCapture\AudioCapture.csproj" />
   </ItemGroup>
 
+  <!-- Shared, WinUI-free core: the session upload wire path and device binding,
+       also consumed by headless runners that must not reference this WinExe. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PabloCompanion.Core\PabloCompanion.Core.csproj" />
+  </ItemGroup>
+
   <!-- Fonts -->
   <ItemGroup>
     <Content Include="Assets\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />

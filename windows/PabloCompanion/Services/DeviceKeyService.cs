@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using PabloCompanion.Core;
 
 namespace PabloCompanion.Services;
 
@@ -24,7 +25,7 @@ public sealed class DeviceKeyService
     /// Storage backing for the device key, reported to the backend at enrollment.
     /// Software (DPAPI/vault-protected) until hardware-backed keys land.
     /// </summary>
-    public const string KeyStorage = "software";
+    public const string KeyStorage = DeviceEnrollment.SoftwareKeyStorage;
 
     private readonly CredentialManager _credentials;
 
@@ -43,17 +44,7 @@ public sealed class DeviceKeyService
     public Dictionary<string, string> GetOrCreatePublicJwk()
     {
         using var ecdsa = LoadOrCreateKey();
-        var parameters = ecdsa.ExportParameters(includePrivateParameters: false);
-
-        // P-256 field elements are 32 bytes; export already returns fixed-width
-        // big-endian Q.X / Q.Y for the named curve.
-        return new Dictionary<string, string>
-        {
-            ["kty"] = "EC",
-            ["crv"] = "P-256",
-            ["x"] = Base64Url(parameters.Q.X!),
-            ["y"] = Base64Url(parameters.Q.Y!),
-        };
+        return DeviceEnrollment.PublicJwk(ecdsa);
     }
 
     /// <summary>
@@ -107,7 +98,4 @@ public sealed class DeviceKeyService
         _credentials.SetValue(PrivateKeyVaultKey, Convert.ToBase64String(pkcs8));
         return created;
     }
-
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
 }

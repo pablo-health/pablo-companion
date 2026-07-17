@@ -1,6 +1,15 @@
 {
-  "originHash" : "792ffcd01db49639280cac8546cfcd58aedc8edfe0632cc8fb00d51b4c3f6df5",
+  "originHash" : "0bfe5c5762da2c511e265e8ecf0d6cdbf4c7c6236887f2e1b32f564ee57c39e3",
   "pins" : [
+    {
+      "identity" : "audiocapturekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pablo-health/AudioCaptureKit.git",
+      "state" : {
+        "revision" : "7120710faf7a7f2ace89ba1d69c5b6a4a61ae897",
+        "version" : "1.2.0"
+      }
+    },
     {
       "identity" : "swift-asn1",
       "kind" : "remoteSourceControl",
@@ -15,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-crypto.git",
       "state" : {
-        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
-        "version" : "3.15.1"
+        "revision" : "1b6b2e274e85105bfa155183145a1dcfd63331f1",
+        "version" : "4.5.0"
       }
     }
   ],

@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace PabloCompanion.Services;
+namespace PabloCompanion.Core;
 
 /// <summary>
 /// Builds a DPoP proof JWS (RFC 9449 §4) for a single backend request, signed by

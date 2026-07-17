@@ -14,8 +14,9 @@ import FoundationNetworking
 /// reimplementation, so it can't drift from the shipping client.
 ///
 /// Configuration (env):
-///   PRACTICE_SCENARIO      "practice" (default) or "dpop" — the device-binding
-///                          scenario in DPoPScenario.swift (macOS only)
+///   PRACTICE_SCENARIO      "practice" (default), "dpop" (device binding, in
+///                          DPoPScenario.swift), or "record" (recording →
+///                          upload → SOAP, in RecordScenario.swift) — macOS only
 ///   PRACTICE_BASE_URL      backend base URL (default https://app.pablo.health)
 ///   PRACTICE_AUDIO         path to raw s16le 16 kHz mono PCM fixture (required)
 ///   PRACTICE_TOPIC         topic id (default: first from /api/practice/topics)
@@ -43,6 +44,15 @@ struct PracticeHarness {
             return
             #else
             fail("The dpop scenario needs CompanionAuthCore (macOS only).")
+            #endif
+        }
+
+        if env["PRACTICE_SCENARIO"] == "record" {
+            #if canImport(CompanionAuthCore)
+            await RecordScenario.run(env: env)
+            return
+            #else
+            fail("The record scenario needs CompanionAuthCore (macOS only).")
             #endif
         }
 

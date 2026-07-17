@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Matches AudioCapture's platform version so it can be referenced. This is
+         a plain console app: no UseWinUI, no WindowsAppSDK, no MSIX. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <RootNamespace>RecordHarness</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <Platforms>x64;arm64</Platforms>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- Deliberately NOT referencing PabloCompanion (the WinExe): that would drag
+       in WindowsAppSDK and PasswordVault, neither of which works unpackaged on a
+       CI runner. The real client code under test lives in these two libraries. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PabloCompanion.Core\PabloCompanion.Core.csproj" />
+    <ProjectReference Include="..\..\..\AudioCaptureKit\csharp\AudioCapture\AudioCapture.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PabloCompanion.Tests" />
+  </ItemGroup>
+</Project>

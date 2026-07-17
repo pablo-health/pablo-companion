@@ -202,42 +202,26 @@ final class TranscriptionViewModel {
             let therapistURL = URL(fileURLWithPath: pcm.micPath)
             let clientURL = pcm.systemPath.map { URL(fileURLWithPath: $0) }
 
-            do {
-                let response = try await apiClient.uploadAudio(
-                    sessionId: sessionId,
-                    therapistAudioURL: therapistURL,
-                    clientAudioURL: clientURL,
-                    onProgress: { _ in }
-                )
-                logger.info("Audio upload succeeded: \(response.message ?? "ok")")
-                return true
-            } catch {
-                guard Self.isInvalidStatus(error) else { throw error }
-                // Backend rejects because the session is still in "recording".
-                // Heal: PATCH to recording_complete, retry the upload once.
-                logger.warning("Upload returned INVALID_STATUS — attempting self-heal")
-                _ = try await apiClient.updateSessionStatus(
-                    sessionId: sessionId,
-                    status: .recordingComplete
-                )
-                let response = try await apiClient.uploadAudio(
-                    sessionId: sessionId,
-                    therapistAudioURL: therapistURL,
-                    clientAudioURL: clientURL,
-                    onProgress: { _ in }
-                )
-                logger.info("Audio upload succeeded after self-heal: \(response.message ?? "ok")")
-                return true
-            }
+            // Upload + the INVALID_STATUS self-heal both live in
+            // CompanionSessionCore's AudioUploadClient, so this path is exercised
+            // verbatim by the headless e2e harness.
+            let response = try await apiClient.uploadAudioWithSelfHeal(
+                sessionId: sessionId,
+                therapistAudioURL: therapistURL,
+                clientAudioURL: clientURL,
+                // The capture rate is negotiated at runtime (Bluetooth HFP can
+                // drop the mic to 8/16/24 kHz), so stamp the WAV with the rate
+                // RecordingService actually detected — not a hardcoded 48 kHz,
+                // which would mislabel the audio and make transcription wrong.
+                sampleRate: Int(recording.sampleRate),
+                onProgress: { _ in }
+            )
+            logger.info("Audio upload succeeded: \(response.message ?? "ok")")
+            return true
         } catch {
             logger.error("Audio upload failed: \(error.localizedDescription)")
             return false
         }
-    }
-
-    private static func isInvalidStatus(_ error: Error) -> Bool {
-        guard case let PabloError.apiClient(statusCode, _, code) = error else { return false }
-        return statusCode == 400 && code == "INVALID_STATUS"
     }
 
     /// Retry every queued audio upload with exponential backoff. Mirrors
