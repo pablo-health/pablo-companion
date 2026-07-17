@@ -22,7 +22,8 @@ struct PendingAudioUploadStoreTests {
             sessionId: "session-A",
             micPath: "/tmp/mic.enc.pcm",
             systemPath: "/tmp/sys.enc.pcm",
-            isEncrypted: true
+            isEncrypted: true,
+            sampleRate: 48000
         )
         defer { store.remove(sessionId: "session-A") }
 
@@ -36,14 +37,14 @@ struct PendingAudioUploadStoreTests {
 
     @Test func removeDropsEntry() {
         let store = Self.makeStore()
-        store.add(sessionId: "session-B", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false)
+        store.add(sessionId: "session-B", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false, sampleRate: 48000)
         store.remove(sessionId: "session-B")
         #expect(store.get(sessionId: "session-B") == nil)
     }
 
     @Test func incrementRetryPersists() throws {
         let store = Self.makeStore()
-        store.add(sessionId: "session-C", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false)
+        store.add(sessionId: "session-C", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false, sampleRate: 48000)
         defer { store.remove(sessionId: "session-C") }
 
         store.incrementRetry(sessionId: "session-C")
@@ -55,7 +56,7 @@ struct PendingAudioUploadStoreTests {
 
     @Test func readdPreservesCreatedAtAndRetryCount() throws {
         let store = Self.makeStore()
-        store.add(sessionId: "session-D", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false)
+        store.add(sessionId: "session-D", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false, sampleRate: 48000)
         defer { store.remove(sessionId: "session-D") }
         store.incrementRetry(sessionId: "session-D")
         let first = try #require(store.get(sessionId: "session-D"))
@@ -63,10 +64,55 @@ struct PendingAudioUploadStoreTests {
         // Re-adding the same session (e.g. orphan adoption finding it again on launch)
         // must not zero out retry state — it's the only thing keeping recovery
         // honest across launches.
-        store.add(sessionId: "session-D", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false)
+        store.add(sessionId: "session-D", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false, sampleRate: 48000)
         let second = try #require(store.get(sessionId: "session-D"))
 
         #expect(second.retryCount == first.retryCount)
         #expect(second.createdAt == first.createdAt)
+    }
+
+    // MARK: - Capture rate
+
+    @Test func nonDefaultSampleRateSurvivesRoundTrip() throws {
+        // Bluetooth HFP drops the mic to 8/16/24 kHz. The rate has to persist
+        // with the entry: a retry after relaunch has only headerless PCM to work
+        // from, so if the queue forgets the rate the WAV gets stamped wrong and
+        // transcription degrades — the bug #103 set out to fix.
+        let store = Self.makeStore()
+        store.add(
+            sessionId: "session-E",
+            micPath: "/tmp/m.pcm",
+            systemPath: nil,
+            isEncrypted: false,
+            sampleRate: 24000
+        )
+        defer { store.remove(sessionId: "session-E") }
+
+        let item = try #require(store.get(sessionId: "session-E"))
+        #expect(item.sampleRate == 24000)
+    }
+
+    @Test func legacyEntryWithoutSampleRateStillDecodes() throws {
+        // Entries queued before `sampleRate` existed are already on real disks.
+        // Decoding must tolerate the missing key — a throw here would silently
+        // drop a therapist's pending upload.
+        let json = Data("""
+        {
+            "sessionId": "session-legacy",
+            "micPath": "/tmp/m.pcm",
+            "isEncrypted": false,
+            "createdAt": 774144000,
+            "retryCount": 2
+        }
+        """.utf8)
+
+        let decoded = try JSONDecoder().decode(
+            PendingAudioUploadStore.PendingAudioUpload.self,
+            from: json
+        )
+
+        #expect(decoded.sessionId == "session-legacy")
+        #expect(decoded.retryCount == 2)
+        #expect(decoded.sampleRate == nil)
     }
 }

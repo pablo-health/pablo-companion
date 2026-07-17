@@ -33,6 +33,19 @@ private enum CompactJWS {
 struct DPoPProofTests {
     private let url = URL(string: "https://api.pablo.health/api/sessions?page=1&page_size=50#frag")!
 
+    /// Provision a device key before signing anything.
+    ///
+    /// `DeviceKey.sign` only *loads* a key (`loadSoftwareKey`, load-only);
+    /// `publicKey()` is what provisions one — Secure Enclave where available,
+    /// software P-256 otherwise. Without this, `DPoPProof.make` returns nil on
+    /// any machine that has never run the app, and every `#require` below
+    /// throws. These tests passed locally only because a real run had already
+    /// left a key in the developer's keychain, and failed on every CI runner —
+    /// invisibly, until the build started gating on its exit code.
+    init() {
+        _ = DeviceKey.publicKey()
+    }
+
     @Test func headerDeclaresDpopJwtAndES256() throws {
         let jws = try #require(DPoPProof.make(method: "GET", url: url))
         let parts = try #require(CompactJWS.segments(jws))

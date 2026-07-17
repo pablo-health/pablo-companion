@@ -11,13 +11,23 @@ struct PabloCompanionApp: App {
 
     private let updaterController: SPUStandardUpdaterController
 
+    /// True when the process was launched by the test runner.
+    ///
+    /// The unit tests are app-hosted (`TEST_HOST = Pablo.app`), so `make
+    /// test-mac` boots this app for real. Without a guard, every test run starts
+    /// Sparkle and raises a screen-recording prompt on the developer's machine —
+    /// side effects a unit test has no business causing.
+    static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     init() {
         // Point the device-auth core at the app's keychain identity before
         // anything touches DeviceKey (sign-in enrollment, request signing).
         AuthCoreConfig.bundleID = AppConstants.appBundleID
         AuthCoreConfig.keychainAccessGroup = AppConstants.keychainAccessGroup
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: !Self.isRunningTests,
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
@@ -28,6 +38,9 @@ struct PabloCompanionApp: App {
         Window("Pablo", id: "main") {
             ContentView(authVM: authVM, deepLinks: deepLinks)
                 .task {
+                    // Skipped under test: this raises a TCC prompt, and the
+                    // app-hosted test runner would fire it on every run.
+                    guard !Self.isRunningTests else { return }
                     await requestScreenCapturePermission()
                 }
                 .onOpenURL { url in
