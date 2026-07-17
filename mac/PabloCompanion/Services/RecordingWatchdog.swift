@@ -14,6 +14,7 @@ final class RecordingWatchdog {
     private var timer: DispatchSourceTimer?
     private var micPCMPath: String?
     private var lastSize: UInt64 = 0
+    private var hasBaseline = false
     private var stalledFired = false
     private let recordingsDirectory: URL
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "RecordingWatchdog")
@@ -39,10 +40,14 @@ final class RecordingWatchdog {
         timer = nil
         micPCMPath = nil
         lastSize = 0
+        hasBaseline = false
         stalledFired = false
     }
 
-    private func check() {
+    /// Internal rather than private so `RecordingWatchdogTests` can drive a tick
+    /// directly — the timer starts at +10s and repeats every 60s, which no test
+    /// can wait out. Mirrors the `Check()` seam on the Windows port.
+    func check() {
         if micPCMPath == nil {
             micPCMPath = findLatestMicPCMFile()?.path
         }
@@ -53,10 +58,19 @@ final class RecordingWatchdog {
 
         let attrs = try? FileManager.default.attributesOfItem(atPath: path)
         let currentSize = attrs?[.size] as? UInt64 ?? 0
-        defer { lastSize = currentSize }
+        defer {
+            lastSize = currentSize
+            hasBaseline = true
+        }
 
-        // First check — just baseline the size
-        guard lastSize > 0 else { return }
+        // First check — just baseline the size.
+        //
+        // The flag is explicit rather than `lastSize > 0`, which conflated "not
+        // baselined yet" with "the file is empty" — so a mic file that was
+        // created and never written stayed at 0, re-baselined on every tick, and
+        // never reported a stall. That is the total-capture-failure case this
+        // watchdog exists to catch. Matches the Windows port.
+        guard hasBaseline else { return }
 
         if currentSize <= lastSize {
             if !stalledFired {

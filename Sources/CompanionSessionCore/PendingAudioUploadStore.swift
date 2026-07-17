@@ -15,7 +15,7 @@ import os
 /// Each pending entry is written as AES-256-GCM encrypted JSON to
 /// `~/Library/Application Support/PabloCompanion/PendingAudioUploads/`.
 /// Keyed by `sessionId` (re-adding the same session overwrites).
-public struct PendingAudioUploadStore {
+public struct PendingAudioUploadStore: Sendable {
     // MARK: - Types
 
     public struct PendingAudioUpload: Codable, Sendable {
