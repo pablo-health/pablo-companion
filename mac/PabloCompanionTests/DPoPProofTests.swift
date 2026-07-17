@@ -61,9 +61,6 @@ struct DPoPProofTests {
     /// Owning a separate namespace lets the suite reset and mint its own key —
     /// creating never prompts — without touching the developer's real enrolment.
     init() {
-        AuthCoreConfig.bundleID = "health.pablo.companion.tests"
-        AuthCoreConfig.keychainAccessGroup = nil
-        DeviceKey.resetPersistedKeys()
         _ = DeviceKey.publicKey()
     }
 

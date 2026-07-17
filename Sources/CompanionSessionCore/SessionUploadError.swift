@@ -36,7 +36,9 @@ extension SessionUploadError: LocalizedError, CustomStringConvertible {
     /// no message. That is what a failed 50-minute e2e reported, which is an
     /// expensive way to learn nothing: every field needed to diagnose it was
     /// already on the value and simply never printed.
-    public var errorDescription: String? { description }
+    public var errorDescription: String? {
+        description
+    }
 
     public var description: String {
         var parts = ["upload failed: HTTP \(statusCode)"]

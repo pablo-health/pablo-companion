@@ -1,6 +1,6 @@
+import CompanionSessionCore
 import Foundation
 import os
-import Security
 
 /// Provides CRUD access to the macOS Keychain for auth tokens.
 struct KeychainManager: Sendable {
@@ -16,107 +16,42 @@ struct KeychainManager: Sendable {
         case installID = "install_id"
     }
 
-    private static let serviceName = AppConstants.appBundleID
-    private static let accessGroup = AppConstants.keychainAccessGroup
     private static let logger = Logger(subsystem: AppConstants.appBundleID, category: "KeychainManager")
 
-    /// Under test, every read misses and every write is dropped.
+    /// Where secrets actually live.
     ///
-    /// The unit tests are app-hosted, so xcodebuild launches this app for real
-    /// and it reads the Keychain on the way up. macOS ties an item's ACL to the
-    /// identity of the binary that created it, and the test host is signed
-    /// ad-hoc — `flags=0x20002(adhoc,linker-signed)`, `TeamIdentifier=not set` —
-    /// so its identity IS its cdhash and changes on every rebuild. Each rebuild
-    /// therefore looks like a different program asking for another program's
-    /// secret, and macOS puts up a prompt nobody is there to click: the run
-    /// blocks in SecItemCopyMatching. `make test-mac` sat for 300-500 seconds
-    /// with ZERO tests executed.
+    /// Injectable so a test can hand over an in-memory store instead of talking
+    /// to the real Keychain. That is not a convenience: macOS ties an item's ACL
+    /// to the identity of the binary that created it, and the app's test host is
+    /// signed ad-hoc — its identity is its own cdhash and changes on every
+    /// rebuild — so each rebuild looks like a different program asking for
+    /// another program's secret and macOS raises a prompt nobody is there to
+    /// click. The app-hosted suite sat for 300-500 seconds with zero tests
+    /// executed.
     ///
-    /// Signing with a stable identity would fix it properly, but the app needs a
-    /// provisioning profile for its Associated Domains and Keychain access group,
-    /// which is why signing is disabled here in the first place. Until that is
-    /// set up, the honest position is that a unit test has no business reading a
-    /// developer's real credentials — so it doesn't.
-    ///
-    /// A test that needs Keychain behaviour should inject a fake. The stores in
-    /// CompanionSessionCore already do exactly that, which is why `swift test`
-    /// runs in 0.035s and prompts for nothing.
-    private static var isUnderTest: Bool {
-        PabloCompanionApp.isRunningTests
-    }
+    /// The default is chosen once, here, rather than branching on "am I under
+    /// test" inside every method: production code should not know tests exist.
+    /// Signing the host with a stable identity would remove even this, but the
+    /// app needs a provisioning profile for its Associated Domains and Keychain
+    /// access group, which is why signing is disabled in the first place.
+    nonisolated(unsafe) static var backend: KeychainStoring =
+        PabloCompanionApp.isRunningTests ? InMemoryKeychain() : SecurityKeychain()
 
     static func saveToken(_ value: String, forKey key: TokenKey) {
-        guard !isUnderTest else { return }
-        guard let data = value.data(using: .utf8) else { return }
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key.rawValue,
-            kSecAttrAccessGroup as String: accessGroup,
-        ]
-
-        // Try updating first; add if not found.
-        let updateAttributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-        ]
-
-        let updateStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
-
-        if updateStatus == errSecItemNotFound {
-            var addQuery = query
-            addQuery[kSecValueData as String] = data
-            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-
-            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-            if addStatus != errSecSuccess {
-                logger.error("Keychain save failed for \(key.rawValue): \(addStatus)")
-            }
-        } else if updateStatus != errSecSuccess {
-            logger.error("Keychain update failed for \(key.rawValue): \(updateStatus)")
-        }
+        backend.setString(value, forKey: key.rawValue)
     }
 
     static func getToken(forKey key: TokenKey) -> String? {
-        guard !isUnderTest else { return nil }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key.rawValue,
-            kSecAttrAccessGroup as String: accessGroup,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess, let data = result as? Data else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
+        backend.string(forKey: key.rawValue)
     }
 
     static func deleteToken(forKey key: TokenKey) {
-        guard !isUnderTest else { return }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key.rawValue,
-            kSecAttrAccessGroup as String: accessGroup,
-        ]
-
-        let status = SecItemDelete(query as CFDictionary)
-        if status != errSecSuccess, status != errSecItemNotFound {
-            logger.error("Keychain delete failed for \(key.rawValue): \(status)")
-        }
+        backend.removeItem(forKey: key.rawValue)
     }
 
     /// Deletes auth tokens only. Encryption keys are preserved so pending uploads
     /// can still be retried after the next sign-in.
     static func deleteAuthTokens() {
-        guard !isUnderTest else { return }
         for key in [
             TokenKey.idToken,
             .refreshToken,
@@ -134,7 +69,6 @@ struct KeychainManager: Sendable {
     /// Deletes auth tokens AND the encryption key for the given user.
     /// Call only for explicit "purge local data" — not on regular sign-out.
     static func purgeAllData(forUser email: String) {
-        guard !isUnderTest else { return }
         deleteAuthTokens()
         deleteEncryptionKey(forUser: email)
         // Also remove any legacy device-wide key
@@ -148,7 +82,6 @@ struct KeychainManager: Sendable {
     /// `deleteAuthTokens()`) so a single companion install keeps one identity for
     /// its lifetime — same survive-sign-out treatment as the encryption key.
     static func getOrCreateInstallID() -> String {
-        guard !isUnderTest else { return "test-install-id" }
         if let existing = getToken(forKey: .installID), !existing.isEmpty {
             return existing
         }
@@ -163,7 +96,6 @@ struct KeychainManager: Sendable {
     /// established at enrollment, alongside the device key). Returns `nil` before
     /// the first enrollment.
     static func installID() -> String? {
-        guard !isUnderTest else { return nil }
         guard let existing = getToken(forKey: .installID), !existing.isEmpty else {
             return nil
         }
@@ -180,14 +112,12 @@ struct KeychainManager: Sendable {
 
     /// Returns the encryption key for the given user, or nil if not found.
     static func encryptionKey(forUser email: String) -> Data? {
-        guard !isUnderTest else { return nil }
-        return readKeyData(account: encryptionKeyAccount(forUser: email))
+        readKeyData(account: encryptionKeyAccount(forUser: email))
     }
 
     /// Returns the existing encryption key for the user, or generates a new 32-byte AES-256 key.
     /// On first call after upgrade, migrates the legacy device-wide key to the user's account.
     static func getOrCreateEncryptionKey(forUser email: String) -> Data? {
-        guard !isUnderTest else { return nil }
         let account = encryptionKeyAccount(forUser: email)
 
         // 1. Check for existing per-user key
@@ -223,40 +153,12 @@ struct KeychainManager: Sendable {
     // MARK: - Key Storage Helpers
 
     private static func readKeyData(account: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: account,
-            kSecAttrAccessGroup as String: accessGroup,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess, let data = result as? Data else {
-            return nil
-        }
-        return data
+        backend.data(forKey: account)
     }
 
     @discardableResult
     private static func storeKeyData(_ data: Data, account: String) -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: account,
-            kSecAttrAccessGroup as String: accessGroup,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-        ]
-
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status != errSecSuccess {
-            logger.error("Failed to store encryption key for \(account): \(status)")
-            return false
-        }
+        backend.setData(data, forKey: account)
         return true
     }
 
@@ -265,16 +167,6 @@ struct KeychainManager: Sendable {
     }
 
     private static func deleteEncryptionKey(account: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: account,
-            kSecAttrAccessGroup as String: accessGroup,
-        ]
-
-        let status = SecItemDelete(query as CFDictionary)
-        if status != errSecSuccess, status != errSecItemNotFound {
-            logger.error("Keychain delete failed for \(account): \(status)")
-        }
+        backend.removeItem(forKey: account)
     }
 }
