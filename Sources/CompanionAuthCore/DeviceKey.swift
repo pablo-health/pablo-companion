@@ -113,8 +113,23 @@ public enum DeviceKey {
 
         do {
             let key = try SecureEnclave.P256.Signing.PrivateKey()
-            guard storeSecureEnclaveKey(key.dataRepresentation) else {
-                logger.error("Failed to persist Secure-Enclave device key")
+            let status = storeSecureEnclaveKey(key.dataRepresentation)
+
+            // Same race as the software path: another caller created the key
+            // between our load miss and this add. Report THEIR key — ours is not
+            // the one the Enclave will sign with, so proofs would not verify
+            // against the JWK we enrolled. This arm does not fire on CI (no
+            // Enclave there), only on real hardware.
+            if status == errSecDuplicateItem {
+                guard let winner = loadSecureEnclaveKey() else {
+                    logger.error("Secure-Enclave key exists but could not be read back")
+                    return nil
+                }
+                return jwk(from: winner.publicKey)
+            }
+
+            guard status == errSecSuccess else {
+                logger.error("Failed to persist Secure-Enclave device key: \(status)")
                 return nil
             }
             logger.info("Generated new Secure-Enclave device key")
@@ -145,7 +160,7 @@ public enum DeviceKey {
     }
 
     @discardableResult
-    private static func storeSecureEnclaveKey(_ data: Data) -> Bool {
+    private static func storeSecureEnclaveKey(_ data: Data) -> OSStatus {
         let query: [String: Any] = withAccessGroup([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: AuthCoreConfig.bundleID,
@@ -153,8 +168,7 @@ public enum DeviceKey {
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ])
-        let status = SecItemAdd(query as CFDictionary, nil)
-        return status == errSecSuccess
+        return SecItemAdd(query as CFDictionary, nil)
     }
 
     // MARK: - Software fallback
@@ -166,8 +180,28 @@ public enum DeviceKey {
         }
 
         let key = P256.Signing.PrivateKey()
-        guard storeSoftwareKey(key.rawRepresentation) else {
-            logger.error("Failed to persist software device key")
+        let status = storeSoftwareKey(key.rawRepresentation)
+
+        // Someone else created the key between our load miss and this add. Their
+        // key is now the stored one, so re-read and report THAT — reporting ours
+        // would hand out a public key the Keychain cannot sign with, and every
+        // proof would fail to verify against the JWK we just enrolled.
+        //
+        // Losing this race previously returned nil, which makes
+        // `DeviceEnrollment.payload` return nil and fails enrolment outright.
+        // Not theoretical: two suites provisioning in parallel on a runner with
+        // no pre-existing key hit it every time, while a developer machine never
+        // did — the key already existed, so nobody reached the add.
+        if status == errSecDuplicateItem {
+            guard let winner = loadSoftwareKey() else {
+                logger.error("Software device key exists but could not be read back")
+                return nil
+            }
+            return jwk(from: winner.publicKey)
+        }
+
+        guard status == errSecSuccess else {
+            logger.error("Failed to persist software device key: \(status)")
             return nil
         }
         logger.info("Generated new software device key")
@@ -194,7 +228,7 @@ public enum DeviceKey {
     }
 
     @discardableResult
-    private static func storeSoftwareKey(_ data: Data) -> Bool {
+    private static func storeSoftwareKey(_ data: Data) -> OSStatus {
         let query: [String: Any] = withAccessGroup([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: AuthCoreConfig.bundleID,
@@ -202,8 +236,7 @@ public enum DeviceKey {
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ])
-        let status = SecItemAdd(query as CFDictionary, nil)
-        return status == errSecSuccess
+        return SecItemAdd(query as CFDictionary, nil)
     }
 
     // MARK: - Proof signing (DPoP)
