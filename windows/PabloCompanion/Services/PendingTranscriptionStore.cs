@@ -68,6 +68,42 @@ public sealed class PendingTranscriptionStore
         }
     }
 
+    /// <summary>
+    /// Move an entry through the upload → note lifecycle (e.g. to
+    /// <see cref="UploadLifecycleState.AwaitingNote"/> once its upload lands).
+    /// Persisted so a therapist who closes the app mid-transcription resumes
+    /// reconciliation on the next launch rather than losing the audio.
+    /// </summary>
+    public void SetState(string sessionId, UploadLifecycleState state)
+    {
+        lock (_lock)
+        {
+            var store = Load();
+            if (store.TryGetValue(sessionId, out var existing))
+            {
+                store[sessionId] = existing with { State = state };
+                Persist(store);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reset the retry counter to zero. Used when a re-queued upload should
+    /// start the backoff ladder fresh rather than inherit the old count.
+    /// </summary>
+    public void ResetRetry(string sessionId)
+    {
+        lock (_lock)
+        {
+            var store = Load();
+            if (store.TryGetValue(sessionId, out var existing))
+            {
+                store[sessionId] = existing with { RetryCount = 0 };
+                Persist(store);
+            }
+        }
+    }
+
     public void Remove(string sessionId)
     {
         lock (_lock)
@@ -162,4 +198,8 @@ public sealed record PendingTranscription(
     string? SystemPath,
     bool IsEncrypted,
     DateTime CreatedAt,
-    int RetryCount);
+    int RetryCount,
+    // Optional-with-default: entries written before this field existed have no
+    // `state` in their JSON and decode as PendingUpload — the old behaviour —
+    // rather than failing to deserialize and dropping a queued upload.
+    UploadLifecycleState State = UploadLifecycleState.PendingUpload);
