@@ -29,7 +29,17 @@ private enum CompactJWS {
     }
 }
 
-@Suite("DPoP proof generation")
+/// Every case here signs through `DPoPProof.make`, which needs a device key —
+/// and `DeviceKey` bails on `guard SecureEnclave.isAvailable` (DeviceKey.swift:81).
+/// CI runners are VMs with no Secure Enclave, so `make` returns nil there and
+/// every `#require` throws. These tests have never been able to pass in CI; the
+/// missing `pipefail` meant nobody saw it.
+///
+/// Skipping is the honest report — the suite genuinely cannot run without the
+/// hardware, so it is reported as skipped rather than failing. It still runs on
+/// developer machines, which do have an Enclave. Covering DPoP in CI needs the
+/// signing key to be injectable; that is a separate change.
+@Suite("DPoP proof generation", .enabled(if: SecureEnclave.isAvailable))
 struct DPoPProofTests {
     private let url = URL(string: "https://api.pablo.health/api/sessions?page=1&page_size=50#frag")!
 
