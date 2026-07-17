@@ -210,6 +210,24 @@ final class AuthViewModel {
     // MARK: - Private
 
     private func restoreAuthState() {
+        // Under test this is the first thing that touches the Keychain, and it
+        // is what hangs the suite.
+        //
+        // The unit tests are app-hosted, so xcodebuild launches this app for
+        // real. macOS grants a Keychain ACL to the exact binary that created an
+        // item, and an unsigned test host is a different binary after every
+        // rebuild — so reading a token an earlier build stored raises a system
+        // prompt and blocks in SecItemCopyMatching with nobody to click it.
+        // `make test-mac` sat for 300-500 seconds with ZERO tests executed,
+        // because the app never finished launching.
+        //
+        // A test signs in explicitly if it needs to; restoring a developer's
+        // real session was never something a unit test should do anyway.
+        guard !PabloCompanionApp.isRunningTests else {
+            authState = .unauthenticated
+            return
+        }
+
         guard let idToken = KeychainManager.getToken(forKey: .idToken),
               let email = KeychainManager.getToken(forKey: .userEmail)
         else {

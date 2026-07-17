@@ -20,7 +20,33 @@ struct KeychainManager: Sendable {
     private static let accessGroup = AppConstants.keychainAccessGroup
     private static let logger = Logger(subsystem: AppConstants.appBundleID, category: "KeychainManager")
 
+    /// Under test, every read misses and every write is dropped.
+    ///
+    /// The unit tests are app-hosted, so xcodebuild launches this app for real
+    /// and it reads the Keychain on the way up. macOS ties an item's ACL to the
+    /// identity of the binary that created it, and the test host is signed
+    /// ad-hoc — `flags=0x20002(adhoc,linker-signed)`, `TeamIdentifier=not set` —
+    /// so its identity IS its cdhash and changes on every rebuild. Each rebuild
+    /// therefore looks like a different program asking for another program's
+    /// secret, and macOS puts up a prompt nobody is there to click: the run
+    /// blocks in SecItemCopyMatching. `make test-mac` sat for 300-500 seconds
+    /// with ZERO tests executed.
+    ///
+    /// Signing with a stable identity would fix it properly, but the app needs a
+    /// provisioning profile for its Associated Domains and Keychain access group,
+    /// which is why signing is disabled here in the first place. Until that is
+    /// set up, the honest position is that a unit test has no business reading a
+    /// developer's real credentials — so it doesn't.
+    ///
+    /// A test that needs Keychain behaviour should inject a fake. The stores in
+    /// CompanionSessionCore already do exactly that, which is why `swift test`
+    /// runs in 0.035s and prompts for nothing.
+    private static var isUnderTest: Bool {
+        PabloCompanionApp.isRunningTests
+    }
+
     static func saveToken(_ value: String, forKey key: TokenKey) {
+        guard !isUnderTest else { return }
         guard let data = value.data(using: .utf8) else { return }
 
         let query: [String: Any] = [
@@ -53,6 +79,7 @@ struct KeychainManager: Sendable {
     }
 
     static func getToken(forKey key: TokenKey) -> String? {
+        guard !isUnderTest else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -72,6 +99,7 @@ struct KeychainManager: Sendable {
     }
 
     static func deleteToken(forKey key: TokenKey) {
+        guard !isUnderTest else { return }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -88,6 +116,7 @@ struct KeychainManager: Sendable {
     /// Deletes auth tokens only. Encryption keys are preserved so pending uploads
     /// can still be retried after the next sign-in.
     static func deleteAuthTokens() {
+        guard !isUnderTest else { return }
         for key in [
             TokenKey.idToken,
             .refreshToken,
@@ -105,6 +134,7 @@ struct KeychainManager: Sendable {
     /// Deletes auth tokens AND the encryption key for the given user.
     /// Call only for explicit "purge local data" — not on regular sign-out.
     static func purgeAllData(forUser email: String) {
+        guard !isUnderTest else { return }
         deleteAuthTokens()
         deleteEncryptionKey(forUser: email)
         // Also remove any legacy device-wide key
@@ -118,6 +148,7 @@ struct KeychainManager: Sendable {
     /// `deleteAuthTokens()`) so a single companion install keeps one identity for
     /// its lifetime — same survive-sign-out treatment as the encryption key.
     static func getOrCreateInstallID() -> String {
+        guard !isUnderTest else { return "test-install-id" }
         if let existing = getToken(forKey: .installID), !existing.isEmpty {
             return existing
         }
@@ -132,6 +163,7 @@ struct KeychainManager: Sendable {
     /// established at enrollment, alongside the device key). Returns `nil` before
     /// the first enrollment.
     static func installID() -> String? {
+        guard !isUnderTest else { return nil }
         guard let existing = getToken(forKey: .installID), !existing.isEmpty else {
             return nil
         }
@@ -148,12 +180,14 @@ struct KeychainManager: Sendable {
 
     /// Returns the encryption key for the given user, or nil if not found.
     static func encryptionKey(forUser email: String) -> Data? {
-        readKeyData(account: encryptionKeyAccount(forUser: email))
+        guard !isUnderTest else { return nil }
+        return readKeyData(account: encryptionKeyAccount(forUser: email))
     }
 
     /// Returns the existing encryption key for the user, or generates a new 32-byte AES-256 key.
     /// On first call after upgrade, migrates the legacy device-wide key to the user's account.
     static func getOrCreateEncryptionKey(forUser email: String) -> Data? {
+        guard !isUnderTest else { return nil }
         let account = encryptionKeyAccount(forUser: email)
 
         // 1. Check for existing per-user key

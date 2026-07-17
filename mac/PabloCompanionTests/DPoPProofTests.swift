@@ -35,16 +35,29 @@ private enum CompactJWS {
 struct DPoPProofTests {
     private let url = URL(string: "https://api.pablo.health/api/sessions?page=1&page_size=50#frag")!
 
-    /// Provision a device key before signing anything.
+    /// Provision a device key of this suite's own, before signing anything.
     ///
-    /// `DeviceKey.sign` only *loads* a key (`loadSoftwareKey`, load-only);
-    /// `publicKey()` is what provisions one — Secure Enclave where available,
-    /// software P-256 otherwise. Without this, `DPoPProof.make` returns nil on
-    /// any machine that has never run the app, and every `#require` below
-    /// throws. These tests passed locally only because a real run had already
-    /// left a key in the developer's keychain, and failed on every CI runner —
-    /// invisibly, until the build started gating on its exit code.
+    /// Two things are going on.
+    ///
+    /// `DeviceKey.sign` only *loads* a key; `publicKey()` is what provisions one.
+    /// Without that call `DPoPProof.make` returns nil on any machine that has
+    /// never run the app, so every `#require` below throws — which is why these
+    /// passed locally (a real run had left a key behind) and failed on every CI
+    /// runner, invisibly, until the build started gating on its exit code.
+    ///
+    /// And the namespace matters. Sharing `health.pablo.companion` with the real
+    /// app means reading a key some other build created — macOS grants a Keychain
+    /// ACL to the exact binary that created an item, and an unsigned test host is
+    /// a different binary after every rebuild, so it raises a system prompt and
+    /// blocks in SecItemCopyMatching with nobody to click it. That is the hang
+    /// that made `make test-mac` sit for 300-500 seconds with zero tests run.
+    ///
+    /// Owning a separate namespace lets the suite reset and mint its own key —
+    /// creating never prompts — without touching the developer's real enrolment.
     init() {
+        AuthCoreConfig.bundleID = "health.pablo.companion.tests"
+        AuthCoreConfig.keychainAccessGroup = nil
+        DeviceKey.resetPersistedKeys()
         _ = DeviceKey.publicKey()
     }
 
