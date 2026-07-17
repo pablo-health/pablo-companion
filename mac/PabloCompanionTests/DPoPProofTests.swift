@@ -31,7 +31,13 @@ private enum CompactJWS {
     }
 }
 
-@Suite("DPoP proof generation")
+/// .serialized because `init` resets and re-mints the device key, and Swift
+/// Testing runs tests in parallel by default — so one test would delete the key
+/// out from under another that was mid sign-then-verify, and the signature would
+/// stop matching its own public key. Observed on CI as
+/// signRoundTripsThroughRawForm and signatureVerifiesAgainstEnrolledDeviceKey
+/// failing while everything passed locally.
+@Suite("DPoP proof generation", .serialized)
 struct DPoPProofTests {
     private let url = URL(string: "https://api.pablo.health/api/sessions?page=1&page_size=50#frag")!
 
