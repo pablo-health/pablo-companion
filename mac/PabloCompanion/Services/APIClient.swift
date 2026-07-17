@@ -41,7 +41,7 @@ final class APIClient {
 
     private static let fallbackURL: URL = {
         // Static string — guaranteed to parse. Extracted to avoid force-unwrap at call site.
-        guard let url = URL(string: "https://api.pablo.health") else {
+        guard let url = URL(string: AppConstants.defaultBackendAPIURL) else {
             preconditionFailure("Hardcoded fallback URL is invalid")
         }
         return url
@@ -50,7 +50,7 @@ final class APIClient {
     nonisolated private let jsonDecoder = JSONDecoder()
     nonisolated private let jsonEncoder = JSONEncoder()
 
-    init(baseURL: String = "https://api.pablo.health") {
+    init(baseURL: String = AppConstants.defaultBackendAPIURL) {
         guard URLValidator.validateScheme(baseURL) == nil,
               let url = URL(string: baseURL)
         else {

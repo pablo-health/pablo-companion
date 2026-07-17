@@ -17,8 +17,20 @@ struct LoginView: View {
             Text("Sign in to Pablo")
                 .font(.pabloDisplay(22))
 
-            serverURLField
+            Text("Sign in to get started")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownSoft)
+
+            if authViewModel.isAdvancedVisible {
+                serverURLField
+            }
+
             authStateContent
+
+            if !authViewModel.isAdvancedVisible {
+                connectToDifferentServerButton
+            }
+
             authStatusMessages
 
             Spacer()
@@ -42,6 +54,18 @@ struct LoginView: View {
             }
         }
         .frame(maxWidth: 320)
+    }
+
+    /// The escape hatch for self-hosters and developers. A therapist never needs
+    /// the server URL, so it stays behind this rather than sitting above the
+    /// sign-in button looking like required input.
+    private var connectToDifferentServerButton: some View {
+        Button("Connect to a different server") {
+            authViewModel.showAdvanced()
+        }
+        .buttonStyle(.link)
+        .font(.pabloBody(12))
+        .accessibilityLabel("Connect to a different Pablo server")
     }
 
     @ViewBuilder

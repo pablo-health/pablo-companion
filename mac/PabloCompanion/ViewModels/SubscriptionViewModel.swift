@@ -22,7 +22,7 @@ final class SubscriptionViewModel {
 
     // MARK: - Dependencies
 
-    var backendURL = "https://api.pablo.health" {
+    var backendURL = AppConstants.defaultBackendAPIURL {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken

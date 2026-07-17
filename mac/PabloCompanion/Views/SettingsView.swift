@@ -267,7 +267,7 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView(
-        backendURL: .constant("https://api.pablo.health"),
+        backendURL: .constant(AppConstants.defaultBackendAPIURL),
         authServerURL: .constant("https://auth.pablo.health"),
         selectedMicID: .constant(nil),
         encryptionEnabled: .constant(true),

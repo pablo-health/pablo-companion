@@ -21,7 +21,7 @@ final class PatientViewModel {
     /// Total patients matching the current search, as reported by the backend.
     var totalPatients: UInt32 = 0
 
-    var backendURL = "https://api.pablo.health" {
+    var backendURL = AppConstants.defaultBackendAPIURL {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
                 let token = apiClient.getToken
