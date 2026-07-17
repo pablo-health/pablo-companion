@@ -172,7 +172,6 @@ struct SettingsView: View {
 
     @AppStorage("deleteAfterUpload") private var deleteAfterUpload = true
     @AppStorage("autoTranscribe") private var autoTranscribe = true
-    private let hardware = HardwareCapabilityService()
 
     #if DEBUG
     @State private var showDebugRecordingView = false
