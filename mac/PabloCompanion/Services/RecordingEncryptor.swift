@@ -7,16 +7,19 @@ struct RecordingEncryptor: CaptureEncryptor {
     private let key: SymmetricKey
 
     /// Creates an encryptor using the encryption key for the given user.
-    /// Falls back to the legacy device-wide key if no user email is available (e.g. standalone recordings).
-    init?(userEmail: String? = nil) {
-        let keyData: Data? = if let email = userEmail {
-            KeychainManager.getOrCreateEncryptionKey(forUser: email)
-        } else {
-            // Legacy fallback for standalone recordings without a signed-in user
-            KeychainManager.encryptionKey(forUser: "")
-                ?? KeychainManager.getOrCreateEncryptionKey(forUser: "")
-        }
-        guard let keyData else { return nil }
+    ///
+    /// The key comes from `keyProvider`, which defaults to the Keychain. Tests
+    /// inject an in-memory provider instead — without that seam, exercising a
+    /// store means touching the developer's real login Keychain, and the
+    /// key-unavailable branch cannot be reached at all.
+    ///
+    /// - Parameter userEmail: nil uses the legacy device-wide key, for
+    ///   standalone recordings made before sign-in.
+    init?(
+        userEmail: String? = nil,
+        keyProvider: EncryptionKeyProviding = KeychainEncryptionKeyProvider()
+    ) {
+        guard let keyData = keyProvider.key(forUser: userEmail) else { return nil }
         self.key = SymmetricKey(data: keyData)
     }
 

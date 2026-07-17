@@ -23,6 +23,11 @@ struct PendingTranscriptStore {
     /// User email for per-user encryption key scoping. Set after sign-in.
     var userEmail: String?
 
+    /// Source of the AES key entries are sealed with. Defaults to the Keychain;
+    /// tests inject an in-memory provider so they neither prompt for access nor
+    /// leave keys in the developer's login Keychain.
+    var keyProvider: EncryptionKeyProviding = KeychainEncryptionKeyProvider()
+
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PendingTranscriptStore")
 
     private var storeDirectory: URL {
@@ -40,7 +45,7 @@ struct PendingTranscriptStore {
 
     /// Encrypt and save a pending transcript. Overwrites any existing entry for the same recording.
     func save(_ pending: PendingTranscript) {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else {
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else {
             logger.error("Cannot save pending transcript: encryption key unavailable")
             return
         }
@@ -57,7 +62,7 @@ struct PendingTranscriptStore {
 
     /// Load and decrypt all pending transcripts from disk.
     func loadAll() -> [PendingTranscript] {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else { return [] }
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else { return [] }
         let urls: [URL]
         do {
             urls = try FileManager.default.contentsOfDirectory(

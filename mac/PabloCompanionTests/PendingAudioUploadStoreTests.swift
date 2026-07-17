@@ -2,17 +2,21 @@ import Foundation
 import Testing
 @testable import Pablo
 
-/// Light round-trip coverage for the new audio-upload pending queue. Mirrors
-/// the Windows `PendingTranscriptionStoreTests`. Hits the real macOS keychain
-/// for the device encryption key (no test seam available, same constraint as
-/// `PendingTranscriptStore`).
+/// Round-trip coverage for the audio-upload pending queue. Mirrors the Windows
+/// `PendingTranscriptionStoreTests`.
+///
+/// The encryption key comes from an in-memory provider, so these no longer touch
+/// the real login Keychain. They previously did — prompting for access on every
+/// run and leaving a key behind for each throwaway user.
 @Suite("PendingAudioUploadStore round-trip")
 struct PendingAudioUploadStoreTests {
-    /// Unique per-test user so entries don't collide with other suites or with
-    /// real data already on the dev machine.
-    private static func makeStore() -> PendingAudioUploadStore {
+    /// Unique per-test user so entries on disk don't collide across suites.
+    private static func makeStore(
+        keyProvider: EncryptionKeyProviding = InMemoryEncryptionKeyProvider()
+    ) -> PendingAudioUploadStore {
         var store = PendingAudioUploadStore()
         store.userEmail = "pending-audio-test+\(UUID().uuidString)@pablo.health"
+        store.keyProvider = keyProvider
         return store
     }
 
@@ -91,6 +95,68 @@ struct PendingAudioUploadStoreTests {
         let item = try #require(store.get(sessionId: "session-E"))
         #expect(item.sampleRate == 24000)
     }
+
+    // MARK: - Key unavailable
+
+    @Test func saveRefusesWhenKeyUnavailable() {
+        // The branch that had no coverage before the seam existed. A store that
+        // cannot encrypt must decline to write, not write something readable or
+        // truncated. This is the same failure class as the Windows pending-store
+        // cache poisoning, where a null key silently emptied the queue.
+        let store = Self.makeStore(keyProvider: InMemoryEncryptionKeyProvider(key: nil))
+        store.add(
+            sessionId: "session-nokey",
+            micPath: "/tmp/m.pcm",
+            systemPath: nil,
+            isEncrypted: false,
+            sampleRate: 48000
+        )
+        defer { store.remove(sessionId: "session-nokey") }
+
+        #expect(store.get(sessionId: "session-nokey") == nil)
+    }
+
+    @Test func loadAllIsEmptyWhenKeyUnavailable() {
+        let store = Self.makeStore(keyProvider: InMemoryEncryptionKeyProvider(key: nil))
+        #expect(store.loadAll().isEmpty)
+    }
+
+    @Test func aKeyUnavailableReadDoesNotDestroyExistingEntries() throws {
+        // Losing the key must not be mistaken for "the queue is empty" — the
+        // Windows bug cached that emptiness and later persisted it over real
+        // data. Here a keyless read is transient: entries stay on disk and come
+        // back when the key does.
+        let provider = InMemoryEncryptionKeyProvider()
+        let originalKey = provider.key
+        let store = Self.makeStore(keyProvider: provider)
+        store.add(
+            sessionId: "session-F",
+            micPath: "/tmp/m.pcm",
+            systemPath: nil,
+            isEncrypted: false,
+            sampleRate: 48000
+        )
+        defer { store.remove(sessionId: "session-F") }
+
+        provider.key = nil
+        #expect(store.loadAll().isEmpty)
+
+        provider.key = originalKey
+        #expect(store.loadAll().count == 1)
+    }
+
+    @Test func keyIsScopedToTheSignedInUser() {
+        let provider = InMemoryEncryptionKeyProvider()
+        var store = PendingAudioUploadStore()
+        store.keyProvider = provider
+        store.userEmail = "therapist@pablo.health"
+
+        _ = store.loadAll()
+
+        #expect(provider.requestedUsers == ["therapist@pablo.health"])
+    }
+
+    // MARK: - Schema compatibility
 
     @Test func legacyEntryWithoutSampleRateStillDecodes() throws {
         // Entries queued before `sampleRate` existed are already on real disks.

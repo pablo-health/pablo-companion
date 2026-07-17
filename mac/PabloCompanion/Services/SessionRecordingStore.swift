@@ -34,6 +34,11 @@ struct SessionRecordingStore {
     /// User email for per-user encryption key scoping. Set after sign-in.
     var userEmail: String?
 
+    /// Source of the AES key entries are sealed with. Defaults to the Keychain;
+    /// tests inject an in-memory provider so they neither prompt for access nor
+    /// leave keys in the developer's login Keychain.
+    var keyProvider: EncryptionKeyProviding = KeychainEncryptionKeyProvider()
+
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "SessionRecordingStore")
 
     private var storeDirectory: URL {
@@ -88,7 +93,7 @@ struct SessionRecordingStore {
 
     /// Persist the full map (encrypted with per-user AES-256-GCM key).
     func write(_ map: [String: RecordingEntry]) {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else {
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else {
             logger.error("Cannot save session recording store: encryption key unavailable")
             return
         }
@@ -106,7 +111,7 @@ struct SessionRecordingStore {
     // MARK: - Private Helpers
 
     private func loadEncrypted() -> [String: RecordingEntry]? {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else { return nil }
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else { return nil }
         do {
             let encrypted = try Data(contentsOf: encryptedStoreURL)
             let json = try encryptor.decrypt(encrypted)

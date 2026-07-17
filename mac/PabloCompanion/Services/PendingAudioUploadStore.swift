@@ -38,6 +38,11 @@ struct PendingAudioUploadStore {
     /// User email for per-user encryption key scoping. Set after sign-in.
     var userEmail: String?
 
+    /// Source of the AES key entries are sealed with. Defaults to the Keychain;
+    /// tests inject an in-memory provider so they neither prompt for access nor
+    /// leave keys in the developer's login Keychain.
+    var keyProvider: EncryptionKeyProviding = KeychainEncryptionKeyProvider()
+
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PendingAudioUploadStore")
 
     private var storeDirectory: URL {
@@ -76,7 +81,7 @@ struct PendingAudioUploadStore {
 
     /// Encrypt and write a pending entry to disk.
     func save(_ pending: PendingAudioUpload) {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else {
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else {
             logger.error("Cannot save pending audio upload: encryption key unavailable")
             return
         }
@@ -92,7 +97,7 @@ struct PendingAudioUploadStore {
 
     /// Load and decrypt every pending entry from disk.
     func loadAll() -> [PendingAudioUpload] {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else { return [] }
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else { return [] }
         let urls: [URL]
         do {
             urls = try FileManager.default.contentsOfDirectory(
@@ -116,7 +121,7 @@ struct PendingAudioUploadStore {
 
     /// Look up a single pending entry by session ID.
     func get(sessionId: String) -> PendingAudioUpload? {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail) else { return nil }
+        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else { return nil }
         let url = fileURL(for: sessionId)
         guard let encrypted = try? Data(contentsOf: url),
               let json = try? encryptor.decrypt(encrypted),
