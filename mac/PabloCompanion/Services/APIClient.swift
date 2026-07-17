@@ -27,7 +27,16 @@ final class APIClient {
     /// Structured error code the backend attaches to idle-timeout 401s.
     static let idleTimeoutCode = "IDLE_TIMEOUT"
 
-    private static let clientVersion = "0.9.1"
+    /// The shipping app version, read from the bundle rather than hardcoded.
+    ///
+    /// A literal here silently stayed at `0.9.1` across the 1.0.0 release. Since
+    /// `healthCheck` compares this against `min_client_versions.macos`, the day
+    /// the backend required 1.0.0 every up-to-date client would have reported
+    /// `clientUpdateRequired` and demanded an update it already had. Sourcing it
+    /// from `MARKETING_VERSION` makes that drift impossible.
+    static let clientVersion: String =
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+
     private static let minServerVersion = "0.9.0"
 
     private static let fallbackURL: URL = {
