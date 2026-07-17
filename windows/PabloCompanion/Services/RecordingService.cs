@@ -77,14 +77,26 @@ public sealed class RecordingService : IDisposable
 
         _session = new WasapiCaptureSession();
         _session.Configure(_activeConfig);
-        var result = await _session.StartCaptureAsync();
 
+        // Started before the await, not after: StartCaptureAsync only returns once
+        // StopCaptureAsync has completed the capture (it ends in `await _stopTcs.Task`),
+        // so anything sequenced after it runs at stop time, not at start.
         _watchdog = new RecordingWatchdog(outputDir);
         _watchdog.Stalled += (_, e) => RecordingStalled?.Invoke(this, e);
         _watchdog.Resumed += (_, e) => RecordingResumed?.Invoke(this, e);
         _watchdog.Start();
 
-        return ToLocalRecording(result);
+        try
+        {
+            var result = await _session.StartCaptureAsync();
+            return ToLocalRecording(result);
+        }
+        finally
+        {
+            // Covers the throw path too — a capture that never started must not
+            // leave a watchdog polling for a file it will never see.
+            _watchdog?.Stop();
+        }
     }
 
     public async Task<LocalRecording> StopAsync()
