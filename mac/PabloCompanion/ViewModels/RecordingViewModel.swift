@@ -30,7 +30,7 @@ final class RecordingViewModel {
     var activeSessionId: String?
     /// Maps session IDs to recording IDs for correlating sessions with local recordings.
     var sessionRecordingMap: [String: UUID] = [:]
-    private var recordingStore = SessionRecordingStore()
+    private var recordingStore = SessionRecordingStore(makeEncryptor: { RecordingEncryptor(userEmail: $0) })
     var systemAudioActive = false
     var recordingStalled = false
     var persistentError: String?

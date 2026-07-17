@@ -1,3 +1,4 @@
+import CompanionSessionCore
 import Foundation
 import os
 
@@ -71,8 +72,12 @@ final class TranscriptionViewModel {
     // MARK: - Private
 
     private var apiClient = APIClient()
-    private var store = PendingTranscriptStore()
-    private var audioStore = PendingAudioUploadStore()
+    private var store = PendingTranscriptStore(makeEncryptor: { RecordingEncryptor(userEmail: $0) })
+    private var audioStore = PendingAudioUploadStore(
+        directory: AppPaths.pendingAudioUploads,
+        makeEncryptor: { RecordingEncryptor(userEmail: $0) },
+        logSubsystem: AppConstants.appBundleID
+    )
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "TranscriptionViewModel")
 
     /// The signed-in user's email, used to scope encryption keys.

@@ -1,3 +1,4 @@
+import CompanionSessionCore
 import CryptoKit
 import Foundation
 import os
@@ -23,10 +24,26 @@ struct PendingTranscriptStore {
     /// User email for per-user encryption key scoping. Set after sign-in.
     var userEmail: String?
 
-    /// Source of the AES key entries are sealed with. Defaults to the Keychain;
-    /// tests inject an in-memory provider so they neither prompt for access nor
-    /// leave keys in the developer's login Keychain.
-    var keyProvider: EncryptionKeyProviding = KeychainEncryptionKeyProvider()
+    /// Builds the encryptor used to seal entries at rest.
+    ///
+    /// A factory of the `SessionDataEncrypting` abstraction, never the concrete
+    /// `RecordingEncryptor`: that type is macOS-bound via AudioCaptureKit, and
+    /// naming it here would stop this store moving into the Foundation-only
+    /// `CompanionSessionCore` where the harness could exercise it.
+    ///
+    /// Tests substitute a fake, which is what keeps them off the real Keychain.
+    /// Returning nil means "no key" — callers must refuse to write rather than
+    /// write something readable.
+    let makeEncryptor: SessionEncryptorFactory
+
+    /// - Parameter makeEncryptor: has no default on purpose. A default of
+    ///   `{ RecordingEncryptor(userEmail: $0) }` would name a type that conforms
+    ///   to AudioCaptureKit's `CaptureEncryptor` — macOS-only — and re-couple
+    ///   this store to it, which is precisely what the abstraction exists to
+    ///   avoid. The app supplies the concrete encryptor at construction.
+    init(makeEncryptor: @escaping SessionEncryptorFactory) {
+        self.makeEncryptor = makeEncryptor
+    }
 
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PendingTranscriptStore")
 
@@ -45,7 +62,7 @@ struct PendingTranscriptStore {
 
     /// Encrypt and save a pending transcript. Overwrites any existing entry for the same recording.
     func save(_ pending: PendingTranscript) {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else {
+        guard let encryptor = makeEncryptor(userEmail) else {
             logger.error("Cannot save pending transcript: encryption key unavailable")
             return
         }
@@ -62,7 +79,7 @@ struct PendingTranscriptStore {
 
     /// Load and decrypt all pending transcripts from disk.
     func loadAll() -> [PendingTranscript] {
-        guard let encryptor = RecordingEncryptor(userEmail: userEmail, keyProvider: keyProvider) else { return [] }
+        guard let encryptor = makeEncryptor(userEmail) else { return [] }
         let urls: [URL]
         do {
             urls = try FileManager.default.contentsOfDirectory(

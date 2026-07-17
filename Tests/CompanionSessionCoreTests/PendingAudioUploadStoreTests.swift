@@ -1,6 +1,7 @@
+
+@testable import CompanionSessionCore
 import Foundation
 import Testing
-@testable import Pablo
 
 /// Round-trip coverage for the audio-upload pending queue. Mirrors the Windows
 /// `PendingTranscriptionStoreTests`.
@@ -11,13 +12,26 @@ import Testing
 @Suite("PendingAudioUploadStore round-trip")
 struct PendingAudioUploadStoreTests {
     /// Unique per-test user so entries on disk don't collide across suites.
+    /// A store rooted in its own temp directory.
+    ///
+    /// Every suite previously shared the real Application Support directory and
+    /// relied on each test holding a different Keychain key so `loadAll` could
+    /// not read its neighbours' entries — isolation by encryption accident. Now
+    /// it is isolation by construction, and nothing touches a real disk.
     private static func makeStore(
-        keyProvider: EncryptionKeyProviding = InMemoryEncryptionKeyProvider()
+        encryptor: SessionDataEncrypting? = FakeSessionDataEncryptor()
     ) -> PendingAudioUploadStore {
-        var store = PendingAudioUploadStore()
-        store.userEmail = "pending-audio-test+\(UUID().uuidString)@pablo.health"
-        store.keyProvider = keyProvider
+        var store = PendingAudioUploadStore(
+            directory: Self.tempDir(),
+            makeEncryptor: { _ in encryptor }
+        )
+        store.userEmail = "therapist@pablo.health"
         return store
+    }
+
+    private static func tempDir() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("pending-audio-\(UUID().uuidString)", isDirectory: true)
     }
 
     @Test func addAndGetRoundTrip() throws {
@@ -103,7 +117,7 @@ struct PendingAudioUploadStoreTests {
         // cannot encrypt must decline to write, not write something readable or
         // truncated. This is the same failure class as the Windows pending-store
         // cache poisoning, where a null key silently emptied the queue.
-        let store = Self.makeStore(keyProvider: InMemoryEncryptionKeyProvider(key: nil))
+        let store = Self.makeStore(encryptor: nil)
         store.add(
             sessionId: "session-nokey",
             micPath: "/tmp/m.pcm",
@@ -117,18 +131,19 @@ struct PendingAudioUploadStoreTests {
     }
 
     @Test func loadAllIsEmptyWhenKeyUnavailable() {
-        let store = Self.makeStore(keyProvider: InMemoryEncryptionKeyProvider(key: nil))
+        let store = Self.makeStore(encryptor: nil)
         #expect(store.loadAll().isEmpty)
     }
 
-    @Test func aKeyUnavailableReadDoesNotDestroyExistingEntries() throws {
+    @Test func aKeylessReadDoesNotDestroyExistingEntries() {
         // Losing the key must not be mistaken for "the queue is empty" — the
         // Windows bug cached that emptiness and later persisted it over real
         // data. Here a keyless read is transient: entries stay on disk and come
-        // back when the key does.
-        let provider = InMemoryEncryptionKeyProvider()
-        let originalKey = provider.key
-        let store = Self.makeStore(keyProvider: provider)
+        // back when the encryptor does.
+        let encryptor = FakeSessionDataEncryptor()
+        let dir = Self.tempDir()
+        var store = PendingAudioUploadStore(directory: dir, makeEncryptor: { _ in encryptor })
+        store.userEmail = "therapist@pablo.health"
         store.add(
             sessionId: "session-F",
             micPath: "/tmp/m.pcm",
@@ -138,22 +153,26 @@ struct PendingAudioUploadStoreTests {
         )
         defer { store.remove(sessionId: "session-F") }
 
-        provider.key = nil
-        #expect(store.loadAll().isEmpty)
+        var keyless = PendingAudioUploadStore(directory: dir, makeEncryptor: { _ in nil })
+        keyless.userEmail = "therapist@pablo.health"
+        #expect(keyless.loadAll().isEmpty)
 
-        provider.key = originalKey
         #expect(store.loadAll().count == 1)
     }
 
-    @Test func keyIsScopedToTheSignedInUser() {
-        let provider = InMemoryEncryptionKeyProvider()
-        var store = PendingAudioUploadStore()
-        store.keyProvider = provider
+    @Test func theEncryptorIsResolvedForTheSignedInUser() {
+        // The store must scope its key to whoever is signed in, not the
+        // device-wide legacy key.
+        let seen = Box<[String?]>([])
+        var store = PendingAudioUploadStore(directory: Self.tempDir(), makeEncryptor: { email in
+            seen.value.append(email)
+            return FakeSessionDataEncryptor()
+        })
         store.userEmail = "therapist@pablo.health"
 
         _ = store.loadAll()
 
-        #expect(provider.requestedUsers == ["therapist@pablo.health"])
+        #expect(seen.value == ["therapist@pablo.health"])
     }
 
     // MARK: - Schema compatibility

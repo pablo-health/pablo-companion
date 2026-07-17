@@ -1,25 +1,35 @@
 import AudioCaptureKit
+import CompanionSessionCore
 import CryptoKit
 import Foundation
 
 /// Production AES-256-GCM encryptor using a per-user key stored in Keychain.
-struct RecordingEncryptor: CaptureEncryptor {
+///
+/// Conforms to `CaptureEncryptor` for AudioCaptureKit's capture graph and to
+/// `SessionDataEncrypting` for the at-rest stores. The two protocols declare the
+/// same `encrypt`/`decrypt` pair, so one implementation satisfies both — but
+/// only the latter is Foundation-only, which is what lets a store depend on the
+/// abstraction instead of this macOS-bound type.
+struct RecordingEncryptor: CaptureEncryptor, SessionDataEncrypting {
     private let key: SymmetricKey
 
     /// Creates an encryptor using the encryption key for the given user.
     ///
-    /// The key comes from `keyProvider`, which defaults to the Keychain. Tests
-    /// inject an in-memory provider instead — without that seam, exercising a
-    /// store means touching the developer's real login Keychain, and the
-    /// key-unavailable branch cannot be reached at all.
+    /// Reaches the Keychain directly, which is fine: the stores no longer
+    /// construct this type, they take a `SessionEncryptorFactory`. Tests inject a
+    /// fake there and never reach this initialiser.
     ///
     /// - Parameter userEmail: nil uses the legacy device-wide key, for
     ///   standalone recordings made before sign-in.
-    init?(
-        userEmail: String? = nil,
-        keyProvider: EncryptionKeyProviding = KeychainEncryptionKeyProvider()
-    ) {
-        guard let keyData = keyProvider.key(forUser: userEmail) else { return nil }
+    init?(userEmail: String? = nil) {
+        let keyData: Data? = if let userEmail {
+            KeychainManager.getOrCreateEncryptionKey(forUser: userEmail)
+        } else {
+            // Legacy fallback for standalone recordings made before sign-in.
+            KeychainManager.encryptionKey(forUser: "")
+                ?? KeychainManager.getOrCreateEncryptionKey(forUser: "")
+        }
+        guard let keyData else { return nil }
         self.key = SymmetricKey(data: keyData)
     }
 

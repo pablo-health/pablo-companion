@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Pablo
+import Testing
 
 /// Covers Zoom meeting-ID extraction, the input to the `zoommtg://` deep link.
 ///

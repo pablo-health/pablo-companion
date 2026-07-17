@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Pablo
+import Testing
 
 @Suite("SubscriptionViewModel trial limits")
 @MainActor
@@ -35,7 +35,7 @@ struct SubscriptionViewModelTrialTests {
 
     // MARK: - trialDaysRemaining
 
-    @Test func daysRemaining_normalLimit() {
+    @Test func daysRemaining_normalLimit() throws {
         let vm = SubscriptionViewModel()
         vm.subscriptionInfo = makeInfo(
             daysLimit: 30,
@@ -43,7 +43,7 @@ struct SubscriptionViewModelTrialTests {
         )
         let remaining = vm.trialDaysRemaining
         #expect(remaining != nil)
-        #expect(remaining! >= 19 && remaining! <= 20, "Expected ~20 days remaining")
+        #expect(try #require(remaining) >= 19 && remaining! <= 20, "Expected ~20 days remaining")
     }
 
     @Test func daysRemaining_zeroLimitIsUnlimited() {
@@ -70,7 +70,7 @@ struct SubscriptionViewModelTrialTests {
             sessionsUsed: 5, sessionsLimit: 0,
             daysLimit: 0, trialStart: iso8601(daysAgo: 10)
         )
-        if case .trial(let sessions, let days) = vm.bannerState {
+        if case let .trial(sessions, days) = vm.bannerState {
             #expect(sessions == nil, "Unlimited sessions must be nil in banner state")
             #expect(days == nil, "Unlimited days must be nil in banner state")
         } else {

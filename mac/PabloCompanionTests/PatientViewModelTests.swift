@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Pablo
+import Testing
 
 /// Covers the patient pagination guards and the `hasMore` predicate that drives
 /// them. Before pagination existed, `loadPatients` fetched page 1 and stopped,

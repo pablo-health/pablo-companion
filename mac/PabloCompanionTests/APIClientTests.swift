@@ -1,7 +1,7 @@
 import CompanionSessionCore
 import Foundation
-import Testing
 @testable import Pablo
+import Testing
 
 @Suite("Multipart body builder")
 struct APIClientTests {
@@ -14,26 +14,26 @@ struct APIClientTests {
         )
     }
 
-    @Test func multipartBodyContainsBoundary() {
+    @Test func multipartBodyContainsBoundary() throws {
         let boundary = "test-boundary-123"
         let part = makePart(fileName: "test.wav", data: Data("hello".utf8))
         let body = buildMultipartBody(parts: [part], boundary: boundary)
-        let bodyString = String(data: body, encoding: .utf8)!
+        let bodyString = try #require(String(data: body, encoding: .utf8))
         #expect(bodyString.contains("--\(boundary)"))
         #expect(bodyString.contains("--\(boundary)--"))
     }
 
-    @Test func multipartBodyContainsFileName() {
+    @Test func multipartBodyContainsFileName() throws {
         let part = makePart(fileName: "my_recording.wav", data: Data())
         let body = buildMultipartBody(parts: [part], boundary: "b")
-        let bodyString = String(data: body, encoding: .utf8)!
+        let bodyString = try #require(String(data: body, encoding: .utf8))
         #expect(bodyString.contains("my_recording.wav"))
     }
 
-    @Test func multipartBodyContainsCRLF() {
+    @Test func multipartBodyContainsCRLF() throws {
         let part = makePart(fileName: "f.wav", data: Data())
         let body = buildMultipartBody(parts: [part], boundary: "b")
-        let bodyString = String(data: body, encoding: .utf8)!
+        let bodyString = try #require(String(data: body, encoding: .utf8))
         #expect(bodyString.contains("\r\n"))
     }
 
