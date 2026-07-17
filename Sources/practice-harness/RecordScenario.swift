@@ -50,6 +50,15 @@ enum RecordScenario {
         AuthCoreConfig.bundleID = "health.pablo.companion.harness"
         AuthCoreConfig.keychainAccessGroup = nil
 
+        // Mint a fresh device key rather than reading one an earlier build left
+        // behind. macOS ties a Keychain ACL to the binary that created an item,
+        // and an unsigned CLI is a different binary after every rebuild — so
+        // reading the old key raises a system prompt and blocks forever in
+        // SecItemCopyMatching with nobody to click it. Creating never prompts.
+        // The harness enrols a new install_id each run, so the old key is dead
+        // weight regardless.
+        DeviceKey.resetPersistedKeys()
+
         guard let apiKey = env["FB_API_KEY"], !apiKey.isEmpty else {
             PracticeHarness.fail("FB_API_KEY is required for the record scenario.")
         }

@@ -48,6 +48,33 @@ public enum DeviceKey {
     /// read-back), which silently breaks proof signing on every SE-equipped Mac.
     private static let secureEnclaveKeyAccount = "secure_enclave_device_key"
 
+    /// Deletes this install's persisted device keys so the next `publicKey()`
+    /// mints fresh ones.
+    ///
+    /// Exists for the e2e harness, which enrols a new `install_id` on every run
+    /// and so has no use for a previous run's key. It is not cosmetic: macOS
+    /// grants a Keychain ACL to the exact binary that created an item, and an
+    /// unsigned CLI is a *different binary after every rebuild* — so reading a
+    /// key a previous build created raises a system prompt and blocks forever in
+    /// `SecItemCopyMatching` with nobody to click it. Creating a key never
+    /// prompts, so resetting first keeps the harness runnable unattended.
+    ///
+    /// The app must never call this: it would orphan the enrolled `install_id`
+    /// the backend has on file, and re-enrolment is not free.
+    public static func resetPersistedKeys() {
+        for account in [secureEnclaveKeyAccount, softwareKeyAccount] {
+            let query = withAccessGroup([
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: AuthCoreConfig.bundleID,
+                kSecAttrAccount as String: account,
+            ])
+            let status = SecItemDelete(query as CFDictionary)
+            if status != errSecSuccess, status != errSecItemNotFound {
+                logger.error("Could not reset device key \(account): \(status)")
+            }
+        }
+    }
+
     /// Adds `kSecAttrAccessGroup` only when the process configured one — an
     /// unentitled process (the harness CLI) must not send the attribute at all.
     private static func withAccessGroup(_ query: [String: Any]) -> [String: Any] {
