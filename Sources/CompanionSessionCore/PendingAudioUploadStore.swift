@@ -19,6 +19,19 @@ public struct PendingAudioUploadStore: Sendable {
     // MARK: - Types
 
     public struct PendingAudioUpload: Codable, Sendable {
+        /// Where an entry sits in the upload → note lifecycle.
+        ///
+        /// The audio is not deleted when the upload is accepted — the backend
+        /// can still fail to produce a note, and deleting on the upload ack is
+        /// what once turned a transient backend race into permanent loss. So a
+        /// successful upload moves the entry to `awaitingNote`, and it is only
+        /// removed (and the audio deleted) once the note exists. A backend
+        /// failure sends it back to `pendingUpload` to try again.
+        public enum State: String, Codable, Sendable {
+            case pendingUpload
+            case awaitingNote
+        }
+
         public let sessionId: String
         public let micPath: String
         public let systemPath: String?
@@ -33,6 +46,42 @@ public struct PendingAudioUploadStore: Sendable {
         /// recover the true rate from, so a legacy entry can only be guessed at,
         /// which is what the pre-#103 code did unconditionally.
         public var sampleRate: Double?
+
+        /// Lifecycle state. Decoded optional-with-default so entries written
+        /// before this field existed load as `pendingUpload` — the pre-change
+        /// behaviour — rather than failing to decode and dropping the upload.
+        public var state: State
+
+        enum CodingKeys: String, CodingKey {
+            case sessionId, micPath, systemPath, isEncrypted, createdAt, retryCount, sampleRate, state
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sessionId = try c.decode(String.self, forKey: .sessionId)
+            micPath = try c.decode(String.self, forKey: .micPath)
+            systemPath = try c.decodeIfPresent(String.self, forKey: .systemPath)
+            isEncrypted = try c.decode(Bool.self, forKey: .isEncrypted)
+            createdAt = try c.decode(Date.self, forKey: .createdAt)
+            retryCount = try c.decode(Int.self, forKey: .retryCount)
+            sampleRate = try c.decodeIfPresent(Double.self, forKey: .sampleRate)
+            state = try c.decodeIfPresent(State.self, forKey: .state) ?? .pendingUpload
+        }
+
+        init(
+            sessionId: String, micPath: String, systemPath: String?,
+            isEncrypted: Bool, createdAt: Date, retryCount: Int,
+            sampleRate: Double?, state: State
+        ) {
+            self.sessionId = sessionId
+            self.micPath = micPath
+            self.systemPath = systemPath
+            self.isEncrypted = isEncrypted
+            self.createdAt = createdAt
+            self.retryCount = retryCount
+            self.sampleRate = sampleRate
+            self.state = state
+        }
     }
 
     // MARK: - Configuration
@@ -103,9 +152,18 @@ public struct PendingAudioUploadStore: Sendable {
             isEncrypted: isEncrypted,
             createdAt: existing?.createdAt ?? Date(),
             retryCount: existing?.retryCount ?? 0,
-            sampleRate: sampleRate
+            sampleRate: sampleRate,
+            state: existing?.state ?? .pendingUpload
         )
         save(pending)
+    }
+
+    /// Move an entry to a new lifecycle state, preserving everything else.
+    /// No-op if the session isn't queued.
+    public func setState(sessionId: String, _ state: PendingAudioUpload.State) {
+        guard var entry = get(sessionId: sessionId), entry.state != state else { return }
+        entry.state = state
+        save(entry)
     }
 
     /// Encrypt and write a pending entry to disk.
@@ -179,6 +237,15 @@ public struct PendingAudioUploadStore: Sendable {
     public func incrementRetry(sessionId: String) {
         guard var pending = get(sessionId: sessionId) else { return }
         pending.retryCount += 1
+        save(pending)
+    }
+
+    /// Zero an entry's retry count. Used when a session is re-queued after a
+    /// backend transcription failure — the upload itself succeeded, so the
+    /// backoff ladder should start fresh rather than inherit the old count.
+    public func resetRetry(sessionId: String) {
+        guard var pending = get(sessionId: sessionId), pending.retryCount != 0 else { return }
+        pending.retryCount = 0
         save(pending)
     }
 

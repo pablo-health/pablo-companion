@@ -206,6 +206,22 @@ final class TranscriptionViewModel {
             cleanup: { entry in
                 RecordingCleaner.removeAudio(micPath: entry.micPath, systemPath: entry.systemPath)
             },
+            checkOutcome: { [apiClient] sessionId in
+                // Local audio is PHI; it is deleted only once the backend has
+                // produced the note, never merely because the upload was
+                // accepted. A transient backend failure that once deleted the
+                // audio on the ack left the session unrecoverable.
+                let session = try await apiClient.fetchSession(sessionId: sessionId)
+                switch session.status {
+                case .pendingReview, .finalized:
+                    return .noteReady
+                case .failed:
+                    return .failed
+                default:
+                    // transcribing / queued / processing / anything mid-flight
+                    return .stillWorking
+                }
+            },
             logSubsystem: AppConstants.appBundleID
         )
     }
@@ -235,9 +251,16 @@ final class TranscriptionViewModel {
     /// Drain due entries. Invoked on launch, on a 5-minute timer, and after
     /// orphan adoption.
     func retryPendingAudioUploads() async {
+        let coordinator = coordinator
         let drained = await coordinator.drain()
         if drained > 0 {
             logger.info("Drained \(drained) pending audio upload(s)")
+        }
+        // Same cadence: check whether any already-uploaded session now has its
+        // note, so the audio can finally be deleted (or re-queued on failure).
+        let confirmed = await coordinator.reconcile()
+        if confirmed > 0 {
+            logger.info("Confirmed \(confirmed) note(s); deleted local audio")
         }
         pendingUploadCount = audioStore.loadAll().count
     }
