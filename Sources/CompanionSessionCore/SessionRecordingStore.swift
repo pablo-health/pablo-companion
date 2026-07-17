@@ -1,7 +1,8 @@
-import AudioCaptureKit
-import CompanionSessionCore
 import Foundation
+
+#if canImport(os)
 import os
+#endif
 
 /// Persists the session → recording mapping so it survives app restarts.
 ///
@@ -13,27 +14,54 @@ import os
 ///
 /// Falls back to reading the legacy unencrypted `.json` file on first access
 /// and migrates it to the encrypted format.
-struct SessionRecordingStore {
+public struct SessionRecordingStore: Sendable {
     // MARK: - Types
 
-    struct RecordingEntry: Codable {
-        let recordingID: UUID
-        let fileURL: String
-        let duration: TimeInterval
-        let createdAt: Date
-        let isEncrypted: Bool
-        let checksum: String
-        let channelLayout: String
-        let micPCMFilePath: String?
-        let systemPCMFilePath: String?
+    public struct RecordingEntry: Codable, Sendable {
+        public let recordingID: UUID
+        public let fileURL: String
+        public let duration: TimeInterval
+        public let createdAt: Date
+        public let isEncrypted: Bool
+        public let checksum: String
+        public let channelLayout: String
+        public let micPCMFilePath: String?
+        public let systemPCMFilePath: String?
         /// Actual sample rate of the PCM sidecar files (may be < 48 kHz with Bluetooth HFP).
-        let sampleRate: Double?
+        public let sampleRate: Double?
+
+        /// Explicit because a public struct's memberwise init is synthesized
+        /// internal — the app builds entries from its own `LocalRecording`
+        /// model, which lives on the other side of the module line.
+        public init(
+            recordingID: UUID,
+            fileURL: String,
+            duration: TimeInterval,
+            createdAt: Date,
+            isEncrypted: Bool,
+            checksum: String,
+            channelLayout: String,
+            micPCMFilePath: String?,
+            systemPCMFilePath: String?,
+            sampleRate: Double?
+        ) {
+            self.recordingID = recordingID
+            self.fileURL = fileURL
+            self.duration = duration
+            self.createdAt = createdAt
+            self.isEncrypted = isEncrypted
+            self.checksum = checksum
+            self.channelLayout = channelLayout
+            self.micPCMFilePath = micPCMFilePath
+            self.systemPCMFilePath = systemPCMFilePath
+            self.sampleRate = sampleRate
+        }
     }
 
     // MARK: - Private
 
     /// User email for per-user encryption key scoping. Set after sign-in.
-    var userEmail: String?
+    public var userEmail: String?
 
     /// Builds the encryptor used to seal entries at rest.
     ///
@@ -45,26 +73,37 @@ struct SessionRecordingStore {
     /// Tests substitute a fake, which is what keeps them off the real Keychain.
     /// Returning nil means "no key" — callers must refuse to write rather than
     /// write something readable.
-    let makeEncryptor: SessionEncryptorFactory
+    public let makeEncryptor: SessionEncryptorFactory
 
     /// - Parameter makeEncryptor: has no default on purpose. A default of
     ///   `{ RecordingEncryptor(userEmail: $0) }` would name a type that conforms
     ///   to AudioCaptureKit's `CaptureEncryptor` — macOS-only — and re-couple
     ///   this store to it, which is precisely what the abstraction exists to
     ///   avoid. The app supplies the concrete encryptor at construction.
-    init(makeEncryptor: @escaping SessionEncryptorFactory) {
+    public init(
+        directory: URL,
+        makeEncryptor: @escaping SessionEncryptorFactory,
+        logSubsystem: String = "health.pablo.companion"
+    ) {
+        self.directory = directory
         self.makeEncryptor = makeEncryptor
+        #if canImport(os)
+        logger = Logger(subsystem: logSubsystem, category: "SessionRecordingStore")
+        #endif
     }
 
-    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "SessionRecordingStore")
+    /// Where the map lives. Injected rather than derived from Application
+    /// Support so tests get their own directory — and so this type stops naming
+    /// a macOS-specific location it has no business knowing.
+    private let directory: URL
+
+    #if canImport(os)
+    private let logger: Logger
+    #endif
 
     private var storeDirectory: URL {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        )[0]
-        let dir = appSupport.appendingPathComponent("PabloCompanion", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 
     private var encryptedStoreURL: URL {
@@ -80,7 +119,7 @@ struct SessionRecordingStore {
 
     /// Load the full session→recording map from disk (decrypting on read).
     /// On first call after upgrade, migrates the legacy plaintext JSON to encrypted format.
-    func loadAll() -> [String: RecordingEntry] {
+    public func loadAll() -> [String: RecordingEntry] {
         // Try encrypted store first
         if FileManager.default.fileExists(atPath: encryptedStoreURL.path) {
             return loadEncrypted() ?? [:]
@@ -93,7 +132,9 @@ struct SessionRecordingStore {
                 write(migrated)
                 // Remove legacy file after successful migration
                 try? FileManager.default.removeItem(at: legacyStoreURL)
+                #if canImport(os)
                 logger.info("Migrated session recording store from plaintext to encrypted")
+                #endif
             }
             return migrated
         }
@@ -102,16 +143,18 @@ struct SessionRecordingStore {
     }
 
     /// Save a single session→recording mapping, merging with existing entries.
-    func save(sessionId: String, entry: RecordingEntry) {
+    public func save(sessionId: String, entry: RecordingEntry) {
         var map = loadAll()
         map[sessionId] = entry
         write(map)
     }
 
     /// Persist the full map (encrypted with per-user AES-256-GCM key).
-    func write(_ map: [String: RecordingEntry]) {
+    public func write(_ map: [String: RecordingEntry]) {
         guard let encryptor = makeEncryptor(userEmail) else {
+            #if canImport(os)
             logger.error("Cannot save session recording store: encryption key unavailable")
+            #endif
             return
         }
         do {
@@ -121,7 +164,9 @@ struct SessionRecordingStore {
             let encrypted = try encryptor.encrypt(json)
             try encrypted.write(to: encryptedStoreURL, options: .atomic)
         } catch {
+            #if canImport(os)
             logger.error("Failed to save session recording map: \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -134,7 +179,9 @@ struct SessionRecordingStore {
             let json = try encryptor.decrypt(encrypted)
             return try JSONDecoder().decode([String: RecordingEntry].self, from: json)
         } catch {
+            #if canImport(os)
             logger.warning("Failed to decrypt session recording store: \(error.localizedDescription)")
+            #endif
             return nil
         }
     }
@@ -144,49 +191,12 @@ struct SessionRecordingStore {
             let data = try Data(contentsOf: legacyStoreURL)
             return try JSONDecoder().decode([String: RecordingEntry].self, from: data)
         } catch {
+            #if canImport(os)
             logger.warning("Failed to load legacy session recording map: \(error.localizedDescription)")
+            #endif
             return [:]
         }
     }
 
     // MARK: - Convenience
-
-    /// Create a RecordingEntry from a LocalRecording.
-    static func entry(from recording: LocalRecording) -> RecordingEntry {
-        RecordingEntry(
-            recordingID: recording.id,
-            fileURL: recording.fileURL.path,
-            duration: recording.duration,
-            createdAt: recording.createdAt,
-            isEncrypted: recording.isEncrypted,
-            checksum: recording.checksum,
-            channelLayout: recording.channelLayout.rawValue,
-            micPCMFilePath: recording.micPCMFileURL?.path,
-            systemPCMFilePath: recording.systemPCMFileURL?.path,
-            sampleRate: recording.sampleRate
-        )
-    }
-
-    /// Reconstruct a LocalRecording from a persisted entry, if files still exist on disk.
-    static func localRecording(from entry: RecordingEntry) -> LocalRecording? {
-        let fileURL = URL(fileURLWithPath: entry.fileURL)
-        // At minimum, either the main file or a PCM sidecar must exist
-        let mainExists = FileManager.default.fileExists(atPath: entry.fileURL)
-        let micExists = entry.micPCMFilePath.map { FileManager.default.fileExists(atPath: $0) } ?? false
-        guard mainExists || micExists else { return nil }
-
-        return LocalRecording(
-            id: entry.recordingID,
-            fileURL: fileURL,
-            duration: entry.duration,
-            createdAt: entry.createdAt,
-            isEncrypted: entry.isEncrypted,
-            checksum: entry.checksum,
-            channelLayout: ChannelLayout(rawValue: entry.channelLayout) ?? .blended,
-            micPCMFileURL: entry.micPCMFilePath.map { URL(fileURLWithPath: $0) },
-            systemPCMFileURL: entry.systemPCMFilePath.map { URL(fileURLWithPath: $0) },
-            sampleRate: entry.sampleRate ?? 48000,
-            isUploaded: false
-        )
-    }
 }
