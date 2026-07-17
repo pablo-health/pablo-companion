@@ -71,6 +71,7 @@ struct AudioUploadClientTests {
             sessionId: "sess-1",
             therapistAudioURL: fx.mic,
             clientAudioURL: fx.system,
+            sampleRate: 48000,
             onProgress: { _ in }
         )
 
@@ -105,7 +106,8 @@ struct AudioUploadClientTests {
         recorder.enqueue(status: 200, json: #"{"id":"s","status":"transcribing","queue":null,"message":null}"#)
 
         _ = try await makeClient().uploadAudio(
-            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil, onProgress: { _ in }
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil, sampleRate: 48000,
+            onProgress: { _ in }
         )
         let body = try bodyString(#require(recorder.captured.first).capturedBody)
         #expect(body.contains("name=\"therapist_audio\""))
@@ -123,7 +125,8 @@ struct AudioUploadClientTests {
         var caught: SessionUploadError?
         do {
             _ = try await makeClient().uploadAudio(
-                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil, onProgress: { _ in }
+                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil, sampleRate: 48000,
+                onProgress: { _ in }
             )
         } catch let error as SessionUploadError {
             caught = error
@@ -133,67 +136,256 @@ struct AudioUploadClientTests {
         #expect(caught?.message == "session not ready")
     }
 
-    // MARK: - uploadWithSelfHeal
+    // MARK: - uploadAudioViaSignedURL / uploadWithSelfHeal (signed-URL path)
 
-    @Test("INVALID_STATUS heals: PATCH to recording_complete, then a second upload succeeds")
-    func selfHealRecoversInvalidStatus() async throws {
+    /// The canned `…/upload-audio/init` body: two signed PUT recipes to a fake
+    /// storage host, each carrying the signed Content-Type +
+    /// x-goog-content-length-range the client must replay verbatim.
+    private static let therapistPutURL = "https://storage.test/signed/s/therapist.pcm?sig=t"
+    private static let clientPutURL = "https://storage.test/signed/s/client.pcm?sig=c"
+    private static let initJSON = """
+    {
+      "session_id": "s",
+      "therapist": {
+        "upload": {
+          "url": "\(therapistPutURL)",
+          "method": "PUT",
+          "headers": {"Content-Type": "application/octet-stream", "x-goog-content-length-range": "0,1048576000"},
+          "fields": {}
+        },
+        "gcs_path": "signed/s/therapist.pcm"
+      },
+      "client": {
+        "upload": {
+          "url": "\(clientPutURL)",
+          "method": "PUT",
+          "headers": {"Content-Type": "application/octet-stream", "x-goog-content-length-range": "0,1048576000"},
+          "fields": {}
+        },
+        "gcs_path": "signed/s/client.pcm"
+      },
+      "max_bytes": 1048576000
+    }
+    """
+
+    @Test("Signed-URL upload: init → PUT each channel (correct headers, streamed) → finalize")
+    func signedUploadHappyPath() async throws {
         let fx = try Fixtures()
         defer { fx.cleanup() }
         let recorder = StubURLProtocol.install()
         defer { StubURLProtocol.reset() }
-        // 1st upload → 400 INVALID_STATUS, PATCH → 200, 2nd upload → 200.
+        recorder.enqueue(status: 201, json: Self.initJSON)
+        recorder.enqueue(status: 200, json: "") // therapist PUT (GCS returns empty body)
+        recorder.enqueue(status: 200, json: "") // client PUT
+        recorder.enqueue(
+            status: 202,
+            json: #"{"id":"s","status":"transcribing","provider":"assemblyai","queue":"","message":"queued"}"#
+        )
+
+        let response = try await makeClient().uploadWithSelfHeal(
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 48000
+        )
+        #expect(response.status == "transcribing")
+
+        // init → PUT therapist → PUT client → finalize, in order.
+        #expect(recorder.captured.count == 4)
+
+        let initReq = recorder.captured[0]
+        #expect(initReq.url?.path == "/api/sessions/s/upload-audio/init")
+        #expect(initReq.httpMethod == "POST")
+        #expect(initReq.value(forHTTPHeaderField: "Authorization") == "Bearer test-bearer")
+        #expect(initReq.value(forHTTPHeaderField: "DPoP") == "proof-abc")
+
+        let therapistPut = recorder.captured[1]
+        #expect(therapistPut.url?.absoluteString == Self.therapistPutURL)
+        #expect(therapistPut.httpMethod == "PUT")
+        #expect(therapistPut.value(forHTTPHeaderField: "Content-Type") == "application/octet-stream")
+        #expect(therapistPut.value(forHTTPHeaderField: "x-goog-content-length-range") == "0,1048576000")
+        // The signed URL is the auth: no Bearer, no DPoP on the storage PUT.
+        #expect(therapistPut.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(therapistPut.value(forHTTPHeaderField: "DPoP") == nil)
+        // Streamed from disk as a real WAV (RIFF header prepended to the PCM).
+        let therapistBody = bodyString(therapistPut.capturedBody)
+        #expect(therapistBody.hasPrefix("RIFF"))
+        #expect(therapistBody.contains("mic-bytes"))
+
+        let clientPut = recorder.captured[2]
+        #expect(clientPut.url?.absoluteString == Self.clientPutURL)
+        #expect(clientPut.httpMethod == "PUT")
+        #expect(clientPut.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(bodyString(clientPut.capturedBody).contains("system-bytes"))
+
+        let finalizeReq = recorder.captured[3]
+        #expect(finalizeReq.url?.path == "/api/sessions/s/upload-audio/finalize")
+        #expect(finalizeReq.httpMethod == "POST")
+        #expect(finalizeReq.value(forHTTPHeaderField: "Authorization") == "Bearer test-bearer")
+        #expect(finalizeReq.value(forHTTPHeaderField: "DPoP") == "proof-abc")
+    }
+
+    @Test("Signed-URL: the WAV header carries the passed sample rate, not a hardcoded 48 kHz")
+    func signedUploadStampsPassedSampleRate() async throws {
+        let fx = try Fixtures()
+        defer { fx.cleanup() }
+        let recorder = StubURLProtocol.install()
+        defer { StubURLProtocol.reset() }
+        recorder.enqueue(status: 201, json: Self.initJSON)
+        recorder.enqueue(status: 200, json: "") // therapist PUT
+        recorder.enqueue(status: 200, json: "") // client PUT
+        recorder.enqueue(
+            status: 202,
+            json: #"{"id":"s","status":"transcribing","provider":"assemblyai","queue":"","message":"queued"}"#
+        )
+
+        // A Bluetooth-HFP-style negotiated rate, deliberately not 48 kHz — this
+        // is exactly the mismatch the old hardcoded default mislabeled.
+        _ = try await makeClient().uploadWithSelfHeal(
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 24000
+        )
+
+        // WAV sample rate is a little-endian UInt32 at byte offset 24.
+        let body = try #require(recorder.captured[1].capturedBody)
+        #expect(body.count >= 28)
+        let sr = body.subdata(in: 24 ..< 28)
+        let rate = UInt32(sr[0]) | (UInt32(sr[1]) << 8) | (UInt32(sr[2]) << 16) | (UInt32(sr[3]) << 24)
+        #expect(rate == 24000)
+    }
+
+    @Test("Signed-URL finalize INVALID_STATUS heals: PATCH then re-finalize, no re-upload")
+    func signedUploadHealsInvalidStatus() async throws {
+        let fx = try Fixtures()
+        defer { fx.cleanup() }
+        let recorder = StubURLProtocol.install()
+        defer { StubURLProtocol.reset() }
+        recorder.enqueue(status: 201, json: Self.initJSON)
+        recorder.enqueue(status: 200, json: "") // therapist PUT
+        recorder.enqueue(status: 200, json: "") // client PUT
         recorder.enqueue(status: 400, json: #"{"error":{"code":"INVALID_STATUS","message":"still recording"}}"#)
-        recorder.enqueue(status: 200, json: "{}")
+        recorder.enqueue(status: 200, json: "{}") // PATCH status
         recorder.enqueue(status: 200, json: #"{"id":"s","status":"transcribing","queue":null,"message":"healed"}"#)
 
         let response = try await makeClient().uploadWithSelfHeal(
-            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 48000
         )
         #expect(response.message == "healed")
 
-        // Three requests: upload, status PATCH, upload.
-        #expect(recorder.captured.count == 3)
-        #expect(recorder.captured[0].url?.path == "/api/sessions/s/upload-audio")
-        let patch = recorder.captured[1]
+        // init, PUT, PUT, finalize(400), PATCH, finalize(200) — audio uploaded once.
+        #expect(recorder.captured.count == 6)
+        #expect(recorder.captured[1].url?.absoluteString == Self.therapistPutURL)
+        #expect(recorder.captured[2].url?.absoluteString == Self.clientPutURL)
+        #expect(recorder.captured[3].url?.path == "/api/sessions/s/upload-audio/finalize")
+        let patch = recorder.captured[4]
         #expect(patch.url?.path == "/api/sessions/s/status")
         #expect(patch.httpMethod == "PATCH")
         #expect(bodyString(patch.capturedBody).contains("recording_complete"))
-        #expect(recorder.captured[2].url?.path == "/api/sessions/s/upload-audio")
+        #expect(recorder.captured[5].url?.path == "/api/sessions/s/upload-audio/finalize")
     }
 
-    @Test("A non-INVALID_STATUS error propagates without a self-heal PATCH")
-    func selfHealDoesNotSwallowOtherErrors() async throws {
+    @Test("Signed-URL: a GCS PUT non-2xx surfaces as SessionUploadError, no finalize")
+    func signedUploadGcsPutFailurePropagates() async throws {
         let fx = try Fixtures()
         defer { fx.cleanup() }
         let recorder = StubURLProtocol.install()
         defer { StubURLProtocol.reset() }
-        recorder.enqueue(status: 403, json: #"{"error":{"code":"FORBIDDEN","message":"nope"}}"#)
+        recorder.enqueue(status: 201, json: Self.initJSON)
+        // GCS rejects the PUT (e.g. signature mismatch) with an XML body.
+        recorder.enqueue(
+            status: 403,
+            json: "<?xml version='1.0'?><Error><Code>SignatureDoesNotMatch</Code></Error>"
+        )
 
         var caught: SessionUploadError?
         do {
             _ = try await makeClient().uploadWithSelfHeal(
-                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil
+                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+                sampleRate: 48000
             )
         } catch let error as SessionUploadError {
             caught = error
         }
         #expect(caught?.statusCode == 403)
-        // Only the single failed upload — no PATCH, no retry.
-        #expect(recorder.captured.count == 1)
+        #expect(caught?.message?.contains("SignatureDoesNotMatch") == true)
+        // init + the failed therapist PUT only — no client PUT, no finalize.
+        #expect(recorder.captured.count == 2)
     }
 
-    @Test("A first-try success does not PATCH or retry")
-    func selfHealNoOpOnSuccess() async throws {
+    @Test("Signed-URL: a non-INVALID_STATUS finalize error propagates without a PATCH")
+    func signedUploadFinalizeErrorPropagates() async throws {
         let fx = try Fixtures()
         defer { fx.cleanup() }
         let recorder = StubURLProtocol.install()
         defer { StubURLProtocol.reset() }
-        recorder.enqueue(status: 200, json: #"{"id":"s","status":"transcribing","queue":null,"message":"ok"}"#)
+        recorder.enqueue(status: 201, json: Self.initJSON)
+        recorder.enqueue(status: 200, json: "")
+        recorder.enqueue(status: 200, json: "")
+        recorder.enqueue(status: 403, json: #"{"error":{"code":"FORBIDDEN","message":"nope"}}"#)
 
-        _ = try await makeClient().uploadWithSelfHeal(
-            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil
-        )
-        #expect(recorder.captured.count == 1)
+        var caught: SessionUploadError?
+        do {
+            _ = try await makeClient().uploadWithSelfHeal(
+                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+                sampleRate: 48000
+            )
+        } catch let error as SessionUploadError {
+            caught = error
+        }
+        #expect(caught?.statusCode == 403)
+        // init, PUT, PUT, finalize(403) — no PATCH, no re-finalize.
+        #expect(recorder.captured.count == 4)
+    }
+
+    @Test("Signed-URL: missing client audio fails before any network call")
+    func signedUploadRequiresClientChannel() async throws {
+        let fx = try Fixtures()
+        defer { fx.cleanup() }
+        let recorder = StubURLProtocol.install()
+        defer { StubURLProtocol.reset() }
+
+        var caught: SessionUploadError?
+        do {
+            _ = try await makeClient().uploadWithSelfHeal(
+                sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: nil,
+                sampleRate: 48000
+            )
+        } catch let error as SessionUploadError {
+            caught = error
+        }
+        #expect(caught != nil)
+        #expect(recorder.captured.isEmpty)
+    }
+
+    // MARK: - wavFileForUpload
+
+    @Test("wavFileForUpload wraps headerless PCM into a WAV temp file, streamed from disk")
+    func wavFileWrapsRawPcm() throws {
+        let fx = try Fixtures()
+        defer { fx.cleanup() }
+        let result = try AudioUploadClient.wavFileForUpload(source: fx.mic, sampleRate: 48000, channels: 1)
+        defer { if result.isTemp { try? FileManager.default.removeItem(at: result.url) } }
+
+        #expect(result.isTemp)
+        let bytes = try Data(contentsOf: result.url)
+        #expect(bytes.prefix(4) == Data("RIFF".utf8))
+        // 44-byte header + the 9 raw PCM bytes ("mic-bytes").
+        #expect(bytes.count == 44 + 9)
+        #expect(bodyString(bytes).contains("mic-bytes"))
+    }
+
+    @Test("wavFileForUpload passes an already-RIFF source through untouched")
+    func wavFilePassesThroughExistingWav() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("csc-wav-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let wav = dir.appendingPathComponent("already.wav")
+        let wavBytes = WAVEncoder.wrap(pcm: Data("pcm".utf8), sampleRate: 48000, channels: 1)
+        try wavBytes.write(to: wav)
+
+        let result = try AudioUploadClient.wavFileForUpload(source: wav, sampleRate: 48000, channels: 1)
+        #expect(!result.isTemp)
+        #expect(result.url == wav)
     }
 
     // MARK: - updateSessionStatus
@@ -213,157 +405,4 @@ struct AudioUploadClientTests {
         #expect(bodyString(sent.capturedBody).contains("recording_complete"))
         #expect(binding.count == 1)
     }
-}
-
-// MARK: - Test doubles
-
-/// Decodes request-body bytes for substring assertions. Uses Latin-1 (never
-/// fails, maps every byte 1:1) because the multipart body now carries binary
-/// WAV headers — a UTF-8 decode would return nil on those bytes.
-private func bodyString(_ data: Data) -> String {
-    String(data: data, encoding: .isoLatin1) ?? ""
-}
-
-/// Records that the binding closure ran (thread-safe).
-final class BindingRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var calls = 0
-    func record(_: URLRequest) {
-        lock.lock()
-        calls += 1
-        lock.unlock()
-    }
-
-    var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return calls
-    }
-}
-
-/// A captured request with its body materialized (URLProtocol delivers the body
-/// via `httpBodyStream`, so it is drained once at intercept time).
-struct CapturedRequest {
-    let url: URL?
-    let httpMethod: String?
-    let capturedBody: Data
-    private let headers: [String: String]
-    func value(forHTTPHeaderField field: String) -> String? {
-        headers[field]
-    }
-
-    init(_ request: URLRequest) {
-        url = request.url
-        httpMethod = request.httpMethod
-        headers = request.allHTTPHeaderFields ?? [:]
-        if let body = request.httpBody {
-            capturedBody = body
-        } else if let stream = request.httpBodyStream {
-            capturedBody = Self.drain(stream)
-        } else {
-            capturedBody = Data()
-        }
-    }
-
-    private static func drain(_ stream: InputStream) -> Data {
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let size = 4096
-        var buffer = [UInt8](repeating: 0, count: size)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: size)
-            if read <= 0 { break }
-            data.append(buffer, count: read)
-        }
-        return data
-    }
-}
-
-/// A URLProtocol stub that returns queued responses in order and records every
-/// request it intercepts. Install per test; the owning `.serialized` suite keeps
-/// the shared static state race-free.
-class StubURLProtocol: URLProtocol, @unchecked Sendable {
-    private struct Canned {
-        let status: Int
-        let body: Data
-    }
-
-    private static let lock = NSLock()
-    // Lock-protected shared state; `nonisolated(unsafe)` opts out of the Swift 6
-    // global-actor check because `lock` provides the synchronization.
-    nonisolated(unsafe) private static var responses: [Canned] = []
-    nonisolated(unsafe) private static var index = 0
-    nonisolated(unsafe) private static var recorder: StubURLProtocol.Recorder?
-
-    final class Recorder: @unchecked Sendable {
-        private let lock = NSLock()
-        private var _captured: [CapturedRequest] = []
-        var captured: [CapturedRequest] {
-            lock.lock()
-            defer { lock.unlock() }
-            return _captured
-        }
-
-        func add(_ request: URLRequest) {
-            lock.lock()
-            _captured.append(CapturedRequest(request))
-            lock.unlock()
-        }
-
-        func enqueue(status: Int, json: String) {
-            StubURLProtocol.lock.lock()
-            StubURLProtocol.responses.append(Canned(status: status, body: Data(json.utf8)))
-            StubURLProtocol.lock.unlock()
-        }
-    }
-
-    static func install() -> Recorder {
-        lock.lock()
-        responses = []
-        index = 0
-        let recorder = Recorder()
-        self.recorder = recorder
-        lock.unlock()
-        return recorder
-    }
-
-    static func reset() {
-        lock.lock()
-        responses = []
-        index = 0
-        recorder = nil
-        lock.unlock()
-    }
-
-    override class func canInit(with _: URLRequest) -> Bool {
-        true
-    }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
-
-    override func startLoading() {
-        Self.lock.lock()
-        Self.recorder?.add(request)
-        let canned = Self.index < Self.responses.count ? Self.responses[Self.index] : nil
-        Self.index += 1
-        Self.lock.unlock()
-
-        guard let canned, let url = request.url,
-              let response = HTTPURLResponse(
-                  url: url, statusCode: canned.status, httpVersion: "HTTP/1.1",
-                  headerFields: ["Content-Type": "application/json"]
-              )
-        else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: canned.body)
-        client?.urlProtocolDidFinishLoading(self)
-    }
-
-    override func stopLoading() {}
 }
