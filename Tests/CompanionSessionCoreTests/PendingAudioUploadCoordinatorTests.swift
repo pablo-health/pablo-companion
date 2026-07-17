@@ -112,7 +112,7 @@ struct PendingAudioUploadCoordinatorTests {
         let store = Self.makeStore()
         Self.queue(store, "session-E")
         let cleaned = Box<[String]>([])
-        let c = makeCoordinator(store: store, cleanup: { cleaned.value.append($0) })
+        let c = makeCoordinator(store: store, cleanup: { cleaned.value.append($0.sessionId) })
 
         let count = await c.drain()
 
@@ -130,7 +130,7 @@ struct PendingAudioUploadCoordinatorTests {
         let c = makeCoordinator(
             store: store,
             upload: { _ in throw CoordinatorTestError.uploadFailed },
-            cleanup: { cleaned.value.append($0) }
+            cleanup: { cleaned.value.append($0.sessionId) }
         )
 
         let count = await c.drain()
@@ -185,6 +185,29 @@ struct PendingAudioUploadCoordinatorTests {
         _ = await c.forceDrain()
 
         #expect(attempted.value == ["session-I"])
+    }
+
+    @Test func cleanupReceivesThePathsNotJustAnID() async {
+        // The entry is dropped before cleanup runs, so handing cleanup only an
+        // id means anything looking the paths back up finds nothing and deletes
+        // nothing — silently, with every other test still green.
+        let store = Self.makeStore()
+        store.add(
+            sessionId: "session-K",
+            micPath: "/tmp/session-K-mic.pcm",
+            systemPath: "/tmp/session-K-sys.pcm",
+            isEncrypted: false,
+            sampleRate: 48000
+        )
+        let paths = Box<[String?]>([])
+        let c = makeCoordinator(store: store, cleanup: { entry in
+            paths.value.append(entry.micPath)
+            paths.value.append(entry.systemPath)
+        })
+
+        _ = await c.drain()
+
+        #expect(paths.value == ["/tmp/session-K-mic.pcm", "/tmp/session-K-sys.pcm"])
     }
 
     @Test func drainingAnEmptyQueueDoesNothing() async {

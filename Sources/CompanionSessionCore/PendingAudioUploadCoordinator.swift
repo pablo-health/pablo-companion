@@ -37,7 +37,12 @@ public struct PendingAudioUploadCoordinator: Sendable {
     /// A failure here must not fail the upload: the bytes are safely on the
     /// backend, and leaving files behind is recoverable where losing an upload
     /// is not.
-    public typealias CleanupAttempt = @Sendable (_ sessionId: String) -> Void
+    /// Takes the entry, not an id: the queue entry is dropped before cleanup
+    /// runs, so anything that tried to look the paths back up by id would find
+    /// nothing and silently delete nothing.
+    public typealias CleanupAttempt = @Sendable (
+        _ entry: PendingAudioUploadStore.PendingAudioUpload
+    ) -> Void
 
     /// Backoff policy. Matches the Windows `TranscriptionViewModel` constants —
     /// both platforms drain the same queue shape against the same backend, so
@@ -114,9 +119,17 @@ public struct PendingAudioUploadCoordinator: Sendable {
     /// Attempt every entry regardless of backoff or the retry cap. Bound to the
     /// user-initiated "Retry now" affordance, where waiting out a ladder the
     /// user is explicitly overriding would be wrong.
+    ///
+    /// - Parameter only: restrict to one session. The just-finished-recording
+    ///   path uses this so it runs the same attempt-and-cleanup as the retry
+    ///   loop rather than a parallel copy that could drift from it — which it
+    ///   previously was, and which is how the live path ended up not deleting
+    ///   the audio it had just uploaded.
     @discardableResult
-    public func forceDrain() async -> Int {
-        await drain(entries: store.loadAll())
+    public func forceDrain(only sessionId: String? = nil) async -> Int {
+        let all = store.loadAll()
+        let entries = sessionId.map { id in all.filter { $0.sessionId == id } } ?? all
+        return await drain(entries: entries)
     }
 
     private func drain(entries: [PendingAudioUploadStore.PendingAudioUpload]) async -> Int {
@@ -131,7 +144,7 @@ public struct PendingAudioUploadCoordinator: Sendable {
                 // throws can never leave a session queued for a re-upload the
                 // backend has already accepted.
                 store.remove(sessionId: entry.sessionId)
-                cleanup(entry.sessionId)
+                cleanup(entry)
             } catch {
                 store.incrementRetry(sessionId: entry.sessionId)
                 #if canImport(os)

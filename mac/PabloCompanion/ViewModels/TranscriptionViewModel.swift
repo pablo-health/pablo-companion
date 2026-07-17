@@ -179,125 +179,78 @@ final class TranscriptionViewModel {
         states[recording.id] = .running
         logger.info("Uploading audio to backend for server-side transcription")
 
-        let succeeded = await attemptAudioUpload(
-            sessionId: sessionId,
-            micPath: micURL.path,
-            systemPath: recording.systemPCMFileURL?.path,
-            isEncrypted: recording.isEncrypted,
-            sampleRate: recording.sampleRate
-        )
+        // Same drain the retry loop uses, so the live path cannot diverge from
+        // it — and so a successful upload here deletes the audio too.
+        let succeeded = await coordinator.forceDrain(only: sessionId) == 1
 
         if succeeded {
-            audioStore.remove(sessionId: sessionId)
             states[recording.id] = .done(transcript: "")
         } else {
-            audioStore.incrementRetry(sessionId: sessionId)
             states[recording.id] = .failed(message: "Audio upload failed — will retry later")
         }
+        pendingUploadCount = audioStore.loadAll().count
     }
 
-    /// Single upload attempt with INVALID_STATUS self-heal. Returns true on
-    /// success. Does NOT touch the pending store — callers manage that.
-    /// Path-based so retry flows can call it from `PendingAudioUpload` entries.
-    private func attemptAudioUpload(
-        sessionId: String,
-        micPath: String,
-        systemPath: String?,
-        isEncrypted: Bool,
-        sampleRate: Double
-    ) async -> Bool {
-        do {
-            let pcm = try decryptPCMIfNeeded(
-                micPath: micPath,
-                systemPath: systemPath,
-                isEncrypted: isEncrypted
-            )
-            defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
-            let therapistURL = URL(fileURLWithPath: pcm.micPath)
-            let clientURL = pcm.systemPath.map { URL(fileURLWithPath: $0) }
-
-            // Upload + the INVALID_STATUS self-heal both live in
-            // CompanionSessionCore's AudioUploadClient, so this path is exercised
-            // verbatim by the headless e2e harness.
-            let response = try await apiClient.uploadAudioWithSelfHeal(
-                sessionId: sessionId,
-                therapistAudioURL: therapistURL,
-                clientAudioURL: clientURL,
-                // The capture rate is negotiated at runtime (Bluetooth HFP can
-                // drop the mic to 8/16/24 kHz), so stamp the WAV with the rate
-                // RecordingService actually detected — not a hardcoded 48 kHz,
-                // which would mislabel the audio and make transcription wrong.
-                sampleRate: Int(sampleRate),
-                onProgress: { _ in }
-            )
-            logger.info("Audio upload succeeded: \(response.message ?? "ok")")
-            return true
-        } catch {
-            logger.error("Audio upload failed: \(error.localizedDescription)")
-            return false
-        }
+    /// The tested drain: backoff ladder, retry cap, and cleanup after a
+    /// confirmed upload all live in `CompanionSessionCore` so the harness and
+    /// `swift test` can drive them without launching this app.
+    private var coordinator: PendingAudioUploadCoordinator {
+        PendingAudioUploadCoordinator(
+            store: audioStore,
+            policy: .init(
+                baseBackoffSeconds: audioBaseBackoffSeconds,
+                maxBackoffSeconds: audioMaxBackoffSeconds,
+                maxAutoRetries: audioMaxAutoRetries
+            ),
+            upload: { entry in
+                try await self.upload(entry)
+            },
+            cleanup: { entry in
+                RecordingCleaner.removeAudio(micPath: entry.micPath, systemPath: entry.systemPath)
+            },
+            logSubsystem: AppConstants.appBundleID
+        )
     }
 
-    /// Retry every queued audio upload with exponential backoff. Mirrors
-    /// `retryPendingUploads` (transcript text) but operates on the audio
-    /// pending store. Invoked on app launch and after orphan adoption.
+    /// One upload attempt. Throws on failure so the coordinator can count the
+    /// retry; the `INVALID_STATUS` self-heal lives in `AudioUploadClient`.
+    private func upload(_ entry: PendingAudioUploadStore.PendingAudioUpload) async throws {
+        let pcm = try decryptPCMIfNeeded(
+            micPath: entry.micPath,
+            systemPath: entry.systemPath,
+            isEncrypted: entry.isEncrypted
+        )
+        defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
+
+        _ = try await apiClient.uploadAudioWithSelfHeal(
+            sessionId: entry.sessionId,
+            therapistAudioURL: URL(fileURLWithPath: pcm.micPath),
+            clientAudioURL: pcm.systemPath.map { URL(fileURLWithPath: $0) },
+            // The capture rate is negotiated at runtime (Bluetooth HFP can drop
+            // the mic to 8/16/24 kHz), so stamp the WAV with the rate the
+            // capture actually used, not a hardcoded 48 kHz.
+            sampleRate: Int(entry.sampleRate ?? Self.fallbackSampleRate),
+            onProgress: { _ in }
+        )
+    }
+
+    /// Drain due entries. Invoked on launch, on a 5-minute timer, and after
+    /// orphan adoption.
     func retryPendingAudioUploads() async {
-        let pending = audioStore.loadAll()
-        guard !pending.isEmpty else { return }
-        logger.info("Retrying \(pending.count) pending audio upload(s)")
-
-        for item in pending {
-            if item.retryCount >= audioMaxAutoRetries {
-                logger.info("Skip audio session=\(item.sessionId) retry=\(item.retryCount) (max retries exhausted)")
-                continue
-            }
-            if item.retryCount > 0 {
-                let backoff = min(
-                    audioMaxBackoffSeconds,
-                    audioBaseBackoffSeconds * pow(2.0, Double(item.retryCount - 1))
-                )
-                if Date().timeIntervalSince(item.createdAt) < backoff {
-                    logger.info("Skip audio session=\(item.sessionId) retry=\(item.retryCount) (backoff)")
-                    continue
-                }
-            }
-
-            let ok = await attemptAudioUpload(
-                sessionId: item.sessionId,
-                micPath: item.micPath,
-                systemPath: item.systemPath,
-                isEncrypted: item.isEncrypted,
-                sampleRate: item.sampleRate ?? Self.fallbackSampleRate
-            )
-            if ok {
-                audioStore.remove(sessionId: item.sessionId)
-            } else {
-                audioStore.incrementRetry(sessionId: item.sessionId)
-            }
+        let drained = await coordinator.drain()
+        if drained > 0 {
+            logger.info("Drained \(drained) pending audio upload(s)")
         }
+        pendingUploadCount = audioStore.loadAll().count
     }
 
-    /// Force-retry every queued audio upload immediately, ignoring backoff and
-    /// the max-retries cap. Bound to the Settings "Retry now" entry.
+    /// Retry everything now, ignoring backoff and the retry cap. Bound to the
+    /// Settings "Retry now" entry, where waiting out a ladder the user just
+    /// overrode would be wrong.
     func forceRetryPendingAudioUploads() async {
-        let pending = audioStore.loadAll()
-        guard !pending.isEmpty else { return }
-        logger.info("Force-retrying \(pending.count) pending audio upload(s)")
-
-        for item in pending {
-            let ok = await attemptAudioUpload(
-                sessionId: item.sessionId,
-                micPath: item.micPath,
-                systemPath: item.systemPath,
-                isEncrypted: item.isEncrypted,
-                sampleRate: item.sampleRate ?? Self.fallbackSampleRate
-            )
-            if ok {
-                audioStore.remove(sessionId: item.sessionId)
-            } else {
-                audioStore.incrementRetry(sessionId: item.sessionId)
-            }
-        }
+        let drained = await coordinator.forceDrain()
+        logger.info("Force-drained \(drained) pending audio upload(s)")
+        pendingUploadCount = audioStore.loadAll().count
     }
 
     /// Enqueue an audio upload for a session whose recording lives on disk
