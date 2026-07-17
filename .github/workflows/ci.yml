@@ -80,6 +80,10 @@ jobs:
 
       - name: Build & Test
         run: |
+          # xcodebuild is piped into xcpretty, and a pipeline exits with the
+          # last command's status — without pipefail, xcpretty's 0 hides an
+          # xcodebuild failure and this job reports green on a broken build.
+          set -o pipefail
           DISABLE_PKGS=${{ steps.spm-cache.outputs.cache-hit == 'true' && '-disableAutomaticPackageResolution' || '' }}
           xcodebuild -project mac/PabloCompanion.xcodeproj \
             -scheme Pablo \
