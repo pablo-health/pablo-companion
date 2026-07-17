@@ -115,9 +115,23 @@ struct KeychainManager: Sendable {
         readKeyData(account: encryptionKeyAccount(forUser: email))
     }
 
+    /// Serialises get-or-create.
+    ///
+    /// Without it, two concurrent callers both miss the read, both generate, and
+    /// the second overwrites the first — so anything already sealed with the
+    /// first key is unreadable forever. That is worse than a failed lookup: the
+    /// recording is on disk and no key opens it.
+    ///
+    /// Reachable in production: RecordingEncryptor is constructed per store
+    /// operation, and the queue drains concurrently with a session finishing.
+    private static let keyCreationLock = NSLock()
+
     /// Returns the existing encryption key for the user, or generates a new 32-byte AES-256 key.
     /// On first call after upgrade, migrates the legacy device-wide key to the user's account.
     static func getOrCreateEncryptionKey(forUser email: String) -> Data? {
+        keyCreationLock.lock()
+        defer { keyCreationLock.unlock() }
+
         let account = encryptionKeyAccount(forUser: email)
 
         // 1. Check for existing per-user key
