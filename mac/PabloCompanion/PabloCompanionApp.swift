@@ -17,15 +17,25 @@ struct PabloCompanionApp: App {
     /// test-mac` boots this app for real. Without a guard, every test run starts
     /// Sparkle and raises a screen-recording prompt on the developer's machine —
     /// side effects a unit test has no business causing.
-    static var isRunningTests: Bool {
+    nonisolated static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
     init() {
         // Point the device-auth core at the app's keychain identity before
         // anything touches DeviceKey (sign-in enrollment, request signing).
-        AuthCoreConfig.bundleID = AppConstants.appBundleID
-        AuthCoreConfig.keychainAccessGroup = AppConstants.keychainAccessGroup
+        // Under test, own a separate Keychain namespace rather than the real
+        // install's. Set here, once, because AuthCoreConfig is global mutable
+        // state — a suite that sets it in its own `init` leaks into every other
+        // suite running in parallel, which is exactly how DeviceEnrollmentTests
+        // started failing when DPoPProofTests began resetting its device key.
+        if Self.isRunningTests {
+            AuthCoreConfig.bundleID = "health.pablo.companion.tests"
+            AuthCoreConfig.keychainAccessGroup = nil
+        } else {
+            AuthCoreConfig.bundleID = AppConstants.appBundleID
+            AuthCoreConfig.keychainAccessGroup = AppConstants.keychainAccessGroup
+        }
         updaterController = SPUStandardUpdaterController(
             startingUpdater: !Self.isRunningTests,
             updaterDelegate: nil,

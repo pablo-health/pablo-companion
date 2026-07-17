@@ -39,8 +39,8 @@ enum TranscriptionState: Sendable {
 /// Flow:
 ///   1. `transcribeIfNeeded(_:)` — checks auto-transcribe setting, uploads audio
 ///   2. Uploads mic + system audio to the backend for server-side transcription
-///   3. On upload failure: saves encrypted pending file (retry queue)
-///   4. `retryPendingUploads()` — called on app launch to flush the queue
+///   3. On upload failure: the entry stays queued in `PendingAudioUploadStore`
+///   4. `retryPendingAudioUploads()` — drains it on launch and every 5 minutes
 @MainActor
 @Observable
 final class TranscriptionViewModel {
@@ -72,7 +72,6 @@ final class TranscriptionViewModel {
     // MARK: - Private
 
     private var apiClient = APIClient()
-    private var store = PendingTranscriptStore(makeEncryptor: { RecordingEncryptor(userEmail: $0) })
     private var audioStore = PendingAudioUploadStore(
         directory: AppPaths.pendingAudioUploads,
         makeEncryptor: { RecordingEncryptor(userEmail: $0) },
@@ -83,13 +82,12 @@ final class TranscriptionViewModel {
     /// The signed-in user's email, used to scope encryption keys.
     var userEmail: String? {
         didSet {
-            store.userEmail = userEmail
             audioStore.userEmail = userEmail
         }
     }
 
     // Exponential backoff for audio-upload retries — parity with Windows
-    // (TranscriptionViewModel.cs:30-32) and with `retryPendingUploads` below.
+    // (TranscriptionViewModel.cs:30-32).
     private let audioBaseBackoffSeconds: Double = 300
     private let audioMaxBackoffSeconds: Double = 14400
     private let audioMaxAutoRetries = 10
@@ -275,86 +273,6 @@ final class TranscriptionViewModel {
         )
     }
 
-    /// Retry all pending transcripts that failed to upload.
-    /// Uses exponential backoff: skips items that have been retried too many times recently.
-    /// After 10 retries, stops auto-retrying (manual "Retry Now" still works).
-    func retryPendingUploads() async {
-        let pending = store.loadAll()
-        pendingUploadCount = pending.count
-        guard !pending.isEmpty else { return }
-        logger.info("Retrying \(pending.count) pending transcript uploads")
-
-        for var item in pending {
-            // Exponential backoff: skip items past their retry window
-            if item.retryCount > 10 { continue }
-            if item.retryCount > 0 {
-                let backoffSeconds = min(14400, 300 * Int(pow(2.0, Double(item.retryCount - 1))))
-                let elapsed = Date().timeIntervalSince(item.createdAt)
-                if elapsed < Double(backoffSeconds) { continue }
-            }
-
-            do {
-                try await postTranscript(sessionID: item.sessionID, text: item.text)
-                store.delete(recordingID: item.recordingID)
-                pendingUploadCount = max(0, pendingUploadCount - 1)
-                if case let .pendingUpload(text) = states[item.recordingID] {
-                    states[item.recordingID] = .done(transcript: text)
-                }
-                logger.info("Retry upload succeeded")
-            } catch {
-                item.retryCount += 1
-                store.save(item)
-                logger.warning("Retry upload failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    /// Force-retry all pending uploads immediately, ignoring backoff. Called by the "Retry Now" button.
-    func forceRetryPendingUploads() async {
-        let pending = store.loadAll()
-        pendingUploadCount = pending.count
-        guard !pending.isEmpty else { return }
-        logger.info("Force-retrying \(pending.count) pending transcript uploads")
-
-        for var item in pending {
-            do {
-                try await postTranscript(sessionID: item.sessionID, text: item.text)
-                store.delete(recordingID: item.recordingID)
-                pendingUploadCount = max(0, pendingUploadCount - 1)
-                if case let .pendingUpload(text) = states[item.recordingID] {
-                    states[item.recordingID] = .done(transcript: text)
-                }
-                logger.info("Force retry upload succeeded")
-            } catch {
-                item.retryCount += 1
-                store.save(item)
-                logger.warning("Force retry upload failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    /// Re-uploads an existing transcript to the backend (e.g. after a backend processing bug fix).
-    func reuploadTranscript(recordingId: UUID, sessionId: String) async {
-        guard let text = states[recordingId]?.transcript else {
-            logger.warning("No transcript text found for re-upload")
-            return
-        }
-        logger.info("Re-uploading transcript")
-        do {
-            try await postTranscript(sessionID: sessionId, text: text)
-            logger.info("Re-upload succeeded")
-        } catch {
-            logger.error("Re-upload failed: \(error.localizedDescription)")
-            errorMessage = "Re-upload failed: \(error.localizedDescription)"
-            showError = true
-        }
-    }
-
-    // MARK: - Private
-
-    /// Decrypts encrypted PCM sidecar files to temp files for upload. Path-based
-    /// so retry / orphan-adoption paths can call it without reconstructing a
-    /// `LocalRecording`.
     private func decryptPCMIfNeeded(
         micPath: String,
         systemPath: String?,
@@ -389,14 +307,5 @@ final class TranscriptionViewModel {
             systemPath: resolvedSystem,
             tempFiles: tempFiles
         )
-    }
-
-    private func postTranscript(sessionID: String, text: String) async throws {
-        _ = try await apiClient.uploadTranscript(
-            sessionId: sessionID,
-            format: "txt",
-            content: text
-        )
-        logger.info("Transcript POST succeeded")
     }
 }

@@ -95,6 +95,19 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             test | xcpretty
 
+      - name: Coverage gate (CompanionSessionCore)
+        # A coverage number nobody enforces rots — the same way a green CI badge
+        # sat over a build that did not compile until pipefail was added. This
+        # ratchets: raise MIN_COVERAGE when real coverage rises, never lower it
+        # to make a red build green.
+        #
+        # Scoped to CompanionSessionCore because it is the shared session wire
+        # path both the app and the headless harness run, and the only part of
+        # the mac codebase `swift test` can exercise without launching the app.
+        env:
+          MIN_COVERAGE: "85"
+        run: ./scripts/coverage-gate.sh
+
   dependency-review:
     name: Dependency Review
     if: github.event_name == 'pull_request'
