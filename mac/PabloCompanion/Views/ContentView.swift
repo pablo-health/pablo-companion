@@ -122,7 +122,6 @@ struct ContentView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { break }
-                await transcriptionVM.retryPendingUploads()
                 await transcriptionVM.retryPendingAudioUploads()
             }
         }
@@ -411,14 +410,6 @@ struct ContentView: View {
         recordingVM.playRecording(recording)
     }
 
-    private func reuploadTranscript(for session: Session) {
-        let recId = recordingVM.recordingForSession(session.id)?.id ?? UUID()
-        Task {
-            await transcriptionVM.reuploadTranscript(recordingId: recId, sessionId: session.id)
-            await sessionVM.loadTodayAppointments()
-        }
-    }
-
     private func sessionDetailSheet(_ session: Session) -> some View {
         let recording = recordingVM.recordingForSession(session.id)
         let state = transcriptionStateForSession(session.id)
@@ -426,7 +417,6 @@ struct ContentView: View {
         let patient = session.patientId.flatMap { id in patientVM.patients.first { $0.id == id } }
         let isStaleInProgress = session.status == .inProgress && session.id != activeSessionId
         let orphans = recording == nil ? recordingVM.orphanedRecordings() : []
-        let canReupload = session.status == .failed && state?.transcript != nil
 
         return SessionDetailView(
             session: session,
@@ -436,8 +426,11 @@ struct ContentView: View {
             isPlaying: isPlaying,
             onTranscribe: recording != nil
                 ? { transcribeSession(session) } : nil,
-            onReuploadTranscript: canReupload
-                ? { reuploadTranscript(for: session) } : nil,
+            // Removed with the legacy transcript queue: the cloud path sets
+            // .done(transcript: "") on a successful audio upload, and "" is not
+            // nil — so this button appeared whenever the backend later marked
+            // the session failed, and posted an empty transcript.
+            onReuploadTranscript: nil,
             onPlay: recording != nil
                 ? { playSession(session) } : nil,
             onStopPlayback: isPlaying
