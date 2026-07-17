@@ -13,6 +13,7 @@ namespace PabloCompanion.Tests.ViewModels;
 ///   * happy-path audio upload clears the pending queue
 ///   * upload failure enqueues the session for retry
 ///   * pending uploads survive sign-out / sign-in via a fresh VM instance
+///   * local audio is deleted once — and only once — the backend confirms it
 ///
 /// Shares <see cref="SessionRecordingStore"/> with
 /// <c>SessionRecordingStoreTests</c>, so the two are pinned to the same
@@ -25,6 +26,8 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Path.GetTempPath(), $"pending-{Guid.NewGuid():N}.enc.json");
     private readonly string _audioPath = Path.Join(
         Path.GetTempPath(), $"audio-{Guid.NewGuid():N}.pcm");
+    private readonly string _recordingsRoot = Path.Join(
+        Path.GetTempPath(), $"recordings-{Guid.NewGuid():N}");
 
     private readonly StubCredentialManager _credentials = new();
     private readonly SessionRecordingStore _recordingStore = new();
@@ -33,26 +36,40 @@ public sealed class TranscriptionViewModelTests : IDisposable
     {
         // Plaintext PCM sidecar — upload path streams the file as-is.
         File.WriteAllBytes(_audioPath, new byte[] { 0, 0, 0, 0 });
+        Directory.CreateDirectory(_recordingsRoot);
     }
 
     private PendingTranscriptionStore MakePendingStore() => new(_credentials, _pendingPath);
 
-    private TranscriptionViewModel MakeVm(StubApiClient api, PendingTranscriptionStore store)
-        => new(_recordingStore, store, api, _credentials);
+    private TranscriptionViewModel MakeVm(
+        StubApiClient api, PendingTranscriptionStore store, RecordingCleaner? cleaner = null)
+        => new(_recordingStore, store, api, _credentials, cleaner ?? new RecordingCleaner(_recordingsRoot));
 
-    private void SeedRecording(string sessionId)
+    /// <summary>
+    /// Lays down a session exactly as the capture does — its own directory under
+    /// the recordings root — so post-upload deletion has something real to remove.
+    /// Returns the session directory.
+    /// </summary>
+    private string SeedRecording(string sessionId)
     {
+        var sessionDir = Path.Join(_recordingsRoot, sessionId);
+        Directory.CreateDirectory(sessionDir);
+        var micPath = Path.Join(sessionDir, "rec_mic.pcm");
+        File.WriteAllBytes(micPath, new byte[] { 0, 0, 0, 0 });
+
         _recordingStore.Save(sessionId, new LocalRecording(
             Id: Guid.NewGuid(),
-            FilePath: _audioPath,
+            FilePath: micPath,
             Duration: 1.0,
             CreatedAt: DateTime.UtcNow,
             IsEncrypted: false,
             Checksum: "test",
             ChannelLayout: ChannelLayout.SeparatedStereo,
-            MicPcmFilePath: _audioPath,
+            MicPcmFilePath: micPath,
             SystemPcmFilePath: null,
             IsUploaded: false));
+
+        return sessionDir;
     }
 
     [Fact]
@@ -176,11 +193,89 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.Equal(1, entry!.RetryCount);
     }
 
+    /// <summary>
+    /// The 2xx from the upload is the backend confirming it holds the audio, and
+    /// that is the moment the local copy stops being worth its PHI risk and its
+    /// gigabyte. Deleting it is also what makes file-presence the uploaded-state
+    /// record that stops <c>RecordingDirectoryScanner</c> re-adopting the session
+    /// on every launch.
+    /// </summary>
+    [Fact]
+    public async Task UploadAudioAsync_OnSuccess_DeletesLocalRecordingDirectory()
+    {
+        var sessionDir = SeedRecording("session-8");
+        var api = new StubApiClient(_credentials) { FailNext = false };
+        var vm = MakeVm(api, MakePendingStore());
+
+        await vm.UploadAudioAsync("session-8");
+
+        Assert.Equal(TranscriptionState.Complete, vm.State);
+        Assert.False(Directory.Exists(sessionDir));
+    }
+
+    /// <summary>
+    /// The mirror case, and the one that loses a therapist's session if it's
+    /// wrong: nothing is deleted until the backend has actually said yes. The
+    /// audio has to still be there for the retry.
+    /// </summary>
+    [Fact]
+    public async Task UploadAudioAsync_OnFailure_KeepsLocalRecordingDirectory()
+    {
+        var sessionDir = SeedRecording("session-9");
+        var api = new StubApiClient(_credentials) { FailNext = true };
+        var vm = MakeVm(api, MakePendingStore());
+
+        await vm.UploadAudioAsync("session-9");
+
+        Assert.Equal(TranscriptionState.PendingUpload, vm.State);
+        Assert.True(Directory.Exists(sessionDir));
+        Assert.True(File.Exists(Path.Join(sessionDir, "rec_mic.pcm")));
+    }
+
+    /// <summary>
+    /// A dead server session never reaches the upload, so the audio must survive
+    /// untouched for the post-re-auth retry.
+    /// </summary>
+    [Fact]
+    public async Task UploadAudioAsync_WhenServerSessionDead_KeepsLocalRecordingDirectory()
+    {
+        var sessionDir = SeedRecording("session-10");
+        var api = new StubApiClient(_credentials) { SessionAlive = false };
+        var vm = MakeVm(api, MakePendingStore());
+
+        await vm.UploadAudioAsync("session-10");
+
+        Assert.True(Directory.Exists(sessionDir));
+    }
+
+    /// <summary>
+    /// A delete that fails must not un-succeed an upload that the backend already
+    /// confirmed: the therapist's audio is safely on Pablo, and the leftover files
+    /// are a disk-space problem, not a data-loss one. The next launch re-adopts
+    /// them and the re-upload takes a bounded INVALID_STATUS rejection.
+    /// </summary>
+    [Fact]
+    public async Task UploadAudioAsync_WhenDeleteThrows_StillReportsUploadSuccess()
+    {
+        SeedRecording("session-11");
+        var api = new StubApiClient(_credentials) { FailNext = false };
+        var vm = MakeVm(api, MakePendingStore(), new ThrowingCleaner(_recordingsRoot));
+
+        await vm.UploadAudioAsync("session-11");
+
+        Assert.Equal(TranscriptionState.Complete, vm.State);
+        Assert.Null(MakePendingStore().Get("session-11"));
+        Assert.Null(vm.ErrorMessage);
+    }
+
     public void Dispose()
     {
         _recordingStore.Clear();
         TryDelete(_pendingPath);
         TryDelete(_audioPath);
+        try { if (Directory.Exists(_recordingsRoot)) Directory.Delete(_recordingsRoot, recursive: true); }
+        catch (IOException) { /* best-effort cleanup */ }
+        catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
     }
 
     private static void TryDelete(string path)
@@ -191,6 +286,19 @@ public sealed class TranscriptionViewModelTests : IDisposable
     }
 
     // --- stubs ---
+
+    /// <summary>
+    /// Stands in for a cleaner that can't do its job — a sidecar still locked by
+    /// another handle, say. The real one swallows its own failures; this proves
+    /// the upload path doesn't rely on that.
+    /// </summary>
+    private sealed class ThrowingCleaner : RecordingCleaner
+    {
+        public ThrowingCleaner(string recordingsRoot) : base(recordingsRoot) { }
+
+        public override bool DeleteSession(string sessionId)
+            => throw new IOException("Simulated delete failure");
+    }
 
     private sealed class StubCredentialManager : CredentialManager
     {

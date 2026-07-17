@@ -171,7 +171,7 @@ public partial class App : Application
 
         services.AddSingleton<Services.PendingTranscriptionStore>();
         services.AddSingleton<Services.RecordingDirectoryScanner>();
-        services.AddSingleton<Services.PlaybackService>();
+        services.AddSingleton<Services.RecordingCleaner>();
         services.AddSingleton<Services.InactivityMonitor>();
         services.AddSingleton<Services.EhrNavigator>();
 

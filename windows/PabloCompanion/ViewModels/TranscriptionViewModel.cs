@@ -13,9 +13,11 @@ namespace PabloCompanion.ViewModels;
 /// Flow:
 ///   1. <see cref="UploadAudioAsync"/> — decrypts PCM sidecars (if encrypted)
 ///      to temp files, POSTs them to <c>/api/sessions/{id}/upload-audio</c>.
-///   2. On failure the session stays in <see cref="PendingTranscriptionStore"/>
-///      so it can be retried.
-///   3. <see cref="ResumePendingUploadsAsync"/> runs on app launch with
+///   2. On a 2xx the backend owns the audio, so the local recording is deleted
+///      (<see cref="RecordingCleaner"/>) — it is PHI, and it is large.
+///   3. On failure the session stays in <see cref="PendingTranscriptionStore"/>
+///      so it can be retried, and its audio stays on disk.
+///   4. <see cref="ResumePendingUploadsAsync"/> runs on app launch with
 ///      exponential backoff; survives sign-out / sign-in because the pending
 ///      entries are AES-GCM encrypted with the device key and carry the audio
 ///      paths inline.
@@ -26,6 +28,7 @@ public partial class TranscriptionViewModel : ObservableObject
     private readonly PendingTranscriptionStore _pendingStore;
     private readonly APIClient _apiClient;
     private readonly CredentialManager _credentials;
+    private readonly RecordingCleaner _cleaner;
 
     // Exponential backoff — matches macOS (PendingTranscriptStore behavior).
     private const int BaseBackoffSeconds = 300;    // 5 minutes
@@ -54,12 +57,14 @@ public partial class TranscriptionViewModel : ObservableObject
         SessionRecordingStore recordingStore,
         PendingTranscriptionStore pendingStore,
         APIClient apiClient,
-        CredentialManager credentials)
+        CredentialManager credentials,
+        RecordingCleaner cleaner)
     {
         _recordingStore = recordingStore;
         _pendingStore = pendingStore;
         _apiClient = apiClient;
         _credentials = credentials;
+        _cleaner = cleaner;
 
         PendingUploadCount = _pendingStore.GetAll().Length;
     }
@@ -226,6 +231,26 @@ public partial class TranscriptionViewModel : ObservableObject
             _pendingStore.Remove(item.SessionId);
             PendingUploadCount = _pendingStore.GetAll().Length;
             App.Log($"  upload OK session={item.SessionId} retry={item.RetryCount}");
+
+            // Only now is the audio genuinely safe to destroy: this call returned
+            // 2xx, which is the backend confirming it has the recording and has
+            // queued it for transcription. Nothing earlier in the flow proves that.
+            //
+            // Caught here rather than falling through to the retry path below: a
+            // delete failure must never turn a confirmed upload back into a retry.
+            // The files simply stay, the next launch re-adopts them, and the
+            // re-upload takes a bounded INVALID_STATUS rejection. The cleaner
+            // already swallows its own errors — this guard is what keeps that from
+            // being load-bearing.
+            try
+            {
+                _cleaner.DeleteSession(item.SessionId);
+            }
+            catch (Exception ex)
+            {
+                App.LogException("TranscriptionViewModel.DeleteAfterUpload", ex);
+            }
+
             return true;
         }
         catch (Exception ex)
