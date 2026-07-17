@@ -61,7 +61,10 @@ public class RecordingCleaner
             // which resolves to the *parent* of the recordings root, and "id/" to
             // "", which resolves to the root itself — either would take out every
             // session on the machine.
-            var root = Path.GetFullPath(_recordingsRoot);
+            // Trailing separators are trimmed so the containment prefix below can't
+            // become a doubled separator that silently refuses every delete.
+            var root = Path.GetFullPath(_recordingsRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var sessionDir = Path.GetFullPath(Path.Combine(root, sessionId));
 
             if (!sessionDir.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))

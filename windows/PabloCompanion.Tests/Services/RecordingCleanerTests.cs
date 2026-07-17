@@ -20,6 +20,24 @@ public sealed class RecordingCleanerTests : IDisposable
 
     private RecordingCleaner MakeCleaner() => new(_root);
 
+    /// <summary>
+    /// A root handed in with a trailing separator must still delete. The
+    /// containment check builds a "root + separator" prefix, and a doubled
+    /// separator there would match nothing and silently refuse every delete —
+    /// re-introducing the unbounded-PHI bug with all other tests still green.
+    /// </summary>
+    [Fact]
+    public void DeleteSession_WithTrailingSeparatorInRoot_StillDeletes()
+    {
+        var dir = SeedSession("session-1");
+        var cleaner = new RecordingCleaner(_root + Path.DirectorySeparatorChar);
+
+        var deleted = cleaner.DeleteSession("session-1");
+
+        Assert.True(deleted);
+        Assert.False(Directory.Exists(dir));
+    }
+
     private string SeedSession(string sessionId)
     {
         var dir = Path.Join(_root, sessionId);
