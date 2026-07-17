@@ -44,6 +44,23 @@ public struct PendingAudioUploadCoordinator: Sendable {
         _ entry: PendingAudioUploadStore.PendingAudioUpload
     ) -> Void
 
+    /// What the backend has done with an uploaded session, as far as the note
+    /// goes. The app maps its own session status onto this so this type stays
+    /// backend-agnostic.
+    public enum SessionOutcome: Sendable {
+        /// The note exists (`pending_review`/finalized) — safe to delete the audio.
+        case noteReady
+        /// Transcription failed — keep the audio and re-queue the upload.
+        case failed
+        /// Still transcribing — leave the entry alone and check again later.
+        case stillWorking
+    }
+
+    /// Asks the backend where an awaiting-note session stands. Throwing (e.g. a
+    /// network blip) is treated as `stillWorking`: the audio is kept and the
+    /// check retries, never deleting on an inconclusive answer.
+    public typealias OutcomeCheck = @Sendable (_ sessionId: String) async throws -> SessionOutcome
+
     /// Backoff policy. Matches the Windows `TranscriptionViewModel` constants —
     /// both platforms drain the same queue shape against the same backend, so
     /// they must agree.
@@ -67,19 +84,27 @@ public struct PendingAudioUploadCoordinator: Sendable {
     private let policy: Policy
     private let upload: UploadAttempt
     private let cleanup: CleanupAttempt
+    private let checkOutcome: OutcomeCheck?
     private let now: @Sendable () -> Date
 
     #if canImport(os)
     private let logger: Logger
     #endif
 
-    /// - Parameter now: injected so a test can age an entry past its backoff
-    ///   instead of waiting out a four-hour ladder in real time.
+    /// - Parameters:
+    ///   - checkOutcome: how to ask the backend whether the note is ready. When
+    ///     nil, a successful upload deletes the audio immediately (the old
+    ///     behaviour) — provided for callers that don't poll. When set, a
+    ///     successful upload instead moves the entry to `awaitingNote` and the
+    ///     audio is kept until `reconcile()` sees the note.
+    ///   - now: injected so a test can age an entry past its backoff instead of
+    ///     waiting out a four-hour ladder in real time.
     public init(
         store: PendingAudioUploadStore,
         policy: Policy = Policy(),
         upload: @escaping UploadAttempt,
         cleanup: @escaping CleanupAttempt,
+        checkOutcome: OutcomeCheck? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         logSubsystem: String = "health.pablo.companion"
     ) {
@@ -87,6 +112,7 @@ public struct PendingAudioUploadCoordinator: Sendable {
         self.policy = policy
         self.upload = upload
         self.cleanup = cleanup
+        self.checkOutcome = checkOutcome
         self.now = now
         #if canImport(os)
         logger = Logger(subsystem: logSubsystem, category: "PendingAudioUploadCoordinator")
@@ -111,9 +137,11 @@ public struct PendingAudioUploadCoordinator: Sendable {
     }
 
     /// Attempt every entry that is due. Called on launch and on a timer.
+    /// Only entries still `pendingUpload` are uploaded; `awaitingNote` entries
+    /// are left for `reconcile()`.
     @discardableResult
     public func drain() async -> Int {
-        await drain(entries: store.loadAll().filter(isDue))
+        await drain(entries: store.loadAll().filter { $0.state == .pendingUpload && isDue($0) })
     }
 
     /// Attempt every entry regardless of backoff or the retry cap. Bound to the
@@ -127,7 +155,7 @@ public struct PendingAudioUploadCoordinator: Sendable {
     ///   the audio it had just uploaded.
     @discardableResult
     public func forceDrain(only sessionId: String? = nil) async -> Int {
-        let all = store.loadAll()
+        let all = store.loadAll().filter { $0.state == .pendingUpload }
         let entries = sessionId.map { id in all.filter { $0.sessionId == id } } ?? all
         return await drain(entries: entries)
     }
@@ -140,11 +168,22 @@ public struct PendingAudioUploadCoordinator: Sendable {
             do {
                 try await upload(entry)
                 succeeded += 1
-                // Order matters: drop the queue entry first, so a cleanup that
-                // throws can never leave a session queued for a re-upload the
-                // backend has already accepted.
-                store.remove(sessionId: entry.sessionId)
-                cleanup(entry)
+
+                if checkOutcome == nil {
+                    // No polling configured: the upload ack is the only signal,
+                    // so delete now. Order matters — drop the entry first, so a
+                    // cleanup that throws can't leave the session queued for a
+                    // re-upload the backend already accepted.
+                    store.remove(sessionId: entry.sessionId)
+                    cleanup(entry)
+                } else {
+                    // The upload is accepted, but the backend can still fail to
+                    // produce a note. Keep the audio and wait for `reconcile()`
+                    // to confirm the note before deleting — deleting on the ack
+                    // is what once turned a transient backend race into
+                    // permanent loss.
+                    store.setState(sessionId: entry.sessionId, .awaitingNote)
+                }
             } catch {
                 store.incrementRetry(sessionId: entry.sessionId)
                 #if canImport(os)
@@ -153,5 +192,53 @@ public struct PendingAudioUploadCoordinator: Sendable {
             }
         }
         return succeeded
+    }
+
+    /// Check every awaiting-note entry against the backend and act on the answer:
+    /// delete the audio once the note exists, re-queue the upload if the backend
+    /// failed, or leave it be while transcription is still running.
+    ///
+    /// Called on the same cadence as `drain()` — launch and the periodic timer —
+    /// so a therapist who closed the app mid-transcription still gets the audio
+    /// cleaned up (or recovered) on the next launch. No-op without an
+    /// `checkOutcome`.
+    @discardableResult
+    public func reconcile() async -> Int {
+        guard let checkOutcome else { return 0 }
+        let awaiting = store.loadAll().filter { $0.state == .awaitingNote }
+        guard !awaiting.isEmpty else { return 0 }
+
+        var confirmed = 0
+        for entry in awaiting {
+            let outcome: SessionOutcome
+            do {
+                outcome = try await checkOutcome(entry.sessionId)
+            } catch {
+                // Inconclusive — never delete on a failed check. Keep the audio
+                // and try again next cycle.
+                #if canImport(os)
+                logger.warning("Note-status check failed for session \(entry.sessionId); keeping audio")
+                #endif
+                continue
+            }
+
+            switch outcome {
+            case .noteReady:
+                store.remove(sessionId: entry.sessionId)
+                cleanup(entry)
+                confirmed += 1
+            case .failed:
+                // Back to the upload queue. Reset retry so the backoff ladder
+                // starts fresh rather than treating this as a continued failure.
+                store.setState(sessionId: entry.sessionId, .pendingUpload)
+                store.resetRetry(sessionId: entry.sessionId)
+                #if canImport(os)
+                logger.info("Session \(entry.sessionId) failed transcription; re-queued for upload")
+                #endif
+            case .stillWorking:
+                break
+            }
+        }
+        return confirmed
     }
 }

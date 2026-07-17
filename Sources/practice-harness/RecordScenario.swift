@@ -28,7 +28,8 @@ import Foundation
 ///   RECORD_SYSTEM_AUDIO     path to the client (system) WAV fixture (required)
 ///   RECORD_SECONDS          capture duration (default 20)
 ///   RECORD_EXPECT_SOAP      "1" to poll for the full SOAP (prod/assemblyai);
-///                           otherwise gate at "transcribing" (dev whisper→mock)
+///                           otherwise gate at "transcribing". NOTE: dev calls
+///                           AssemblyAI for real — the old "whisper→mock" note was stale.
 ///   RECORD_POLL_SECONDS     SOAP poll deadline when expecting SOAP (default 300)
 enum RecordScenario {
     static func run(env: [String: String]) async {
@@ -304,7 +305,7 @@ private struct Driver {
         if expectSoap {
             try await checks.append(pollForSoap(client: client, idToken: token, sessionID: sessionID))
         } else {
-            RecordScenario.log("RECORD_EXPECT_SOAP != 1 — gating at 'transcribing' (dev runs whisper→mock)")
+            RecordScenario.log("RECORD_EXPECT_SOAP != 1 — gating at 'transcribing'; set it to poll for the real SOAP")
         }
 
         try summarize(checks)
