@@ -1,5 +1,8 @@
 import Foundation
+
+#if canImport(os)
 import os
+#endif
 
 /// Monitors mic PCM file growth during recording and fires callbacks if data flow stalls.
 ///
@@ -7,9 +10,9 @@ import os
 /// - Checks file size every 60 seconds
 /// - Fires `onStalled` if size hasn't grown; fires `onResumed` when growth resumes
 @MainActor
-final class RecordingWatchdog {
-    var onStalled: (() -> Void)?
-    var onResumed: (() -> Void)?
+public final class RecordingWatchdog {
+    public var onStalled: (() -> Void)?
+    public var onResumed: (() -> Void)?
 
     private var timer: DispatchSourceTimer?
     private var micPCMPath: String?
@@ -17,13 +20,18 @@ final class RecordingWatchdog {
     private var hasBaseline = false
     private var stalledFired = false
     private let recordingsDirectory: URL
-    private let logger = Logger(subsystem: AppConstants.appBundleID, category: "RecordingWatchdog")
+    #if canImport(os)
+    private let logger: Logger
+    #endif
 
-    init(recordingsDirectory: URL) {
+    public init(recordingsDirectory: URL, logSubsystem: String = "health.pablo.companion") {
         self.recordingsDirectory = recordingsDirectory
+        #if canImport(os)
+        logger = Logger(subsystem: logSubsystem, category: "RecordingWatchdog")
+        #endif
     }
 
-    func start() {
+    public func start() {
         stop()
         let timer = DispatchSource.makeTimerSource(queue: .main)
         // First check at 10s (gives capture time to create files), then every 60s
@@ -35,7 +43,7 @@ final class RecordingWatchdog {
         self.timer = timer
     }
 
-    func stop() {
+    public func stop() {
         timer?.cancel()
         timer = nil
         micPCMPath = nil
@@ -47,12 +55,14 @@ final class RecordingWatchdog {
     /// Internal rather than private so `RecordingWatchdogTests` can drive a tick
     /// directly — the timer starts at +10s and repeats every 60s, which no test
     /// can wait out. Mirrors the `Check()` seam on the Windows port.
-    func check() {
+    public func check() {
         if micPCMPath == nil {
             micPCMPath = findLatestMicPCMFile()?.path
         }
         guard let path = micPCMPath else {
+            #if canImport(os)
             logger.warning("Could not find mic PCM file to monitor")
+            #endif
             return
         }
 
@@ -75,12 +85,16 @@ final class RecordingWatchdog {
         if currentSize <= lastSize {
             if !stalledFired {
                 stalledFired = true
+                #if canImport(os)
                 logger.warning("Mic PCM stalled at \(currentSize) bytes")
+                #endif
                 onStalled?()
             }
         } else if stalledFired {
             stalledFired = false
+            #if canImport(os)
             logger.info("Mic PCM resumed growing (\(currentSize) bytes)")
+            #endif
             onResumed?()
         }
     }

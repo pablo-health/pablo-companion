@@ -1,5 +1,6 @@
 import AudioCaptureKit
 import AVFoundation
+import CompanionSessionCore
 import CoreAudio
 import CoreGraphics
 import Foundation

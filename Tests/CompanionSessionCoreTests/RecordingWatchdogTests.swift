@@ -1,5 +1,5 @@
 import Foundation
-@testable import Pablo
+@testable import CompanionSessionCore
 import Testing
 
 /// Covers stall detection against real files on disk.
