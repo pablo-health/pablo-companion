@@ -89,6 +89,12 @@ final class TranscriptionViewModel {
     private let audioMaxBackoffSeconds: Double = 14400
     private let audioMaxAutoRetries = 10
 
+    /// Rate assumed for entries queued before `sampleRate` was persisted. Raw
+    /// PCM has no header to recover the real rate from, so a legacy entry can
+    /// only be guessed — 48 kHz matches what the app assumed unconditionally
+    /// before the capture rate was plumbed through.
+    private static let fallbackSampleRate: Double = 48000
+
     private var autoTranscribe: Bool {
         UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool ?? true
     }
@@ -151,7 +157,8 @@ final class TranscriptionViewModel {
             sessionId: sessionId,
             micPath: micURL.path,
             systemPath: recording.systemPCMFileURL?.path,
-            isEncrypted: recording.isEncrypted
+            isEncrypted: recording.isEncrypted,
+            sampleRate: recording.sampleRate
         )
 
         // Cheap read-only liveness probe before moving the audio. If the
@@ -171,7 +178,8 @@ final class TranscriptionViewModel {
             sessionId: sessionId,
             micPath: micURL.path,
             systemPath: recording.systemPCMFileURL?.path,
-            isEncrypted: recording.isEncrypted
+            isEncrypted: recording.isEncrypted,
+            sampleRate: recording.sampleRate
         )
 
         if succeeded {
@@ -190,7 +198,8 @@ final class TranscriptionViewModel {
         sessionId: String,
         micPath: String,
         systemPath: String?,
-        isEncrypted: Bool
+        isEncrypted: Bool,
+        sampleRate: Double
     ) async -> Bool {
         do {
             let pcm = try decryptPCMIfNeeded(
@@ -213,7 +222,7 @@ final class TranscriptionViewModel {
                 // drop the mic to 8/16/24 kHz), so stamp the WAV with the rate
                 // RecordingService actually detected — not a hardcoded 48 kHz,
                 // which would mislabel the audio and make transcription wrong.
-                sampleRate: Int(recording.sampleRate),
+                sampleRate: Int(sampleRate),
                 onProgress: { _ in }
             )
             logger.info("Audio upload succeeded: \(response.message ?? "ok")")
@@ -252,7 +261,8 @@ final class TranscriptionViewModel {
                 sessionId: item.sessionId,
                 micPath: item.micPath,
                 systemPath: item.systemPath,
-                isEncrypted: item.isEncrypted
+                isEncrypted: item.isEncrypted,
+                sampleRate: item.sampleRate ?? Self.fallbackSampleRate
             )
             if ok {
                 audioStore.remove(sessionId: item.sessionId)
@@ -274,7 +284,8 @@ final class TranscriptionViewModel {
                 sessionId: item.sessionId,
                 micPath: item.micPath,
                 systemPath: item.systemPath,
-                isEncrypted: item.isEncrypted
+                isEncrypted: item.isEncrypted,
+                sampleRate: item.sampleRate ?? Self.fallbackSampleRate
             )
             if ok {
                 audioStore.remove(sessionId: item.sessionId)
@@ -287,17 +298,22 @@ final class TranscriptionViewModel {
     /// Enqueue an audio upload for a session whose recording lives on disk
     /// already (e.g. orphan adoption on launch). Idempotent — re-adding the
     /// same session preserves `createdAt` and `retryCount`.
+    /// - Parameter sampleRate: `nil` for a recording adopted off disk, whose
+    ///   capture rate is not recoverable from headerless PCM. The retry then
+    ///   falls back to `fallbackSampleRate`.
     func enqueuePendingAudioUpload(
         sessionId: String,
         micPath: String,
         systemPath: String?,
-        isEncrypted: Bool
+        isEncrypted: Bool,
+        sampleRate: Double? = nil
     ) {
         audioStore.add(
             sessionId: sessionId,
             micPath: micPath,
             systemPath: systemPath,
-            isEncrypted: isEncrypted
+            isEncrypted: isEncrypted,
+            sampleRate: sampleRate
         )
     }
 

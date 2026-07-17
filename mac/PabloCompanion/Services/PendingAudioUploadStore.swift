@@ -23,6 +23,14 @@ struct PendingAudioUploadStore {
         let isEncrypted: Bool
         let createdAt: Date
         var retryCount: Int
+        /// Capture rate of the sidecar, stamped into the WAV header at upload.
+        ///
+        /// Optional because entries queued before this field existed are already
+        /// on disk; decoding must not fail on them or a pending upload would be
+        /// dropped. `nil` falls back to 48 kHz — raw PCM carries no header to
+        /// recover the true rate from, so a legacy entry can only be guessed at,
+        /// which is what the pre-#103 code did unconditionally.
+        var sampleRate: Double?
     }
 
     // MARK: - Configuration
@@ -50,7 +58,8 @@ struct PendingAudioUploadStore {
         sessionId: String,
         micPath: String,
         systemPath: String?,
-        isEncrypted: Bool
+        isEncrypted: Bool,
+        sampleRate: Double?
     ) {
         let existing = get(sessionId: sessionId)
         let pending = PendingAudioUpload(
@@ -59,7 +68,8 @@ struct PendingAudioUploadStore {
             systemPath: systemPath,
             isEncrypted: isEncrypted,
             createdAt: existing?.createdAt ?? Date(),
-            retryCount: existing?.retryCount ?? 0
+            retryCount: existing?.retryCount ?? 0,
+            sampleRate: sampleRate
         )
         save(pending)
     }
