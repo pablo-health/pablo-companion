@@ -92,9 +92,13 @@ public sealed partial class DayPage : Page
         }
 
         // Recording banner visibility
-        RecordingBannerControl.Visibility = _recordingVm.State != Models.RecordingUIState.Idle
+        var isRecording = _recordingVm.State != Models.RecordingUIState.Idle;
+        RecordingBannerControl.Visibility = isRecording
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+        // Stall warning only makes sense against a live recording.
+        StallWarningBanner.IsOpen = isRecording && _recordingVm.RecordingStalled;
     }
 
     private void UpdateGreeting()
