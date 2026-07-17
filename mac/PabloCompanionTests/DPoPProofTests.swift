@@ -10,7 +10,9 @@ private enum CompactJWS {
     static func base64URLDecode(_ s: String) -> Data? {
         var str = s.replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
-        while str.count % 4 != 0 { str += "=" }
+        while str.count % 4 != 0 {
+            str += "="
+        }
         return Data(base64Encoded: str)
     }
 

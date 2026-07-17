@@ -1,18 +1,31 @@
 import AudioCaptureKit
+import CompanionSessionCore
 import CryptoKit
 import Foundation
 
 /// Production AES-256-GCM encryptor using a per-user key stored in Keychain.
-struct RecordingEncryptor: CaptureEncryptor {
+///
+/// Conforms to `CaptureEncryptor` for AudioCaptureKit's capture graph and to
+/// `SessionDataEncrypting` for the at-rest stores. The two protocols declare the
+/// same `encrypt`/`decrypt` pair, so one implementation satisfies both — but
+/// only the latter is Foundation-only, which is what lets a store depend on the
+/// abstraction instead of this macOS-bound type.
+struct RecordingEncryptor: CaptureEncryptor, SessionDataEncrypting {
     private let key: SymmetricKey
 
     /// Creates an encryptor using the encryption key for the given user.
-    /// Falls back to the legacy device-wide key if no user email is available (e.g. standalone recordings).
+    ///
+    /// Reaches the Keychain directly, which is fine: the stores no longer
+    /// construct this type, they take a `SessionEncryptorFactory`. Tests inject a
+    /// fake there and never reach this initialiser.
+    ///
+    /// - Parameter userEmail: nil uses the legacy device-wide key, for
+    ///   standalone recordings made before sign-in.
     init?(userEmail: String? = nil) {
-        let keyData: Data? = if let email = userEmail {
-            KeychainManager.getOrCreateEncryptionKey(forUser: email)
+        let keyData: Data? = if let userEmail {
+            KeychainManager.getOrCreateEncryptionKey(forUser: userEmail)
         } else {
-            // Legacy fallback for standalone recordings without a signed-in user
+            // Legacy fallback for standalone recordings made before sign-in.
             KeychainManager.encryptionKey(forUser: "")
                 ?? KeychainManager.getOrCreateEncryptionKey(forUser: "")
         }

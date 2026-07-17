@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Pablo
+import Testing
 
 @Suite("RecordingViewModel Bluetooth conflict")
 @MainActor
