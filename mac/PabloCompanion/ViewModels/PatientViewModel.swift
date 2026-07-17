@@ -12,6 +12,15 @@ final class PatientViewModel {
     var showError = false
     var searchText = ""
 
+    /// Current page for paginated patient fetching.
+    var currentPage = 1
+
+    /// Whether more patients are available beyond the current page.
+    var hasMorePatients = false
+
+    /// Total patients matching the current search, as reported by the backend.
+    var totalPatients: UInt32 = 0
+
     var backendURL = "https://api.pablo.health" {
         didSet {
             if URLValidator.validateScheme(backendURL) == nil {
@@ -44,6 +53,7 @@ final class PatientViewModel {
     /// Debug status visible in the UI during development.
     var debugStatus = ""
 
+    /// Loads the first page of patients, replacing any current list.
     func loadPatients() async {
         guard apiClient.getToken != nil else {
             debugStatus = "Waiting for auth..."
@@ -52,10 +62,17 @@ final class PatientViewModel {
         debugStatus = "Loading from \(apiClient.baseURL)..."
         isLoading = true
         defer { isLoading = false }
+        currentPage = 1
 
         do {
-            let response = try await apiClient.fetchPatients(search: searchText)
+            let response = try await apiClient.fetchPatients(
+                search: searchText,
+                page: currentPage,
+                pageSize: Self.pageSize
+            )
             patients = response.data
+            totalPatients = response.total
+            hasMorePatients = response.hasMore
             debugStatus = "Loaded \(response.data.count) of \(response.total) patients"
             logger.info("Loaded patients")
         } catch {
@@ -65,4 +82,36 @@ final class PatientViewModel {
             showError = true
         }
     }
+
+    /// Fetches the next page of patients and appends them to the current list.
+    ///
+    /// Without this a caseload larger than one page was unreachable: the list
+    /// stopped at the first `pageSize` patients with no way to see the rest.
+    func loadMorePatients() async {
+        guard apiClient.getToken != nil else { return }
+        guard hasMorePatients, !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+        currentPage += 1
+
+        do {
+            let response = try await apiClient.fetchPatients(
+                search: searchText,
+                page: currentPage,
+                pageSize: Self.pageSize
+            )
+            patients.append(contentsOf: response.data)
+            totalPatients = response.total
+            hasMorePatients = response.hasMore
+            debugStatus = "Loaded \(patients.count) of \(response.total) patients"
+            logger.info("Loaded next patients page")
+        } catch {
+            currentPage -= 1
+            logger.error("Failed to load more patients: \(error.localizedDescription)")
+            errorMessage = "Failed to load more patients: \(error.localizedDescription)"
+            showError = true
+        }
+    }
+
+    private static let pageSize = 50
 }

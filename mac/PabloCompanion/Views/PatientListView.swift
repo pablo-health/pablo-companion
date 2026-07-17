@@ -69,12 +69,43 @@ struct PatientListView: View {
                 )
             )
         } else {
-            List(viewModel.patients) { patient in
-                PatientRow(patient: patient)
-                    .pabloListRowStyle()
+            List {
+                ForEach(viewModel.patients) { patient in
+                    PatientRow(patient: patient)
+                        .pabloListRowStyle()
+                }
+                if viewModel.hasMorePatients {
+                    loadMoreButton
+                        .pabloListRowStyle()
+                }
             }
             .pabloListStyle()
         }
+    }
+
+    private var loadMoreButton: some View {
+        Button {
+            Task { await viewModel.loadMorePatients() }
+        } label: {
+            HStack {
+                Spacer()
+                if viewModel.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.trailing, 4)
+                    Text("Loading...")
+                        .font(.pabloBody(13))
+                } else {
+                    Text("Load More")
+                        .font(.pabloBody(13))
+                }
+                Spacer()
+            }
+            .foregroundStyle(Color.pabloHoney)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(viewModel.isLoading ? "Loading more patients" : "Load more patients")
     }
 }
 
