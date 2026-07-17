@@ -141,17 +141,105 @@ struct PendingAudioUploadCoordinatorTests {
         #expect(cleaned.value.isEmpty)
     }
 
-    @Test func aCleanupThatFailsStillCountsTheUploadAsDone() async {
-        // Cleanup runs after the entry is dropped, so a delete that fails cannot
-        // resurrect a session the backend has already accepted.
+    @Test func theQueueEntryIsGoneBeforeCleanupRuns() async {
+        // Pins the ordering the source says matters: remove-then-cleanup, so a
+        // cleanup that misbehaves can never leave a session queued for a
+        // re-upload the backend already accepted.
+        //
+        // Replaces a test that claimed to prove "a failing cleanup still counts
+        // the upload as done" — a tautology, since CleanupAttempt is
+        // non-throwing and cannot fail.
         let store = Self.makeStore()
         Self.queue(store, "session-G")
-        let c = makeCoordinator(store: store, cleanup: { _ in /* silently fails */ })
+        let queuedAtCleanup = Box<Bool?>(nil)
+        let c = makeCoordinator(store: store, cleanup: { entry in
+            queuedAtCleanup.value = store.get(sessionId: entry.sessionId) != nil
+        })
 
         let count = await c.drain()
 
         #expect(count == 1)
-        #expect(store.get(sessionId: "session-G") == nil)
+        #expect(queuedAtCleanup.value == false)
+    }
+
+    // MARK: - The live post-recording path
+
+    @Test func forceDrainOnlyAttemptsTheNamedSession() async {
+        // TranscriptionViewModel's just-finished-recording path is the only
+        // caller of forceDrain(only:), and its filter had zero test executions.
+        // Uploading a neighbouring therapist's queued session here would be a
+        // real incident.
+        let store = Self.makeStore()
+        Self.queue(store, "session-A")
+        Self.queue(store, "session-B")
+        let attempted = Box<[String]>([])
+        let c = makeCoordinator(store: store, upload: { attempted.value.append($0.sessionId) })
+
+        let count = await c.forceDrain(only: "session-A")
+
+        #expect(attempted.value == ["session-A"])
+        #expect(count == 1)
+        #expect(store.get(sessionId: "session-B") != nil)
+    }
+
+    @Test func forceDrainWithAnUnknownSessionAttemptsNothing() async {
+        let store = Self.makeStore()
+        Self.queue(store, "session-A")
+        let attempted = Box<[String]>([])
+        let c = makeCoordinator(store: store, upload: { attempted.value.append($0.sessionId) })
+
+        let count = await c.forceDrain(only: "session-does-not-exist")
+
+        #expect(attempted.value.isEmpty)
+        #expect(count == 0)
+    }
+
+    @Test func forceDrainWithNoFilterStillAttemptsEverything() async {
+        let store = Self.makeStore()
+        Self.queue(store, "session-A")
+        Self.queue(store, "session-B")
+        let attempted = Box<[String]>([])
+        let c = makeCoordinator(store: store, upload: { attempted.value.append($0.sessionId) })
+
+        _ = await c.forceDrain()
+
+        #expect(attempted.value.sorted() == ["session-A", "session-B"])
+    }
+
+    // MARK: - Multi-entry behaviour
+
+    @Test func oneFailedEntryDoesNotStopTheRest() async throws {
+        // Every other drain test uses a single entry, so a refactor that threw
+        // out of the loop on first failure would pass all of them — and one
+        // stuck session would block every other therapist upload behind it.
+        let store = Self.makeStore()
+        Self.queue(store, "session-bad")
+        Self.queue(store, "session-good")
+        let attempted = Box<[String]>([])
+        let c = makeCoordinator(store: store, upload: { entry in
+            attempted.value.append(entry.sessionId)
+            if entry.sessionId == "session-bad" { throw CoordinatorTestError.uploadFailed }
+        })
+
+        let count = await c.drain()
+
+        #expect(attempted.value.sorted() == ["session-bad", "session-good"])
+        #expect(count == 1)
+        #expect(store.get(sessionId: "session-good") == nil)
+        #expect(try #require(store.get(sessionId: "session-bad")).retryCount == 1)
+    }
+
+    @Test func theLastAllowedRetryIsStillDue() throws {
+        // Boundary: 0, 1 and 10 were pinned; 9 — the last attempt the cap
+        // permits — was not.
+        let store = Self.makeStore()
+        Self.queue(store, "session-9")
+        for _ in 0 ..< 9 { store.incrementRetry(sessionId: "session-9") }
+        let entry = try #require(store.get(sessionId: "session-9"))
+        let c = makeCoordinator(store: store, now: { entry.createdAt.addingTimeInterval(999_999) })
+
+        #expect(entry.retryCount == 9)
+        #expect(c.isDue(entry))
     }
 
     @Test func drainSkipsEntriesInsideTheirBackoff() async throws {

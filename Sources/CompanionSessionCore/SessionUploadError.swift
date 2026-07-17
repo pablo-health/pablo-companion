@@ -29,3 +29,19 @@ public struct SessionUploadError: Error, Sendable {
         return (err["message"] as? String, err["code"] as? String)
     }
 }
+
+extension SessionUploadError: LocalizedError, CustomStringConvertible {
+    /// Without this, a plain `Error` struct bridges to
+    /// "CompanionSessionCore.SessionUploadError error 1" — no status, no code,
+    /// no message. That is what a failed 50-minute e2e reported, which is an
+    /// expensive way to learn nothing: every field needed to diagnose it was
+    /// already on the value and simply never printed.
+    public var errorDescription: String? { description }
+
+    public var description: String {
+        var parts = ["upload failed: HTTP \(statusCode)"]
+        if let code { parts.append("[\(code)]") }
+        if let message, !message.isEmpty { parts.append("— \(message)") }
+        return parts.joined(separator: " ")
+    }
+}

@@ -188,8 +188,14 @@ public struct AudioUploadClient: Sendable {
         error.statusCode == 400 && error.code == "INVALID_STATUS"
     }
 
-    /// Wraps headerless PCM in a WAV header; passes through anything already RIFF.
-    private static func wavData(_ data: Data, sampleRate: Int, channels: Int) -> Data {
+    /// Wraps headerless PCM in a WAV header; passes through anything already
+    /// self-describing (RIFF or ADTS AAC).
+    ///
+    /// Internal rather than private so the passthrough can be asserted directly:
+    /// AAC has been the production capture format since #105, and this branch
+    /// had no test — a wrong sync mask would staple a PCM-claiming WAV header
+    /// onto every AAC recording, corrupt at transcription, with a green suite.
+    static func wavData(_ data: Data, sampleRate: Int, channels: Int) -> Data {
         // Already a self-describing container (WAV or ADTS AAC)? Pass through.
         if data.prefix(4) == Data("RIFF".utf8) || isADTSSync(data) { return data }
         return WAVEncoder.wrap(pcm: data, sampleRate: sampleRate, channels: channels)

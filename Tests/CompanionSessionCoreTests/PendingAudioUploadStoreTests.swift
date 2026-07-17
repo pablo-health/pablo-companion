@@ -113,11 +113,15 @@ struct PendingAudioUploadStoreTests {
     // MARK: - Key unavailable
 
     @Test func saveRefusesWhenKeyUnavailable() {
-        // The branch that had no coverage before the seam existed. A store that
-        // cannot encrypt must decline to write, not write something readable or
-        // truncated. This is the same failure class as the Windows pending-store
-        // cache poisoning, where a null key silently emptied the queue.
-        let store = Self.makeStore(encryptor: nil)
+        // Asserted against the DIRECTORY, not against `get`. An earlier version
+        // checked `get(...) == nil`, but `get` nil-guards on the same missing
+        // encryptor before it ever reads disk — so it passed even if `save` had
+        // written plaintext JSON. Only looking at the bytes distinguishes
+        // "refused to write" from "wrote something unreadable".
+        let dir = Self.tempDir()
+        var store = PendingAudioUploadStore(directory: dir, makeEncryptor: { _ in nil })
+        store.userEmail = "therapist@pablo.health"
+
         store.add(
             sessionId: "session-nokey",
             micPath: "/tmp/m.pcm",
@@ -125,9 +129,75 @@ struct PendingAudioUploadStoreTests {
             isEncrypted: false,
             sampleRate: 48000
         )
-        defer { store.remove(sessionId: "session-nokey") }
 
-        #expect(store.get(sessionId: "session-nokey") == nil)
+        let written = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        #expect(written.isEmpty)
+    }
+
+    @Test func entriesAreEncryptedAtRest() throws {
+        // A regression that wrote plaintext JSON round-trips perfectly and passes
+        // every other test in this suite. This is the only one that would catch
+        // it — and these files are PHI-adjacent on a therapist's disk.
+        let dir = Self.tempDir()
+        var store = PendingAudioUploadStore(
+            directory: dir,
+            makeEncryptor: { _ in FakeSessionDataEncryptor() }
+        )
+        store.userEmail = "therapist@pablo.health"
+        store.add(
+            sessionId: "session-secret",
+            micPath: "/recordings/session-secret/mic.pcm",
+            systemPath: nil,
+            isEncrypted: true,
+            sampleRate: 48000
+        )
+
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        let name = try #require(files.first)
+        let raw = try Data(contentsOf: dir.appendingPathComponent(name))
+        let asText = String(decoding: raw, as: UTF8.self)
+
+        #expect(!asText.contains("sessionId"))
+        #expect(!asText.contains("session-secret"))
+        #expect(!asText.contains("mic.pcm"))
+    }
+
+    @Test func aCorruptEntryDoesNotKillTheQueue() throws {
+        // One unreadable file must not take the whole queue with it — the other
+        // sessions are still uploadable.
+        let encryptor = FakeSessionDataEncryptor()
+        let dir = Self.tempDir()
+        var store = PendingAudioUploadStore(directory: dir, makeEncryptor: { _ in encryptor })
+        store.userEmail = "therapist@pablo.health"
+        store.add(sessionId: "good", micPath: "/tmp/g.pcm", systemPath: nil, isEncrypted: false, sampleRate: 48000)
+
+        try Data("not encrypted at all".utf8).write(to: dir.appendingPathComponent("garbage.enc"))
+
+        let loaded = store.loadAll()
+
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.sessionId == "good")
+    }
+
+    @Test func aSessionIDCannotEscapeTheStoreDirectory() {
+        // sessionId reaches the filesystem. A traversal attempt must not write
+        // outside the store.
+        let dir = Self.tempDir()
+        let encryptor = FakeSessionDataEncryptor()
+        var store = PendingAudioUploadStore(directory: dir, makeEncryptor: { _ in encryptor })
+        store.userEmail = "therapist@pablo.health"
+
+        store.add(
+            sessionId: "../escaped",
+            micPath: "/tmp/m.pcm",
+            systemPath: nil,
+            isEncrypted: false,
+            sampleRate: 48000
+        )
+
+        let parent = dir.deletingLastPathComponent()
+        let escaped = (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+        #expect(!escaped.contains { $0.hasPrefix("escaped") })
     }
 
     @Test func loadAllIsEmptyWhenKeyUnavailable() {

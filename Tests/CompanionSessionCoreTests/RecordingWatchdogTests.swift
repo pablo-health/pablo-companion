@@ -141,17 +141,64 @@ struct RecordingWatchdogTests {
     }
 
     @Test func theMicFileIsPreferredOverOtherPCMFiles() {
+        // The system file must GROW between checks. An earlier version of this
+        // test left it static at 999 bytes, which meant watching the wrong file
+        // also produced a stall — so it passed whether the selection worked or
+        // not. Only a growing decoy makes the two outcomes distinguishable.
         let dir = Self.makeDirectory()
-        try? Data(repeating: 0x01, count: 999).write(to: dir.appendingPathComponent("recording_123_system.pcm"))
+        let system = dir.appendingPathComponent("recording_123_system.pcm")
+        try? Data(repeating: 0x01, count: 999).write(to: system)
         Self.writeMicPCM(in: dir, bytes: 0)
         let watchdog = RecordingWatchdog(recordingsDirectory: dir)
 
         var stalled = false
         watchdog.onStalled = { stalled = true }
 
-        // Monitoring the system file would see 999 bytes; the mic file is the
-        // one that is dead, and it is the one that must be watched.
+        watchdog.check() // baseline
+        try? Data(repeating: 0x01, count: 500_000).write(to: system) // system is alive
+        watchdog.check() // mic is still 0 — dead
+
+        // Watching the system file would see growth and report nothing.
+        #expect(stalled)
+    }
+
+    @Test func aStaleSidecarFromAnEarlierSessionIsNotWatched() {
+        // Sidecars from failed uploads are the norm on disk. Baselining against
+        // an old session's dead file would report a stall for a capture that is
+        // running perfectly.
+        let dir = Self.makeDirectory()
+        let stale = dir.appendingPathComponent("recording_000_mic.pcm")
+        try? Data(repeating: 0x01, count: 4096).write(to: stale)
+        // Make the stale file demonstrably older than the live one.
+        try? FileManager.default.setAttributes(
+            [.creationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: stale.path
+        )
+        let live = dir.appendingPathComponent("recording_999_mic.pcm")
+        try? Data(repeating: 0x02, count: 1024).write(to: live)
+
+        let watchdog = RecordingWatchdog(recordingsDirectory: dir)
+        var stalled = false
+        watchdog.onStalled = { stalled = true }
+
         watchdog.check()
+        try? Data(repeating: 0x02, count: 200_000).write(to: live) // live one grows
+        watchdog.check()
+
+        #expect(!stalled)
+    }
+
+    @Test func aFileDeletedMidRecordingIsReportedStalled() {
+        // attributesOfItem fails once the file is gone, which reads as size 0 —
+        // that must count as a stall, not as a fresh baseline.
+        let dir = Self.makeDirectory()
+        Self.writeMicPCM(in: dir, bytes: 4096)
+        let watchdog = RecordingWatchdog(recordingsDirectory: dir)
+
+        var stalled = false
+        watchdog.onStalled = { stalled = true }
+
+        watchdog.check()
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent("recording_123_mic.pcm"))
         watchdog.check()
 
         #expect(stalled)
