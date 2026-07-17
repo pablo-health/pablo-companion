@@ -73,9 +73,8 @@ public sealed class RecordingCleanerTests : IDisposable
     }
 
     /// <summary>
-    /// This deletes a directory tree from an ID that ultimately comes off the
-    /// wire, so a traversal attempt must not be able to name anything above the
-    /// recordings root.
+    /// This deletes a directory tree recursively from an ID that ultimately comes
+    /// off the wire, so nothing above the recordings root may be nameable.
     /// </summary>
     [Fact]
     public void DeleteSession_WithTraversalInSessionId_CannotEscapeRecordingsRoot()
@@ -92,6 +91,48 @@ public sealed class RecordingCleanerTests : IDisposable
         finally
         {
             try { Directory.Delete(victim, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    /// <summary>
+    /// The two IDs that a GetFileName-style sanitiser would wave through with the
+    /// worst possible result: ".." resolves to the parent of the recordings root,
+    /// and a trailing separator resolves to the root itself. Either one would
+    /// recursively delete every session on the machine.
+    /// </summary>
+    [Theory]
+    [InlineData("..")]
+    [InlineData(".")]
+    [InlineData("session-1/")]
+    [InlineData("session-1\\")]
+    public void DeleteSession_WithIdResolvingToRootOrAbove_RefusesUnlessStrictlyInside(string sessionId)
+    {
+        SeedSession("session-1");
+        var sibling = Path.Join(_root, "sibling");
+        Directory.CreateDirectory(sibling);
+
+        MakeCleaner().DeleteSession(sessionId);
+
+        // Whatever it did, it must not have taken out the root or its neighbours.
+        Assert.True(Directory.Exists(_root));
+        Assert.True(Directory.Exists(sibling));
+    }
+
+    [Fact]
+    public void DeleteSession_WithAbsolutePath_RefusesToDelete()
+    {
+        var outside = Path.Join(Path.GetTempPath(), $"outside-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outside);
+        try
+        {
+            var deleted = MakeCleaner().DeleteSession(outside);
+
+            Assert.False(deleted);
+            Assert.True(Directory.Exists(outside));
+        }
+        finally
+        {
+            try { Directory.Delete(outside, recursive: true); } catch (IOException) { }
         }
     }
 

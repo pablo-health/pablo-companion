@@ -52,9 +52,24 @@ public class RecordingCleaner
         try
         {
             // Rebuilt from the root rather than taken from a caller-supplied audio
-            // path: this deletes a directory tree, and it must only ever be able to
-            // name one inside Recordings\.
-            var sessionDir = Path.Combine(_recordingsRoot, Path.GetFileName(sessionId));
+            // path, then checked for containment: this deletes a directory tree
+            // recursively, so it must only ever be able to name one strictly
+            // inside Recordings\.
+            //
+            // Containment is checked on the resolved path, not by sanitising the
+            // ID. Path.GetFileName is not a guard here: it maps ".." to "..",
+            // which resolves to the *parent* of the recordings root, and "id/" to
+            // "", which resolves to the root itself — either would take out every
+            // session on the machine.
+            var root = Path.GetFullPath(_recordingsRoot);
+            var sessionDir = Path.GetFullPath(Path.Combine(root, sessionId));
+
+            if (!sessionDir.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                App.Log($"  refusing to delete audio outside the recordings root for session={sessionId}");
+                return false;
+            }
+
             if (!Directory.Exists(sessionDir)) return false;
 
             Directory.Delete(sessionDir, recursive: true);
