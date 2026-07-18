@@ -117,6 +117,12 @@ public partial class App : Application
 
         // Adopt orphaned recordings + resume pending transcription uploads after launch.
         _ = ResumePendingUploadsAsync();
+
+        // Then keep draining + reconciling on a 5-minute cadence, so a session
+        // that finishes while the app stays open gets its audio uploaded and —
+        // once the backend has produced the note — deleted, without waiting for
+        // the next launch. Parity with the macOS ContentView timer.
+        Services.GetRequiredService<Services.PendingUploadScheduler>().Start();
     }
 
     private static void SeedDeepLinkFromInitialActivation()
@@ -176,6 +182,8 @@ public partial class App : Application
         services.AddSingleton<Services.EhrNavigator>();
 
         services.AddSingleton<Services.SessionKeepAliveService>();
+        services.AddSingleton<Services.PendingUploadScheduler>(sp => new Services.PendingUploadScheduler(
+            () => sp.GetRequiredService<ViewModels.TranscriptionViewModel>().ResumePendingUploadsAsync()));
         services.AddSingleton<Services.PracticeApiClient>();
         services.AddSingleton<Services.ProtocolActivationListener>();
         services.AddSingleton<Services.DeepLinkRouter>();
