@@ -329,7 +329,7 @@ public class APIClient
         return await SendAsync<Session>(request);
     }
 
-    public async Task<Session> FetchSessionAsync(string sessionId)
+    public virtual async Task<Session> FetchSessionAsync(string sessionId)
     {
         using var request = CreateRequest(HttpMethod.Get, $"/api/sessions/{Uri.EscapeDataString(sessionId)}");
         return await SendAsync<Session>(request);

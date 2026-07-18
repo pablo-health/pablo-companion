@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using System.Text;
 using AudioCapture.Models;
+using AudioCapture.Storage;
 using PabloCompanion.Core;
 using PabloCompanion.Models;
 using PabloCompanion.Services;
@@ -72,8 +74,27 @@ public sealed class TranscriptionViewModelTests : IDisposable
         return sessionDir;
     }
 
+    /// <summary>
+    /// Seeds a session that has already uploaded and is awaiting its note: the
+    /// recording is on disk and the pending entry is in the AwaitingNote state.
+    /// Returns the session directory so reconcile deletion can be asserted.
+    /// </summary>
+    private string SeedAwaitingNote(string sessionId, PendingTranscriptionStore store)
+    {
+        var sessionDir = SeedRecording(sessionId);
+        store.Add(sessionId, Path.Join(sessionDir, "rec_mic.pcm"), null, isEncrypted: false);
+        store.SetState(sessionId, UploadLifecycleState.AwaitingNote);
+        return sessionDir;
+    }
+
+    /// <summary>
+    /// A successful upload reports Complete but does NOT clear the queue: the
+    /// entry moves to AwaitingNote and the audio is kept until the backend has
+    /// actually produced the note (see the reconcile tests below). Acceptance is
+    /// not completion.
+    /// </summary>
     [Fact]
-    public async Task UploadAudioAsync_HappyPath_RemovesFromPendingAndMarksComplete()
+    public async Task UploadAudioAsync_HappyPath_MarksCompleteAndAwaitsNote()
     {
         SeedRecording("session-1");
         var api = new StubApiClient(_credentials) { FailNext = false };
@@ -85,8 +106,9 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.Equal(1, api.CallCount);
         Assert.Equal("session-1", api.LastSessionId);
         Assert.Equal(TranscriptionState.Complete, vm.State);
-        Assert.Null(store.Get("session-1"));
-        Assert.Equal(0, vm.PendingUploadCount);
+        var entry = store.Get("session-1");
+        Assert.NotNull(entry);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, entry!.State);
     }
 
     [Fact]
@@ -130,7 +152,11 @@ public sealed class TranscriptionViewModelTests : IDisposable
 
         Assert.Equal(1, api.CallCount);
         Assert.Equal("session-3", api.LastSessionId);
-        Assert.Null(MakePendingStore().Get("session-3"));
+        // Uploaded, so it is no longer pending-upload — it is awaiting the note
+        // (the stub's default status is mid-flight), not removed.
+        var entry = MakePendingStore().Get("session-3");
+        Assert.NotNull(entry);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, entry!.State);
     }
 
     [Fact]
@@ -147,7 +173,11 @@ public sealed class TranscriptionViewModelTests : IDisposable
         await vm.ForceRetryPendingUploadsAsync();
 
         Assert.Equal(2, api.CallCount);
-        Assert.Null(MakePendingStore().Get("session-4"));
+        // The forced retry uploaded successfully, so the entry is now awaiting
+        // the note rather than removed.
+        var entry = MakePendingStore().Get("session-4");
+        Assert.NotNull(entry);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, entry!.State);
     }
 
     /// <summary>
@@ -194,23 +224,25 @@ public sealed class TranscriptionViewModelTests : IDisposable
     }
 
     /// <summary>
-    /// The 2xx from the upload is the backend confirming it holds the audio, and
-    /// that is the moment the local copy stops being worth its PHI risk and its
-    /// gigabyte. Deleting it is also what makes file-presence the uploaded-state
-    /// record that stops <c>RecordingDirectoryScanner</c> re-adopting the session
-    /// on every launch.
+    /// The 2xx from the upload is NOT the moment to delete: the backend can still
+    /// fail to produce a note, and deleting on the ack once turned a transient
+    /// backend race into permanent loss. The audio must survive the upload and
+    /// only be removed once a note-status check confirms it — see the reconcile
+    /// tests below.
     /// </summary>
     [Fact]
-    public async Task UploadAudioAsync_OnSuccess_DeletesLocalRecordingDirectory()
+    public async Task UploadAudioAsync_OnSuccess_KeepsLocalRecordingUntilNoteExists()
     {
         var sessionDir = SeedRecording("session-8");
         var api = new StubApiClient(_credentials) { FailNext = false };
-        var vm = MakeVm(api, MakePendingStore());
+        var store = MakePendingStore();
+        var vm = MakeVm(api, store);
 
         await vm.UploadAudioAsync("session-8");
 
         Assert.Equal(TranscriptionState.Complete, vm.State);
-        Assert.False(Directory.Exists(sessionDir));
+        Assert.True(Directory.Exists(sessionDir));
+        Assert.Equal(UploadLifecycleState.AwaitingNote, store.Get("session-8")!.State);
     }
 
     /// <summary>
@@ -248,24 +280,182 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.True(Directory.Exists(sessionDir));
     }
 
+    // --- Upload → note lifecycle (parity with macOS UploadLifecycleTests) ---
+    //
+    // These cover the fix for a real data-loss path: audio is kept until the
+    // note exists, not deleted on the upload ack. A successful upload only moves
+    // the entry to AwaitingNote; ReconcileAwaitingNotesAsync deletes it only once
+    // the note is confirmed.
+
+    /// <summary>Note ready (pending_review) → audio deleted, entry removed.</summary>
+    [Fact]
+    public async Task Reconcile_DeletesAudioOnceNoteExists()
+    {
+        var store = MakePendingStore();
+        var sessionDir = SeedAwaitingNote("session-20", store);
+        var api = new StubApiClient(_credentials) { NoteStatus = SessionStatus.PendingReview };
+        var vm = MakeVm(api, store);
+
+        var confirmed = await vm.ReconcileAwaitingNotesAsync();
+
+        Assert.Equal(1, confirmed);
+        Assert.Null(store.Get("session-20"));
+        Assert.False(Directory.Exists(sessionDir));
+    }
+
+    /// <summary>A finalized note counts as ready too — both mapped statuses delete.</summary>
+    [Fact]
+    public async Task Reconcile_Finalized_AlsoDeletesAudio()
+    {
+        var store = MakePendingStore();
+        var sessionDir = SeedAwaitingNote("session-21", store);
+        var api = new StubApiClient(_credentials) { NoteStatus = SessionStatus.Finalized };
+        var vm = MakeVm(api, store);
+
+        var confirmed = await vm.ReconcileAwaitingNotesAsync();
+
+        Assert.Equal(1, confirmed);
+        Assert.Null(store.Get("session-21"));
+        Assert.False(Directory.Exists(sessionDir));
+    }
+
     /// <summary>
-    /// A delete that fails must not un-succeed an upload that the backend already
-    /// confirmed: the therapist's audio is safely on Pablo, and the leftover files
-    /// are a disk-space problem, not a data-loss one. The next launch re-adopts
-    /// them and the re-upload takes a bounded INVALID_STATUS rejection.
+    /// The data-loss scenario, now safe: the backend failed, so the audio must
+    /// survive and the upload must be re-queued — not deleted. The retry ladder
+    /// resets because the upload itself had succeeded.
     /// </summary>
     [Fact]
-    public async Task UploadAudioAsync_WhenDeleteThrows_StillReportsUploadSuccess()
+    public async Task Reconcile_BackendFailure_ReQueuesUploadAndKeepsAudio()
     {
-        SeedRecording("session-11");
-        var api = new StubApiClient(_credentials) { FailNext = false };
-        var vm = MakeVm(api, MakePendingStore(), new ThrowingCleaner(_recordingsRoot));
+        var store = MakePendingStore();
+        var sessionDir = SeedAwaitingNote("session-22", store);
+        store.IncrementRetry("session-22"); // pretend it had retried
+        var api = new StubApiClient(_credentials) { NoteStatus = SessionStatus.Failed };
+        var vm = MakeVm(api, store);
 
-        await vm.UploadAudioAsync("session-11");
+        var confirmed = await vm.ReconcileAwaitingNotesAsync();
 
-        Assert.Equal(TranscriptionState.Complete, vm.State);
-        Assert.Null(MakePendingStore().Get("session-11"));
-        Assert.Null(vm.ErrorMessage);
+        Assert.Equal(0, confirmed);
+        var entry = store.Get("session-22");
+        Assert.NotNull(entry);
+        Assert.Equal(UploadLifecycleState.PendingUpload, entry!.State); // back in the queue
+        Assert.Equal(0, entry.RetryCount);                             // ladder reset
+        Assert.True(Directory.Exists(sessionDir));                     // audio NOT deleted
+    }
+
+    /// <summary>Still transcribing → leave the entry and the audio alone.</summary>
+    [Fact]
+    public async Task Reconcile_StillTranscribing_LeavesEntryUntouched()
+    {
+        var store = MakePendingStore();
+        var sessionDir = SeedAwaitingNote("session-23", store);
+        var api = new StubApiClient(_credentials) { NoteStatus = SessionStatus.Transcribing };
+        var vm = MakeVm(api, store);
+
+        var confirmed = await vm.ReconcileAwaitingNotesAsync();
+
+        Assert.Equal(0, confirmed);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, store.Get("session-23")!.State);
+        Assert.True(Directory.Exists(sessionDir));
+    }
+
+    /// <summary>
+    /// A network blip during the status check must not read as "no note" — that
+    /// would delete the audio on a transient error. The entry stays AwaitingNote.
+    /// </summary>
+    [Fact]
+    public async Task Reconcile_InconclusiveCheck_NeverDeletes()
+    {
+        var store = MakePendingStore();
+        var sessionDir = SeedAwaitingNote("session-24", store);
+        var api = new StubApiClient(_credentials) { FailStatusCheck = true };
+        var vm = MakeVm(api, store);
+
+        var confirmed = await vm.ReconcileAwaitingNotesAsync();
+
+        Assert.Equal(0, confirmed);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, store.Get("session-24")!.State);
+        Assert.True(Directory.Exists(sessionDir));
+    }
+
+    /// <summary>
+    /// A delete that fails must not un-confirm a note that exists: the entry is
+    /// still removed and the pass still succeeds — the leftover files are a
+    /// disk-space problem, not a data-loss one.
+    /// </summary>
+    [Fact]
+    public async Task Reconcile_WhenDeleteThrows_StillConfirmsNote()
+    {
+        var store = MakePendingStore();
+        SeedAwaitingNote("session-25", store);
+        var api = new StubApiClient(_credentials) { NoteStatus = SessionStatus.PendingReview };
+        var vm = MakeVm(api, store, new ThrowingCleaner(_recordingsRoot));
+
+        var confirmed = await vm.ReconcileAwaitingNotesAsync();
+
+        Assert.Equal(1, confirmed);
+        Assert.Null(store.Get("session-25"));
+    }
+
+    /// <summary>
+    /// The upload drain must not re-upload an entry that has already uploaded and
+    /// is only awaiting its note.
+    /// </summary>
+    [Fact]
+    public async Task Resume_IgnoresAwaitingNoteEntries_DoesNotReupload()
+    {
+        var store = MakePendingStore();
+        SeedAwaitingNote("session-26", store);
+        var api = new StubApiClient(_credentials) { NoteStatus = SessionStatus.Transcribing };
+        var vm = MakeVm(api, store);
+
+        await vm.ResumePendingUploadsAsync();
+
+        Assert.Equal(0, api.CallCount); // no upload attempt
+    }
+
+    /// <summary>
+    /// A therapist can close the app mid-transcription; the AwaitingNote state
+    /// must be on disk so the next launch resumes reconciliation rather than
+    /// re-uploading or losing it.
+    /// </summary>
+    [Fact]
+    public void AwaitingNoteState_SurvivesStoreReload()
+    {
+        MakePendingStore().Add("session-27", _audioPath, null, isEncrypted: false);
+        MakePendingStore().SetState("session-27", UploadLifecycleState.AwaitingNote);
+
+        // A fresh store instance reads the encrypted blob back from disk.
+        var reopened = MakePendingStore().Get("session-27");
+
+        Assert.NotNull(reopened);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, reopened!.State);
+    }
+
+    /// <summary>
+    /// An entry written before the State field existed (no `state` in its JSON)
+    /// must decode as PendingUpload — the old behaviour — not fail to deserialize
+    /// and silently drop a queued upload.
+    /// </summary>
+    [Fact]
+    public void LegacyEntryWithoutStateField_DecodesAsPendingUpload()
+    {
+        // Hand-write the encrypted blob exactly as a pre-State-field build would:
+        // the entry's JSON has no "state" property at all. camelCase names match
+        // the store's JsonNamingPolicy.
+        const string legacyJson =
+            """{"session-28":{"sessionId":"session-28","micPath":"/tmp/x.pcm","systemPath":null,"isEncrypted":false,"createdAt":"2026-01-01T00:00:00Z","retryCount":0}}""";
+        var key = _credentials.GetOrCreateUserEncryptionKey()!;
+        using (var enc = new AesGcmEncryptor(key, "device-key"))
+        {
+            File.WriteAllBytes(_pendingPath, enc.Encrypt(Encoding.UTF8.GetBytes(legacyJson)));
+        }
+
+        var entry = MakePendingStore().Get("session-28");
+
+        Assert.NotNull(entry);
+        Assert.Equal("session-28", entry!.SessionId);
+        Assert.Equal(UploadLifecycleState.PendingUpload, entry.State);
     }
 
     public void Dispose()
@@ -318,10 +508,28 @@ public sealed class TranscriptionViewModelTests : IDisposable
         public bool SessionAlive { get; set; } = true;
         public int ProbeCallCount { get; private set; }
 
+        // Note-status check driven by reconcile. Defaults to a mid-flight status
+        // (StillWorking) so a reconcile that runs incidentally leaves entries be.
+        public SessionStatus NoteStatus { get; set; } = SessionStatus.Transcribing;
+        public bool FailStatusCheck { get; set; }
+        public int StatusCheckCount { get; private set; }
+
         public override Task<bool> VerifySessionAliveAsync()
         {
             ProbeCallCount++;
             return Task.FromResult(SessionAlive);
+        }
+
+        public override Task<Session> FetchSessionAsync(string sessionId)
+        {
+            StatusCheckCount++;
+            if (FailStatusCheck)
+                return Task.FromException<Session>(new InvalidOperationException("Simulated status check failure"));
+            return Task.FromResult(new Session(
+                Id: sessionId, PatientId: null, Patient: null, Status: NoteStatus,
+                ScheduledAt: null, StartedAt: null, EndedAt: null, DurationMinutes: null,
+                VideoLink: null, VideoPlatform: null, SessionType: null, Source: null,
+                Notes: null, CreatedAt: null, UpdatedAt: null));
         }
 
         public StubApiClient(CredentialManager credentials) : base(credentials) { }
