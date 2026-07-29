@@ -180,32 +180,7 @@ struct CreateSessionRequest: Codable, Sendable {
     }
 }
 
-/// One entry from `GET /api/note-types` — the deployment's note-format
-/// catalog. Only the fields the picker needs; the endpoint's `sections`
-/// payload is deliberately not decoded here.
-struct NoteTypeSummary: Codable, Sendable, Identifiable, Equatable {
-    let key: String
-    let label: String
-    let context: String
-    let isLocked: Bool
-
-    var id: String { key }
-
-    enum CodingKeys: String, CodingKey {
-        case key
-        case label
-        case context
-        case isLocked = "is_locked"
-    }
-}
-
-struct NoteTypeListResponse: Codable, Sendable {
-    let noteTypes: [NoteTypeSummary]
-
-    enum CodingKeys: String, CodingKey {
-        case noteTypes = "note_types"
-    }
-}
+// NoteTypeSummary / NoteTypeListResponse live in NoteTypeCatalog.swift.
 
 struct UpdateSessionRequest: Codable, Sendable {
     let scheduledAt: String?
