@@ -14,7 +14,7 @@ struct QuickStartSheet: View {
     let onSelect: (Patient, String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedNoteType: String = "soap"
+    @State private var selectedNoteType = "soap"
 
     var body: some View {
         VStack(spacing: 0) {

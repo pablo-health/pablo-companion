@@ -363,10 +363,9 @@ struct ContentView: View {
 
     func handleQuickStart(_ patient: Patient, noteType: String? = nil) {
         Task {
-            guard
-                let session = await sessionVM.createAdHocSession(
-                    patientId: patient.id, noteType: noteType
-                )
+            guard let session = await sessionVM.createAdHocSession(
+                patientId: patient.id, noteType: noteType
+            )
             else { return }
             guard await sessionVM.startSession(session.id) != nil else { return }
             activeSessionId = session.id
