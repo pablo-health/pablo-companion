@@ -182,11 +182,38 @@ final class SessionViewModel {
         isLoading = false
     }
 
+    // MARK: - Note types
+
+    /// Session-context note formats the caller may pick for an ad-hoc
+    /// session, from `GET /api/note-types`. Locked (subscription-gated)
+    /// and non-session formats are filtered out. Empty until
+    /// `loadNoteTypesIfNeeded()` succeeds; the picker hides itself while
+    /// there is at most one choice, so a failed fetch degrades to the
+    /// old behavior (server default note type).
+    var noteTypes: [NoteTypeSummary] = []
+
+    private var noteTypesLoaded = false
+
+    /// Fetches the note-type catalog once per app session (best-effort:
+    /// a failure is logged and retried on next call, never surfaced —
+    /// the quick-start flow works without it).
+    func loadNoteTypesIfNeeded() async {
+        guard !noteTypesLoaded else { return }
+        do {
+            let all = try await apiClient.fetchNoteTypes()
+            noteTypes = all.filter { $0.context == "session" && !$0.isLocked }
+            noteTypesLoaded = true
+        } catch {
+            logger.error("Failed to load note types: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Ad-hoc session creation
 
     /// Creates a new ad-hoc session for the given patient and starts it immediately.
-    /// Used by the "Quick Start" flow.
-    func createAdHocSession(patientId: String) async -> Session? {
+    /// Used by the "Quick Start" flow. `noteType` is a registry key from
+    /// the note-type catalog; nil keeps the server default.
+    func createAdHocSession(patientId: String, noteType: String? = nil) async -> Session? {
         isLoading = true
         errorMessage = nil
 
@@ -199,7 +226,8 @@ final class SessionViewModel {
                 videoPlatform: nil,
                 sessionType: .individual,
                 source: .companion,
-                notes: nil
+                notes: nil,
+                noteType: noteType
             )
             let session = try await apiClient.createSession(request: request)
             logger.info("Created ad-hoc session")

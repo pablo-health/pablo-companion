@@ -250,6 +250,17 @@ final class APIClient {
         return listResponse.data
     }
 
+    /// Fetches the deployment's note-type catalog.
+    func fetchNoteTypes() async throws -> [NoteTypeSummary] {
+        let request = try await buildRequest("GET", path: "/api/note-types")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try mapHTTPErrors(data: data, response: response)
+
+        let decoded: NoteTypeListResponse = try handleResponse(data, response)
+        logger.info("Fetched note types")
+        return decoded.noteTypes
+    }
+
     /// Creates a new therapy session.
     func createSession(request: CreateSessionRequest) async throws -> Session {
         var urlRequest = try await buildRequest("POST", path: "/api/sessions/schedule")

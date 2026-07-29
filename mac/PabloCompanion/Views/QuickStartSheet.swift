@@ -1,19 +1,30 @@
 import SwiftUI
 
 /// Modal sheet for quick-starting an ad-hoc session by selecting a patient.
+///
+/// When the deployment's note-type catalog offers more than one
+/// session-context format, a picker lets the clinician choose which
+/// note the recording should generate; the selected registry key is
+/// handed to `onSelect` (nil = server default).
 struct QuickStartSheet: View {
     let patients: [Patient]
     let isLoading: Bool
     @Binding var searchText: String
-    let onSelect: (Patient) -> Void
+    var noteTypes: [NoteTypeSummary] = []
+    let onSelect: (Patient, String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedNoteType: String = "soap"
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
             searchBar
+            if noteTypes.count > 1 {
+                Divider()
+                noteTypePicker
+            }
             Divider()
             patientContent
         }
@@ -65,6 +76,28 @@ struct QuickStartSheet: View {
         .accessibilityLabel("Clear search")
     }
 
+    // MARK: - Note type
+
+    private var noteTypePicker: some View {
+        HStack {
+            Text("Note type")
+                .font(.pabloBody(13))
+                .foregroundStyle(Color.pabloBrownSoft)
+            Spacer()
+            Picker("Note type", selection: $selectedNoteType) {
+                ForEach(noteTypes) { noteType in
+                    Text(noteType.label).tag(noteType.key)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: 220)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.pabloCream)
+    }
+
     // MARK: - Content
 
     @ViewBuilder
@@ -95,7 +128,9 @@ struct QuickStartSheet: View {
     private var patientList: some View {
         List(patients) { patient in
             QuickStartPatientRow(patient: patient) {
-                onSelect(patient)
+                // Only forward an explicit choice when there was a real
+                // picker; otherwise let the server apply its default.
+                onSelect(patient, noteTypes.count > 1 ? selectedNoteType : nil)
                 dismiss()
             }
             .pabloListRowStyle()
@@ -185,6 +220,12 @@ private enum QuickStartPreviewData {
         patients: QuickStartPreviewData.patients,
         isLoading: false,
         searchText: .constant(""),
-        onSelect: { _ in }
+        noteTypes: [
+            NoteTypeSummary(key: "soap", label: "SOAP", context: "session", isLocked: false),
+            NoteTypeSummary(
+                key: "narrative", label: "Narrative", context: "session", isLocked: false
+            ),
+        ],
+        onSelect: { _, _ in }
     )
 }

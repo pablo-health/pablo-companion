@@ -163,6 +163,9 @@ struct CreateSessionRequest: Codable, Sendable {
     let sessionType: SessionType?
     let source: SessionSource?
     let notes: String?
+    /// Note-type registry key (e.g. "soap", "narrative"). nil lets the
+    /// backend apply its default ("soap").
+    let noteType: String?
 
     enum CodingKeys: String, CodingKey {
         case patientId = "patient_id"
@@ -173,6 +176,34 @@ struct CreateSessionRequest: Codable, Sendable {
         case sessionType = "session_type"
         case source
         case notes
+        case noteType = "note_type"
+    }
+}
+
+/// One entry from `GET /api/note-types` — the deployment's note-format
+/// catalog. Only the fields the picker needs; the endpoint's `sections`
+/// payload is deliberately not decoded here.
+struct NoteTypeSummary: Codable, Sendable, Identifiable, Equatable {
+    let key: String
+    let label: String
+    let context: String
+    let isLocked: Bool
+
+    var id: String { key }
+
+    enum CodingKeys: String, CodingKey {
+        case key
+        case label
+        case context
+        case isLocked = "is_locked"
+    }
+}
+
+struct NoteTypeListResponse: Codable, Sendable {
+    let noteTypes: [NoteTypeSummary]
+
+    enum CodingKeys: String, CodingKey {
+        case noteTypes = "note_types"
     }
 }
 
