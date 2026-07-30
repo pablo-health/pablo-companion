@@ -240,7 +240,10 @@ struct BaaStatus: Codable, Sendable {
 
 struct Patient: Codable, Sendable, Hashable, Identifiable {
     let id: String
-    let userId: String
+    // No `userId`: access is governed by patient_clinicians grants, not a
+    // user_id column on the patient (backend migration 9dea1edf7fe0). The
+    // backend stopped sending it, and decoding it as non-optional failed the
+    // whole patient list with "Missing key 'user_id'".
     let firstName: String
     let lastName: String
     let email: String?
@@ -260,7 +263,6 @@ struct Patient: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case userId = "user_id"
         case firstName = "first_name"
         case lastName = "last_name"
         case email

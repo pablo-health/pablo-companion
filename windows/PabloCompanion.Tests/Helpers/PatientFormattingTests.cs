@@ -15,7 +15,6 @@ public class PatientFormattingTests
     {
         return new Patient(
             Id: "pat-1",
-            UserId: "user-1",
             FirstName: firstName,
             LastName: lastName,
             Email: email,
