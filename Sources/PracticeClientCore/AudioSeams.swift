@@ -60,7 +60,7 @@ public final class FileAudioInputSource: PracticeAudioSource, @unchecked Sendabl
     }
 
     /// True once the whole fixture (plus trailing silence) has been emitted.
-    public private(set) var didFinish = false
+    private(set) public var didFinish = false
 
     public func start() throws {
         let pcm = self.pcm

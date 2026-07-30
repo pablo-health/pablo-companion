@@ -120,9 +120,23 @@ private final class Events: @unchecked Sendable {
     private(set) var asrRecognized = 0
     private(set) var serverFrames = 0
 
-    func markStarted() { lock.lock(); sessionStarted = true; lock.unlock() }
-    func markEnded() { lock.lock(); sessionEnded = true; lock.unlock() }
-    func markFatal(_ message: String) { lock.lock(); fatal = message; lock.unlock() }
+    func markStarted() {
+        lock.lock()
+        sessionStarted = true
+        lock.unlock()
+    }
+
+    func markEnded() {
+        lock.lock()
+        sessionEnded = true
+        lock.unlock()
+    }
+
+    func markFatal(_ message: String) {
+        lock.lock()
+        fatal = message
+        lock.unlock()
+    }
 
     func recordServerEvent(_ raw: String) {
         lock.lock()
@@ -236,7 +250,8 @@ private struct Runner {
         let soapDeadline = Date().addingTimeInterval(30)
         while Date() < soapDeadline {
             if let detail = try? await api.getSessionDetail(sessionId: session.sessionId),
-               let note = detail.soapNote {
+               let note = detail.soapNote
+            {
                 soap = note
                 break
             }
@@ -257,11 +272,10 @@ private struct Runner {
         let rms = sink.rms()
         let minRMS = Double(ProcessInfo.processInfo.environment["PRACTICE_MIN_RMS"] ?? "") ?? 0.01
 
-        let soapDetail: String
-        if let soap {
-            soapDetail = soap.isComplete ? "all four sections present" : "a section was empty"
+        let soapDetail: String = if let soap {
+            soap.isComplete ? "all four sections present" : "a section was empty"
         } else {
-            soapDetail = "no soap_note returned"
+            "no soap_note returned"
         }
 
         let checks: [(name: String, ok: Bool, detail: String)] = [
@@ -276,7 +290,9 @@ private struct Runner {
 
         let pad = checks.map(\.name.count).max() ?? 0
         let lines = checks
-            .map { "  [\($0.ok ? "PASS" : "FAIL")] \($0.name.padding(toLength: pad, withPad: " ", startingAt: 0))  \($0.detail)" }
+            .map {
+                "  [\($0.ok ? "PASS" : "FAIL")] \($0.name.padding(toLength: pad, withPad: " ", startingAt: 0))  \($0.detail)"
+            }
             .joined(separator: "\n")
         log("""
         ───── gate summary (session \(sessionId)) ─────
@@ -303,7 +319,9 @@ private struct Runner {
 
 private enum RunError: LocalizedError {
     case message(String)
-    var errorDescription: String? { if case let .message(m) = self { m } else { nil } }
+    var errorDescription: String? {
+        if case let .message(m) = self { m } else { nil }
+    }
 }
 
 private func log(_ message: String) {

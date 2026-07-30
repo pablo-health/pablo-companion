@@ -9,8 +9,13 @@ import Foundation
 /// access an unsigned CLI does not have. The bytes under test are the audio and
 /// the wire path, not the queue's at-rest format — that has its own unit tests.
 struct PassthroughEncryptor: SessionDataEncrypting {
-    func encrypt(_ data: Data) throws -> Data { data }
-    func decrypt(_ data: Data) throws -> Data { data }
+    func encrypt(_ data: Data) throws -> Data {
+        data
+    }
+
+    func decrypt(_ data: Data) throws -> Data {
+        data
+    }
 }
 
 /// Mutable capture for the coordinator's `@Sendable` closures.
