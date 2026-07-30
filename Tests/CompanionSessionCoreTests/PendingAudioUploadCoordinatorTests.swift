@@ -1,6 +1,6 @@
+@testable import CompanionSessionCore
 import Foundation
 import Testing
-@testable import CompanionSessionCore
 
 /// Covers the queue drain: backoff, the retry cap, and cleanup after a confirmed
 /// upload.
@@ -62,11 +62,11 @@ struct PendingAudioUploadCoordinatorTests {
 
     // MARK: - Due-ness
 
-    @Test func aFreshEntryIsDueImmediately() {
+    @Test func aFreshEntryIsDueImmediately() throws {
         let store = Self.makeStore()
         Self.queue(store, "session-A")
         let c = makeCoordinator(store: store)
-        let entry = store.get(sessionId: "session-A")!
+        let entry = try #require(store.get(sessionId: "session-A"))
 
         #expect(c.isDue(entry))
     }
@@ -97,7 +97,9 @@ struct PendingAudioUploadCoordinatorTests {
     @Test func anEntryPastTheRetryCapIsNeverDue() throws {
         let store = Self.makeStore()
         Self.queue(store, "session-D")
-        for _ in 0 ..< 10 { store.incrementRetry(sessionId: "session-D") }
+        for _ in 0 ..< 10 {
+            store.incrementRetry(sessionId: "session-D")
+        }
         let entry = try #require(store.get(sessionId: "session-D"))
 
         // Far past any backoff — the cap, not the clock, is what stops it.
@@ -108,7 +110,7 @@ struct PendingAudioUploadCoordinatorTests {
 
     // MARK: - Draining
 
-    @Test func aSuccessfulDrainRemovesTheEntryAndDeletesTheAudio() async throws {
+    @Test func aSuccessfulDrainRemovesTheEntryAndDeletesTheAudio() async {
         let store = Self.makeStore()
         Self.queue(store, "session-E")
         let cleaned = Box<[String]>([])
@@ -234,7 +236,9 @@ struct PendingAudioUploadCoordinatorTests {
         // permits — was not.
         let store = Self.makeStore()
         Self.queue(store, "session-9")
-        for _ in 0 ..< 9 { store.incrementRetry(sessionId: "session-9") }
+        for _ in 0 ..< 9 {
+            store.incrementRetry(sessionId: "session-9")
+        }
         let entry = try #require(store.get(sessionId: "session-9"))
         let c = makeCoordinator(store: store, now: { entry.createdAt.addingTimeInterval(999_999) })
 
@@ -260,12 +264,14 @@ struct PendingAudioUploadCoordinatorTests {
         #expect(attempted.value.isEmpty)
     }
 
-    @Test func forceDrainIgnoresBackoffAndTheRetryCap() async throws {
+    @Test func forceDrainIgnoresBackoffAndTheRetryCap() async {
         // "Retry now" is an explicit user override; waiting out a ladder they
         // just overrode would be wrong.
         let store = Self.makeStore()
         Self.queue(store, "session-I")
-        for _ in 0 ..< 10 { store.incrementRetry(sessionId: "session-I") }
+        for _ in 0 ..< 10 {
+            store.incrementRetry(sessionId: "session-I")
+        }
         let attempted = Box<[String]>([])
 
         let c = makeCoordinator(store: store, upload: { attempted.value.append($0.sessionId) })
@@ -304,7 +310,7 @@ struct PendingAudioUploadCoordinatorTests {
         #expect(count == 0)
     }
 
-    @Test func theCaptureRateReachesTheUpload() async throws {
+    @Test func theCaptureRateReachesTheUpload() async {
         // The regression that broke main: the rate has to arrive at the upload,
         // and a queued entry is the only place a post-relaunch retry can get it.
         let store = Self.makeStore()
