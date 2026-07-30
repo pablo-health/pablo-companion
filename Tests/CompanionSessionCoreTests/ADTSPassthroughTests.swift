@@ -1,6 +1,6 @@
+@testable import CompanionSessionCore
 import Foundation
 import Testing
-@testable import CompanionSessionCore
 
 /// Covers ADTS/AAC detection — the branch that decides whether captured audio
 /// gets a WAV header stapled on or passes through untouched.

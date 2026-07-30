@@ -40,7 +40,9 @@ enum TOTP {
     static func base32Decode(_ s: String) -> Data {
         let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
         var lookup = [Character: Int]()
-        for (i, c) in alphabet.enumerated() { lookup[c] = i }
+        for (i, c) in alphabet.enumerated() {
+            lookup[c] = i
+        }
 
         var bits = 0
         var value = 0
