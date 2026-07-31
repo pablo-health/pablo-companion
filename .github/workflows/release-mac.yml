@@ -82,6 +82,11 @@ jobs:
       # silently has no com.apple.developer.associated-domains, so every
       # universal link falls through to the browser. That shipped undetected;
       # the "Verify signing" step below is the regression guard.
+      # CODE_SIGN_IDENTITY is pinned to Developer ID Application because
+      # automatic signing otherwise archives with a *development* identity
+      # and only re-signs with Developer ID at export. The runner keychain
+      # holds only the Developer ID cert, so that path fails with
+      # 'No "Mac Development" signing certificate ... was found'.
       - name: Archive
         run: |
           xcodebuild archive \
@@ -93,7 +98,9 @@ jobs:
             -allowProvisioningUpdates \
             -authenticationKeyPath $RUNNER_TEMP/asc.p8 \
             -authenticationKeyID ${{ secrets.APPLE_NOTARY_KEY_ID }} \
-            -authenticationKeyIssuerID ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+            -authenticationKeyIssuerID ${{ secrets.APPLE_NOTARY_ISSUER_ID }} \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM=L8KG4FA2R9
 
       - name: Export
         run: |
