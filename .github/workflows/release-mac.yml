@@ -123,11 +123,33 @@ jobs:
           echo "$DETAIL" | grep -q "Authority=Developer ID Application" \
             || { echo "::error::not signed with a Developer ID Application identity"; exit 1; }
 
+          # An association is keyed on the appID, which is <teamID>.<bundleID> —
+          # both halves must match the appIDs served in the AASA, or the
+          # association silently fails to form even though signing looks fine.
+          # These two constants and the AASA must be changed together.
+          EXPECTED_TEAM=L8KG4FA2R9
+          EXPECTED_BUNDLE=health.pablo.companion
+
+          echo "$DETAIL" | grep -q "^TeamIdentifier=${EXPECTED_TEAM}$" \
+            || { echo "::error::signed by the wrong team — expected TeamIdentifier=${EXPECTED_TEAM}"; exit 1; }
+
+          # ^Identifier= anchored so it can't match the TeamIdentifier= line.
+          echo "$DETAIL" | grep -q "^Identifier=${EXPECTED_BUNDLE}$" \
+            || { echo "::error::wrong bundle identifier — expected ${EXPECTED_BUNDLE}"; exit 1; }
+
           # Hardened runtime is required for notarization.
           echo "$DETAIL" | grep -qE "flags=.*runtime" \
             || { echo "::error::hardened runtime is not enabled"; exit 1; }
 
-          ENTS=$(codesign -d --entitlements :- "$APP" 2>/dev/null || true)
+          # Distinguish "extraction failed" from "extracted, and it is empty".
+          # An empty read is the defect this gate exists to catch; a codesign
+          # error is a different problem entirely, and reporting one as the
+          # other is how the original bug stayed hidden for so long.
+          if ! ENTS=$(codesign -d --entitlements :- "$APP" 2>"$RUNNER_TEMP/ents.err"); then
+            echo "::error::could not read entitlements from the bundle (codesign failed):"
+            cat "$RUNNER_TEMP/ents.err"
+            exit 1
+          fi
           if [ -z "$ENTS" ]; then
             echo "::error::app carries NO entitlements — universal links cannot work"
             exit 1
