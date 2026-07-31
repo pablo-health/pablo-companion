@@ -75,13 +75,20 @@ jobs:
       # DEVELOPMENT_TEAM (mac/PabloCompanion.xcodeproj), so letting Xcode sign
       # is what attaches the entitlements and the provisioning profile.
       #
-      # Do NOT reintroduce CODE_SIGNING_REQUIRED=NO / CODE_SIGNING_ALLOWED=NO.
-      # Those skip entitlement embedding entirely, and a later hand-rolled
-      # `codesign --sign` without `--entitlements` produces an app that is
-      # correctly Developer ID signed, notarizes, staples, verifies clean — and
-      # silently has no com.apple.developer.associated-domains, so every
-      # universal link falls through to the browser. That shipped undetected;
-      # the "Verify signing" step below is the regression guard.
+      # Archiving stays unsigned ON PURPOSE. Letting Xcode sign requires a Mac
+      # Development certificate (automatic signing archives with a development
+      # identity and only re-signs with Developer ID at export), and the runner
+      # keychain holds only the Developer ID cert. Pinning CODE_SIGN_IDENTITY
+      # instead fails differently: command-line build settings apply to every
+      # target, so the SPM dependencies error with "conflicting provisioning
+      # settings". Signing by hand after export sidesteps both.
+      #
+      # What must NEVER happen again is signing by hand WITHOUT --entitlements
+      # and without embedding the provisioning profile. That produced an app
+      # that is correctly Developer ID signed, notarizes, staples and passes
+      # `codesign --verify --deep --strict`, yet carries no
+      # com.apple.developer.associated-domains at all — so every universal link
+      # fell through to the browser. "Verify signing" below is the guard.
       - name: Archive
         run: |
           xcodebuild archive \
@@ -90,21 +97,52 @@ jobs:
             -archivePath $RUNNER_TEMP/Pablo.xcarchive \
             -destination 'generic/platform=macOS' \
             -clonedSourcePackagesDirPath mac/SourcePackages \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath $RUNNER_TEMP/asc.p8 \
-            -authenticationKeyID ${{ secrets.APPLE_NOTARY_KEY_ID }} \
-            -authenticationKeyIssuerID ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Export
         run: |
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Pablo.xcarchive \
             -exportOptionsPlist mac/ExportOptions.plist \
-            -exportPath $RUNNER_TEMP/export \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath $RUNNER_TEMP/asc.p8 \
-            -authenticationKeyID ${{ secrets.APPLE_NOTARY_KEY_ID }} \
-            -authenticationKeyIssuerID ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+            -exportPath $RUNNER_TEMP/export
+
+      - name: Sign app with Developer ID
+        env:
+          IDENTITY: "Developer ID Application: LLL Solutions, LLC (L8KG4FA2R9)"
+          PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/export/Pablo.app"
+
+          if [ -z "${PROFILE:-}" ]; then
+            echo "::error::APPLE_PROVISIONING_PROFILE secret is not set. associated-domains is a restricted entitlement; without an embedded Developer ID profile that grants it, macOS ignores it and universal links stay broken."
+            exit 1
+          fi
+
+          # On macOS outside the App Store, a restricted entitlement is only
+          # honored when an embedded profile authorizes it.
+          echo "$PROFILE" | base64 --decode > "$APP/Contents/embedded.provisionprofile"
+
+          # codesign does not expand Xcode build variables, so materialize a
+          # resolved copy of the entitlements rather than passing the source
+          # file (which would sign a literal "$(AppIdentifierPrefix)…" group).
+          sed -e 's|$(AppIdentifierPrefix)$(CFBundleIdentifier)|L8KG4FA2R9.health.pablo.companion|' \
+            mac/PabloCompanion/PabloCompanion.entitlements > $RUNNER_TEMP/entitlements.plist
+          plutil -lint $RUNNER_TEMP/entitlements.plist
+          echo "Signing with entitlements:"
+          plutil -p $RUNNER_TEMP/entitlements.plist
+
+          # Nested code is signed first, and without entitlements — only the
+          # main bundle carries them.
+          find "$APP/Contents/Frameworks" -type d \( -name "*.framework" -o -name "*.bundle" \) -print0 \
+            | while IFS= read -r -d '' FW; do
+                codesign --force --options runtime --timestamp --sign "$IDENTITY" "$FW"
+              done
+
+          codesign --force --options runtime --timestamp \
+            --entitlements $RUNNER_TEMP/entitlements.plist \
+            --sign "$IDENTITY" "$APP"
 
       # Fail the release rather than ship an app whose universal links are dead.
       # Each check below corresponds to a way the signed bundle can look healthy
@@ -164,8 +202,24 @@ jobs:
 
           # On macOS, associated-domains is a restricted entitlement: outside the
           # App Store it is only honored when authorized by an embedded profile.
-          test -f "$APP/Contents/embedded.provisionprofile" \
+          PROFILE_PATH="$APP/Contents/embedded.provisionprofile"
+          test -f "$PROFILE_PATH" \
             || { echo "::error::no embedded.provisionprofile — the restricted associated-domains entitlement will be ignored"; exit 1; }
+
+          # Having the entitlement in the signature is NOT enough: the embedded
+          # profile must also grant it, or macOS ignores it at runtime and
+          # universal links stay broken while every check above still passes.
+          # A Developer ID profile only carries associated-domains if its App ID
+          # had the capability enabled when the profile was generated — enabling
+          # it later does not retroactively update an existing profile.
+          PROFILE_ENTS=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null \
+            | plutil -extract Entitlements xml1 -o - - 2>/dev/null || true)
+          if [ -z "$PROFILE_ENTS" ]; then
+            echo "::error::could not read entitlements out of embedded.provisionprofile"
+            exit 1
+          fi
+          echo "$PROFILE_ENTS" | grep -q "com.apple.developer.associated-domains" \
+            || { echo "::error::the embedded provisioning profile does not grant com.apple.developer.associated-domains — regenerate it from an App ID with the Associated Domains capability enabled"; exit 1; }
 
           # get-task-allow is a debug-only entitlement; notarization rejects it.
           # Written as an `if` on purpose: `grep -q X && exit 1` would abort the
