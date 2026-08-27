@@ -184,7 +184,8 @@ public sealed record CreateSessionRequest(
     [property: JsonPropertyName("video_platform"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VideoPlatform? VideoPlatform = null,
     [property: JsonPropertyName("session_type"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SessionType? SessionType = null,
     [property: JsonPropertyName("source"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SessionSource? Source = null,
-    [property: JsonPropertyName("notes"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Notes = null
+    [property: JsonPropertyName("notes"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Notes = null,
+    [property: JsonPropertyName("note_type"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? NoteType = null
 );
 
 public sealed record UpdateSessionRequest(

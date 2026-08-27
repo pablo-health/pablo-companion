@@ -163,6 +163,9 @@ struct CreateSessionRequest: Codable, Sendable {
     let sessionType: SessionType?
     let source: SessionSource?
     let notes: String?
+    /// Note-type registry key (e.g. "soap", "narrative"). nil lets the
+    /// backend apply its default ("soap").
+    let noteType: String?
 
     enum CodingKeys: String, CodingKey {
         case patientId = "patient_id"
@@ -173,8 +176,11 @@ struct CreateSessionRequest: Codable, Sendable {
         case sessionType = "session_type"
         case source
         case notes
+        case noteType = "note_type"
     }
 }
+
+// NoteTypeSummary / NoteTypeListResponse live in NoteTypeCatalog.swift.
 
 struct UpdateSessionRequest: Codable, Sendable {
     let scheduledAt: String?

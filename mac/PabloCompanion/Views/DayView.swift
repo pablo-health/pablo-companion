@@ -19,7 +19,7 @@ struct DayView: View {
     var hasRecordingForSession: ((String) -> Bool)?
     var playingSessionId: String?
     var onStartSession: ((Appointment) -> Void)?
-    var onQuickStart: ((Patient) -> Void)?
+    var onQuickStart: ((Patient, String?) -> Void)?
     var onStopRecording: (() -> Void)?
     var recordingStalled = false
     var recordingError: String?
@@ -63,8 +63,10 @@ struct DayView: View {
                 patients: patients,
                 isLoading: isLoadingPatients,
                 searchText: $patientSearchText,
-                onSelect: { patient in onQuickStart?(patient) }
+                noteTypes: sessionVM.noteTypes,
+                onSelect: { patient, noteType in onQuickStart?(patient, noteType) }
             )
+            .task { await sessionVM.loadNoteTypesIfNeeded() }
         }
     }
 

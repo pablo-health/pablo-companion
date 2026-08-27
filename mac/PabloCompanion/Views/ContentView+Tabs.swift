@@ -22,7 +22,7 @@ extension ContentView {
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
             onStartSession: { startSession(fromAppointmentId: $0.id) },
-            onQuickStart: { handleQuickStart($0) },
+            onQuickStart: { handleQuickStart($0, noteType: $1) },
             onStopRecording: {
                 Task {
                     await recordingVM.stopRecording()
