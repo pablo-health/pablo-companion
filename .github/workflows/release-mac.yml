@@ -195,7 +195,11 @@ jobs:
 
           # The associated domains must match the AASA files served at
           # https://<domain>/.well-known/apple-app-site-association.
-          for DOMAIN in app.pablo.health dev.pablo.health; do
+          # The launch.* hosts exist because a browser follows a link to the
+          # host it is already on as ordinary navigation, so a handoff link
+          # has to be on a different hostname to reach this app at all.
+          for DOMAIN in app.pablo.health dev.pablo.health \
+                        launch.app.pablo.health launch.dev.pablo.health; do
             echo "$ENTS" | grep -q "applinks:${DOMAIN}" \
               || { echo "::error::missing entitlement applinks:${DOMAIN}"; exit 1; }
           done
