@@ -14,7 +14,9 @@ struct QuickStartSheet: View {
     let onSelect: (Patient, String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedNoteType = "soap"
+    /// Nil until the catalog arrives (or when it is empty); always a key
+    /// present in `noteTypes` once set, see `reconcileSelection()`.
+    @State private var selectedNoteType: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +32,13 @@ struct QuickStartSheet: View {
         }
         .frame(minWidth: 400, minHeight: 400)
         .background(Color.pabloCream)
+        .onChange(of: noteTypes, initial: true) { _, _ in reconcileSelection() }
+    }
+
+    /// The catalog can arrive after the sheet is shown, or change under
+    /// it (backend switch); keep the selection pointing at a real entry.
+    private func reconcileSelection() {
+        selectedNoteType = noteTypes.resolvedSelection(current: selectedNoteType)
     }
 
     // MARK: - Header
@@ -86,7 +95,7 @@ struct QuickStartSheet: View {
             Spacer()
             Picker("Note type", selection: $selectedNoteType) {
                 ForEach(noteTypes) { noteType in
-                    Text(noteType.label).tag(noteType.key)
+                    Text(noteType.label).tag(Optional(noteType.key))
                 }
             }
             .labelsHidden()
@@ -125,12 +134,17 @@ struct QuickStartSheet: View {
         )
     }
 
+    private var chosenNoteType: String? {
+        noteTypes.resolvedSelection(current: selectedNoteType)
+    }
+
     private var patientList: some View {
         List(patients) { patient in
             QuickStartPatientRow(patient: patient) {
                 // Only forward an explicit choice when there was a real
-                // picker; otherwise let the server apply its default.
-                onSelect(patient, noteTypes.count > 1 ? selectedNoteType : nil)
+                // picker and it points at a catalog entry; otherwise let
+                // the server apply its default.
+                onSelect(patient, noteTypes.count > 1 ? chosenNoteType : nil)
                 dismiss()
             }
             .pabloListRowStyle()

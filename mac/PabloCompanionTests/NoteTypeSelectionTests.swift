@@ -79,4 +79,36 @@ struct NoteTypeSelectionTests {
         #expect(decoded.noteTypes[1].isLocked)
         #expect(decoded.noteTypes[1].context == "patient")
     }
+
+    // MARK: - Picker selection reconciliation
+
+    private static let catalog = [
+        NoteTypeSummary(key: "soap", label: "SOAP", context: "session", isLocked: false),
+        NoteTypeSummary(key: "narrative", label: "Narrative", context: "session", isLocked: false),
+    ]
+
+    @Test func resolvedSelectionKeepsCurrentWhenStillOffered() {
+        #expect(Self.catalog.resolvedSelection(current: "narrative") == "narrative")
+    }
+
+    @Test func resolvedSelectionFallsBackToPreferredKey() {
+        // Stale selection from a previous catalog: prefer "soap" when present.
+        #expect(Self.catalog.resolvedSelection(current: "dap") == "soap")
+        #expect(Self.catalog.resolvedSelection(current: nil) == "soap")
+    }
+
+    @Test func resolvedSelectionFallsBackToFirstEntryWithoutPreferred() {
+        let noSoap = [
+            NoteTypeSummary(key: "dap", label: "DAP", context: "session", isLocked: false),
+            NoteTypeSummary(key: "birp", label: "BIRP", context: "session", isLocked: false),
+        ]
+        #expect(noSoap.resolvedSelection(current: "soap") == "dap")
+        #expect(noSoap.resolvedSelection(current: nil) == "dap")
+    }
+
+    @Test func resolvedSelectionIsNilForEmptyCatalog() {
+        // No catalog yet (or fetch failed): send nothing so the server
+        // applies its default rather than an unsupported key.
+        #expect([NoteTypeSummary]().resolvedSelection(current: "soap") == nil)
+    }
 }

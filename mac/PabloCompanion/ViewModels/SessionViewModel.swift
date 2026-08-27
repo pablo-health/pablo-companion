@@ -62,6 +62,10 @@ final class SessionViewModel {
                 apiClient = APIClient(baseURL: backendURL)
                 apiClient.getToken = token
                 apiClient.onAuthRejected = onAuthRejected
+                // The note-type catalog is per deployment; drop it so the
+                // next Quick Start refetches from the new backend.
+                noteTypes = []
+                noteTypesLoaded = false
             }
         }
     }
@@ -194,9 +198,10 @@ final class SessionViewModel {
 
     private var noteTypesLoaded = false
 
-    /// Fetches the note-type catalog once per app session (best-effort:
-    /// a failure is logged and retried on next call, never surfaced —
-    /// the quick-start flow works without it).
+    /// Fetches the note-type catalog once per backend (best-effort: a
+    /// failure is logged and retried on next call, never surfaced — the
+    /// quick-start flow works without it). Changing `backendURL` clears
+    /// the cache.
     func loadNoteTypesIfNeeded() async {
         guard !noteTypesLoaded else { return }
         do {
