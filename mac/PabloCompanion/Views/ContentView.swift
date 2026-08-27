@@ -34,6 +34,14 @@ struct ContentView: View {
     /// Non-PHI message shown when a launch intent can't be redeemed.
     @State var launchError: String?
 
+    /// True once `configureAndLoad()` has injected the token provider into every
+    /// API client. `authState` flips to `.authenticated` as soon as a token is
+    /// restored from the Keychain, but the clients are wired later — after an
+    /// awaited server-config fetch. A deep link arriving in that window would
+    /// redeem against a client with no `getToken` and fail locally as
+    /// "Not authenticated", burning the handoff on every cold launch.
+    @State var apiClientsConfigured = false
+
     /// Whether the preferences sheet is shown from the minimal window's footer.
     @State private var showPreferences = false
 
@@ -76,6 +84,7 @@ struct ContentView: View {
             }
         }
         .task { await configureAndLoad() }
+        .handoffAlerts(recordingVM: recordingVM, sessionVM: sessionVM)
         .sheet(item: $pendingLaunch) { launch in
             SessionConfirmationView(
                 patientName: launch.patientName,
@@ -110,6 +119,12 @@ struct ContentView: View {
         }
         .onChange(of: deepLinks.pendingURL) { _, url in
             guard url != nil else { return }
+            drainPendingDeepLink()
+        }
+        .onChange(of: apiClientsConfigured) { _, ready in
+            // Releases a handoff that arrived mid-cold-launch, before the API
+            // clients could authenticate it.
+            guard ready else { return }
             drainPendingDeepLink()
         }
         .onChange(of: uploadVM.backendURL) { _, newURL in
@@ -182,17 +197,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 500, minHeight: 600)
-        .alert("Recording Error", isPresented: $recordingVM.showError, presenting: recordingVM.errorMessage) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
-        }
         .alert("Patient Error", isPresented: $patientVM.showError, presenting: patientVM.errorMessage) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
-        }
-        .alert("Session Error", isPresented: $sessionVM.showError, presenting: sessionVM.errorMessage) { _ in
             Button("OK") {}
         } message: { message in
             Text(message)
@@ -287,6 +292,11 @@ struct ContentView: View {
         sessionVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
         practiceVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
         subscriptionVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
+
+        // Every client can now mint an authenticated request. A deep link that
+        // arrived before this point is still buffered; releasing the gate drains
+        // it (see `drainPendingDeepLink`).
+        apiClientsConfigured = true
 
         // Scope encryption keys to the signed-in user
         let email = authVM.authenticatedEmail

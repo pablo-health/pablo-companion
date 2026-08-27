@@ -1,6 +1,6 @@
+@testable import CompanionSessionCore
 import Foundation
 import Testing
-@testable import CompanionSessionCore
 
 /// Covers deletion of local audio after a confirmed upload.
 ///

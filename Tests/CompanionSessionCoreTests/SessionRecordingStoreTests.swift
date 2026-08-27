@@ -1,6 +1,6 @@
+@testable import CompanionSessionCore
 import Foundation
 import Testing
-@testable import CompanionSessionCore
 
 /// Covers the session → recording map, including its plaintext → encrypted
 /// migration.
@@ -61,7 +61,7 @@ struct SessionRecordingStoreTests {
         #expect(loaded.sampleRate == 24000)
     }
 
-    @Test func savingASecondSessionKeepsTheFirst() throws {
+    @Test func savingASecondSessionKeepsTheFirst() {
         let dir = Self.tempDir()
         let store = Self.makeStore(directory: dir)
         store.save(sessionId: "session-A", entry: Self.entry())
@@ -165,7 +165,7 @@ struct SessionRecordingStoreTests {
         #expect(Self.makeStore(directory: dir).loadAll().isEmpty)
     }
 
-    @Test func aKeylessReadReturnsEmptyRatherThanDestroying() throws {
+    @Test func aKeylessReadReturnsEmptyRatherThanDestroying() {
         // Losing the key must not read as "the map is empty" and then get
         // persisted over real data — the shape of the Windows cache-poisoning bug.
         let dir = Self.tempDir()
