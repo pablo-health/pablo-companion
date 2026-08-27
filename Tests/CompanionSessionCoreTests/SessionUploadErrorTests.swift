@@ -1,6 +1,6 @@
+@testable import CompanionSessionCore
 import Foundation
 import Testing
-@testable import CompanionSessionCore
 
 /// Covers the error envelope and, importantly, that the error says something
 /// when printed.

@@ -134,7 +134,24 @@ final class RecordingService {
             logger.info("Recording started – systemAudioActive: \(self.systemAudioAvailableAtStart)")
         } catch {
             logger.error("Failed to start recording: \(error.localizedDescription)")
-            onError?("Failed to start recording: \(error.localizedDescription)")
+            // A denied capture is the ONLY authoritative permission signal we
+            // have. `CGPreflightScreenCaptureAccess()` reports Screen Recording,
+            // which macOS 26 split from System Audio Recording, and source
+            // enumeration is no better — a run that failed here had already
+            // logged "system audio: true". So correct the advertised permission
+            // state from the failure itself, and say where to fix it: the
+            // generic "grant the required audio recording permission" names
+            // neither the setting nor the pane.
+            if case CaptureError.permissionDenied = error {
+                onSystemAudioPermittedChange?(false)
+                onError?(
+                    "Pablo needs permission to record system audio. Grant it in "
+                        + "System Settings → Privacy & Security → Screen & System "
+                        + "Audio Recording, then start the session again."
+                )
+            } else {
+                onError?("Failed to start recording: \(error.localizedDescription)")
+            }
             currentRecordingState = .idle
             onCaptureStateUpdate?(.idle, nil)
             onSystemAudioActiveChange?(false)

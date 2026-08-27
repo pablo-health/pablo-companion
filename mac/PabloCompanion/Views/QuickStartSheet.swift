@@ -215,13 +215,13 @@ private struct QuickStartPatientRow: View {
 private enum QuickStartPreviewData {
     static let patients: [Patient] = [
         Patient(
-            id: "1", userId: "u1", firstName: "Jane", lastName: "Smith",
+            id: "1", firstName: "Jane", lastName: "Smith",
             email: "jane@example.com", phone: nil, status: "active",
             dateOfBirth: nil, diagnosis: nil, sessionCount: 12,
             lastSessionDate: nil, nextSessionDate: nil, createdAt: "", updatedAt: ""
         ),
         Patient(
-            id: "2", userId: "u2", firstName: "Bob", lastName: "Jones",
+            id: "2", firstName: "Bob", lastName: "Jones",
             email: nil, phone: nil, status: "active",
             dateOfBirth: nil, diagnosis: nil, sessionCount: 5,
             lastSessionDate: nil, nextSessionDate: nil, createdAt: "", updatedAt: ""

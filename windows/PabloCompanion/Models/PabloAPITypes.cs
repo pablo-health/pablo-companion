@@ -219,9 +219,11 @@ public sealed record BaaStatus(
     [property: JsonPropertyName("accepted_at")] string? AcceptedAt
 );
 
+// No UserId: access is governed by patient_clinicians grants, not a user_id
+// column on the patient (backend migration 9dea1edf7fe0). The backend stopped
+// sending it, and a required property failed the whole patient list.
 public sealed record Patient(
     [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("user_id")] string UserId,
     [property: JsonPropertyName("first_name")] string FirstName,
     [property: JsonPropertyName("last_name")] string LastName,
     [property: JsonPropertyName("email")] string? Email,

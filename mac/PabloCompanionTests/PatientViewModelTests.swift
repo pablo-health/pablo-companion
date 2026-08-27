@@ -104,7 +104,6 @@ struct PatientViewModelTests {
     private static func makePatient(index: Int) -> Patient {
         Patient(
             id: "patient-\(index)",
-            userId: "user-1",
             firstName: "Test",
             lastName: "Patient \(index)",
             email: nil,

@@ -44,6 +44,11 @@ windows/**/BundleArtifacts/
 .claude/scheduled_tasks.lock
 windows/scripts/.claude/
 
+# Claude Code: worktree-isolated sub-agents materialize here at runtime;
+# transient by design, never committed.
+.claude/worktrees/
+.worktrees/
+
 # Screenshot outputs from windows/scripts/capture-window.ps1
 windows/scripts/*.png
 
