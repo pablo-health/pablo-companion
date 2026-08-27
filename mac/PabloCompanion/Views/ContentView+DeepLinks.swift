@@ -24,6 +24,15 @@ extension ContentView {
     /// soft expired-link state instead.
     func drainPendingDeepLink() {
         guard case .authenticated = authVM.authState else { return }
+        // `.authenticated` only means a token was restored — the API clients get
+        // their token provider later, after an awaited config fetch. Draining
+        // before that throws `.notAuthenticated` client-side without ever
+        // reaching the redemption endpoint. Leave the URL buffered; the
+        // `apiClientsConfigured` change re-enters here once the wiring lands.
+        guard apiClientsConfigured else {
+            DeepLinkRouter.logger.info("Deferring deep link until API clients are configured")
+            return
+        }
         guard let url = deepLinks.pendingURL else { return }
 
         if activeSessionId != nil {

@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Pablo
+import Testing
 
 @Suite("OAuth state (RFC 6749 §10.12) helpers")
 struct OAuthStateTests {

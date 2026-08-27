@@ -34,6 +34,14 @@ struct ContentView: View {
     /// Non-PHI message shown when a launch intent can't be redeemed.
     @State var launchError: String?
 
+    /// True once `configureAndLoad()` has injected the token provider into every
+    /// API client. `authState` flips to `.authenticated` as soon as a token is
+    /// restored from the Keychain, but the clients are wired later — after an
+    /// awaited server-config fetch. A deep link arriving in that window would
+    /// redeem against a client with no `getToken` and fail locally as
+    /// "Not authenticated", burning the handoff on every cold launch.
+    @State var apiClientsConfigured = false
+
     /// Whether the preferences sheet is shown from the minimal window's footer.
     @State private var showPreferences = false
 
@@ -76,6 +84,7 @@ struct ContentView: View {
             }
         }
         .task { await configureAndLoad() }
+        .handoffAlerts(recordingVM: recordingVM, sessionVM: sessionVM)
         .sheet(item: $pendingLaunch) { launch in
             SessionConfirmationView(
                 patientName: launch.patientName,
@@ -112,6 +121,12 @@ struct ContentView: View {
             guard url != nil else { return }
             drainPendingDeepLink()
         }
+        .onChange(of: apiClientsConfigured) { _, ready in
+            // Releases a handoff that arrived mid-cold-launch, before the API
+            // clients could authenticate it.
+            guard ready else { return }
+            drainPendingDeepLink()
+        }
         .onChange(of: uploadVM.backendURL) { _, newURL in
             patientVM.backendURL = newURL
             sessionVM.backendURL = newURL
@@ -122,7 +137,6 @@ struct ContentView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { break }
-                await transcriptionVM.retryPendingUploads()
                 await transcriptionVM.retryPendingAudioUploads()
             }
         }
@@ -183,17 +197,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 500, minHeight: 600)
-        .alert("Recording Error", isPresented: $recordingVM.showError, presenting: recordingVM.errorMessage) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
-        }
         .alert("Patient Error", isPresented: $patientVM.showError, presenting: patientVM.errorMessage) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
-        }
-        .alert("Session Error", isPresented: $sessionVM.showError, presenting: sessionVM.errorMessage) { _ in
             Button("OK") {}
         } message: { message in
             Text(message)
@@ -288,6 +292,11 @@ struct ContentView: View {
         sessionVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
         practiceVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
         subscriptionVM.configureAuth(getToken: getToken, onAuthRejected: onAuthRejected)
+
+        // Every client can now mint an authenticated request. A deep link that
+        // arrived before this point is still buffered; releasing the gate drains
+        // it (see `drainPendingDeepLink`).
+        apiClientsConfigured = true
 
         // Scope encryption keys to the signed-in user
         let email = authVM.authenticatedEmail
@@ -411,14 +420,6 @@ struct ContentView: View {
         recordingVM.playRecording(recording)
     }
 
-    private func reuploadTranscript(for session: Session) {
-        let recId = recordingVM.recordingForSession(session.id)?.id ?? UUID()
-        Task {
-            await transcriptionVM.reuploadTranscript(recordingId: recId, sessionId: session.id)
-            await sessionVM.loadTodayAppointments()
-        }
-    }
-
     private func sessionDetailSheet(_ session: Session) -> some View {
         let recording = recordingVM.recordingForSession(session.id)
         let state = transcriptionStateForSession(session.id)
@@ -426,7 +427,6 @@ struct ContentView: View {
         let patient = session.patientId.flatMap { id in patientVM.patients.first { $0.id == id } }
         let isStaleInProgress = session.status == .inProgress && session.id != activeSessionId
         let orphans = recording == nil ? recordingVM.orphanedRecordings() : []
-        let canReupload = session.status == .failed && state?.transcript != nil
 
         return SessionDetailView(
             session: session,
@@ -436,8 +436,11 @@ struct ContentView: View {
             isPlaying: isPlaying,
             onTranscribe: recording != nil
                 ? { transcribeSession(session) } : nil,
-            onReuploadTranscript: canReupload
-                ? { reuploadTranscript(for: session) } : nil,
+            // Removed with the legacy transcript queue: the cloud path sets
+            // .done(transcript: "") on a successful audio upload, and "" is not
+            // nil — so this button appeared whenever the backend later marked
+            // the session failed, and posted an empty transcript.
+            onReuploadTranscript: nil,
             onPlay: recording != nil
                 ? { playSession(session) } : nil,
             onStopPlayback: isPlaying

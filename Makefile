@@ -1,13 +1,23 @@
 .PHONY: check build-mac test-mac lint-swift build-windows test-windows check-windows codeql
 
-check: lint-swift build-mac
+# Every mac recipe pipes xcodebuild into xcpretty, and a pipeline exits with the
+# status of its LAST command — so without pipefail, xcpretty's 0 masks an
+# xcodebuild failure and the recipe "passes" on code that cannot compile. That
+# is not hypothetical: main shipped a broken build behind a green `make check`.
+#
+# `set -o pipefail` is spelled out in each recipe rather than set once via
+# .SHELLFLAGS because macOS ships GNU Make 3.81 and .SHELLFLAGS landed in 3.82 —
+# there it is silently ignored, which looks like a fix and changes nothing.
+SHELL := /bin/bash
+
+check: lint-swift build-mac test-mac
 
 lint-swift:
 	swiftlint lint --strict --config mac/.swiftlint.yml mac/PabloCompanion/
 	swiftformat --lint --config mac/.swiftformat mac/PabloCompanion/
 
 build-mac:
-	xcodebuild -project mac/PabloCompanion.xcodeproj \
+	set -o pipefail; xcodebuild -project mac/PabloCompanion.xcodeproj \
 	  -scheme Pablo \
 	  -destination 'platform=macOS' \
 	  CODE_SIGN_IDENTITY="" \
@@ -16,7 +26,7 @@ build-mac:
 	  build | xcpretty
 
 test-mac:
-	xcodebuild -project mac/PabloCompanion.xcodeproj \
+	set -o pipefail; xcodebuild -project mac/PabloCompanion.xcodeproj \
 	  -scheme Pablo \
 	  -destination 'platform=macOS' \
 	  CODE_SIGN_IDENTITY="" \

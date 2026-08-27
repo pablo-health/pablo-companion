@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Pablo
+import Testing
 
 @Suite("PHISanitizer")
 struct PHISanitizerTests {
@@ -73,5 +73,35 @@ struct PHISanitizerTests {
         #expect(result.contains("[PATIENT]"))
         // "Li" and "Bo" are only 2 chars, so they should NOT be individually stripped
         #expect(!result.contains("[NAME]"))
+    }
+
+    // MARK: - Redaction order
+
+    @Test func aLabelledMRNIsTaggedAsAnMRNNotAPhoneNumber() {
+        // PHONE matches any bare 10 digits, so running it first turned
+        // `MRN-1234567890` into `MRN-[PHONE]`. Redacted either way, but the tag
+        // is what the LLM downstream reads.
+        let out = PHISanitizer.strip(from: "Patient MRN-1234567890 on file", patientName: "")
+        #expect(out.contains("[MRN]"))
+        #expect(!out.contains("[PHONE]"))
+    }
+
+    @Test func aNineDigitMRNIsTaggedAsAnMRNNotAnSSN() {
+        let out = PHISanitizer.strip(from: "see MRN: 123456789", patientName: "")
+        #expect(out.contains("[MRN]"))
+    }
+
+    @Test func aDashedSSNIsStillTaggedAsAnSSNNotADate() {
+        // The 932e02e regression: the date pattern ate the tail of a dashed SSN,
+        // leaking the leading digit.
+        let out = PHISanitizer.strip(from: "SSN 123-45-6789", patientName: "")
+        #expect(out.contains("[SSN]"))
+        #expect(!out.contains("1[DATE]"))
+    }
+
+    @Test func aRealPhoneNumberIsStillTaggedAsAPhone() {
+        // Guards the reorder: MRN running first must not shadow bare phones.
+        let out = PHISanitizer.strip(from: "call 415-555-1234", patientName: "")
+        #expect(out.contains("[PHONE]"))
     }
 }

@@ -23,12 +23,19 @@ public sealed class SessionViewModelTests : IDisposable
     private readonly string _audioPath = Path.Join(
         Path.GetTempPath(), $"audio-{Guid.NewGuid():N}.pcm");
 
+    // Scoped away from the real recordings root: the upload path now deletes the
+    // session directory on success, and these tests must not be able to name a
+    // real one.
+    private readonly string _recordingsRoot = Path.Join(
+        Path.GetTempPath(), $"recordings-{Guid.NewGuid():N}");
+
     private readonly StubCredentialManager _credentials = new();
     private readonly SessionRecordingStore _recordingStore = new();
 
     public SessionViewModelTests()
     {
         File.WriteAllBytes(_audioPath, new byte[] { 0, 0, 0, 0 });
+        Directory.CreateDirectory(_recordingsRoot);
     }
 
     private PendingTranscriptionStore MakePendingStore() => new(_credentials, _pendingPath);
@@ -38,7 +45,8 @@ public sealed class SessionViewModelTests : IDisposable
     {
         var api = new StubApiClient(_credentials);
         var store = MakePendingStore();
-        var transcriptionVm = new TranscriptionViewModel(_recordingStore, store, api, _credentials);
+        var transcriptionVm = new TranscriptionViewModel(
+            _recordingStore, store, api, _credentials, new RecordingCleaner(_recordingsRoot));
         var recordingService = new RecordingService(_credentials);
         var recordingVm = new RecordingViewModel(recordingService, _recordingStore);
         var videoLaunch = new VideoLaunchService();
@@ -99,6 +107,9 @@ public sealed class SessionViewModelTests : IDisposable
         _recordingStore.Clear();
         TryDelete(_pendingPath);
         TryDelete(_audioPath);
+        try { if (Directory.Exists(_recordingsRoot)) Directory.Delete(_recordingsRoot, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static void TryDelete(string path)

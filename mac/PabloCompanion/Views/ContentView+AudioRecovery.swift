@@ -6,7 +6,6 @@ extension ContentView {
     /// then drain the audio retry queue. Mirrors the Windows scanner +
     /// `ResumePendingUploadsAsync` (App.xaml.cs:190-212).
     func resumeAllPendingUploads() async {
-        await transcriptionVM.retryPendingUploads()
         await adoptAndRetryPendingAudioUploads()
     }
 
@@ -14,7 +13,6 @@ extension ContentView {
     /// "Retry Now" entry in DayView/SessionHistoryView. Ignores backoff and the
     /// max-retries cap; mirrors the Windows Settings → Retry now button.
     func forceRetryAllPendingUploads() async {
-        await transcriptionVM.forceRetryPendingUploads()
         await transcriptionVM.forceRetryPendingAudioUploads()
     }
 

@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Pablo
+import Testing
 
 @Suite("URLValidator")
 struct URLValidatorTests {
@@ -18,10 +18,10 @@ struct URLValidatorTests {
         #expect(result != nil)
     }
 
-    @Test func emptyURLIsRejected() {
+    @Test func emptyURLIsRejected() throws {
         let result = URLValidator.validateScheme("")
         #expect(result != nil)
-        #expect(result!.contains("empty"))
+        #expect(try #require(result?.contains("empty")))
     }
 
     @Test func invalidURLFormatIsRejected() {

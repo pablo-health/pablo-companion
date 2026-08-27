@@ -22,20 +22,31 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      mac: ${{ github.event_name == 'push' || steps.filter.outputs.mac }}
+      swift: ${{ github.event_name == 'push' || steps.filter.outputs.swift }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
+          # Covers the app AND the root SPM package. Scoping this to 'mac/**'
+          # alone meant a PR touching only Sources/ or Tests/ skipped both Swift
+          # jobs and still reported the gate green in four seconds — the root
+          # package is where CompanionSessionCore and its coverage gate live, so
+          # that is exactly the code the gate exists to protect.
           filters: |
-            mac:
+            swift:
               - 'mac/**'
+              - 'Sources/**'
+              - 'Tests/**'
+              - 'Package.swift'
+              - 'Package.resolved'
+              - 'scripts/coverage-gate.sh'
+              - '.github/workflows/ci.yml'
 
   swift-lint:
     name: Swift Lint
     needs: changes
-    if: needs.changes.outputs.mac == 'true'
+    if: needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -64,7 +75,7 @@ jobs:
   swift-test:
     name: Swift Build & Test
     needs: [changes, swift-lint]
-    if: needs.changes.outputs.mac == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.swift == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -80,6 +91,10 @@ jobs:
 
       - name: Build & Test
         run: |
+          # xcodebuild is piped into xcpretty, and a pipeline exits with the
+          # last command's status — without pipefail, xcpretty's 0 hides an
+          # xcodebuild failure and this job reports green on a broken build.
+          set -o pipefail
           DISABLE_PKGS=${{ steps.spm-cache.outputs.cache-hit == 'true' && '-disableAutomaticPackageResolution' || '' }}
           xcodebuild -project mac/PabloCompanion.xcodeproj \
             -scheme Pablo \
@@ -90,6 +105,19 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             test | xcpretty
+
+      - name: Coverage gate (CompanionSessionCore)
+        # A coverage number nobody enforces rots — the same way a green CI badge
+        # sat over a build that did not compile until pipefail was added. This
+        # ratchets: raise MIN_COVERAGE when real coverage rises, never lower it
+        # to make a red build green.
+        #
+        # Scoped to CompanionSessionCore because it is the shared session wire
+        # path both the app and the headless harness run, and the only part of
+        # the mac codebase `swift test` can exercise without launching the app.
+        env:
+          MIN_COVERAGE: "85"
+        run: ./scripts/coverage-gate.sh
 
   dependency-review:
     name: Dependency Review
@@ -113,19 +141,19 @@ jobs:
     steps:
       - name: Verify CI result
         run: |
-          changed="${{ needs.changes.outputs.mac }}"
+          changed="${{ needs.changes.outputs.swift }}"
           lint="${{ needs.swift-lint.result }}"
           test="${{ needs.swift-test.result }}"
-          echo "mac changed: $changed"
+          echo "swift changed: $changed"
           echo "swift-lint result: $lint"
           echo "swift-test result: $test"
           if [ "$changed" = "true" ]; then
             if [ "$lint" != "success" ]; then
-              echo "::error::mac code changed and swift-lint did not succeed ($lint)"
+              echo "::error::swift code changed and swift-lint did not succeed ($lint)"
               exit 1
             fi
             if [ "$test" != "success" ]; then
-              echo "::error::mac code changed and swift-test did not succeed ($test)"
+              echo "::error::swift code changed and swift-test did not succeed ($test)"
               exit 1
             fi
           fi

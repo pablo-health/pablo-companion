@@ -46,17 +46,28 @@ enum PHISanitizer {
     // SSN: xxx-xx-xxxx, xxxxxxxxx (no dashes)
     // MRN: common formats like MRN-123456, MRN: 123456
     // ICD-10: letter + 2 digits + optional .digits
+    /// Order matters throughout: each pattern runs over the output of the last,
+    /// so a looser pattern running first eats the digits a stricter one needs.
+    /// Most specific to least.
     private static let phiPatterns: [(String, String)] = [
-        (#"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"#, "[PHONE]"),
-        (#"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"#, "[EMAIL]"),
-        // SSN must run before the date patterns: xxx-xx-xxxx would otherwise
-        // be partially consumed as a date (23-45-6789 → [DATE]), leaking the
-        // leading digit(s) and losing the [SSN] tag.
+        // MRN first: it is the only pattern requiring a literal label, so it
+        // cannot shadow a bare SSN or phone number — but the bare digit patterns
+        // will happily eat an MRN's digits. `MRN-1234567890` was becoming
+        // `MRN-[PHONE]` and a 9-digit MRN `[SSN]`. Redacted either way, but the
+        // tag is what the LLM downstream reads.
+        //
+        // NOTE: Windows orders SSN, SSN9, MRN, PHONE and so still mislabels a
+        // 9-digit MRN as [SSN]. It should follow this.
+        (#"(?i)\bMRN[:\-\s#]*\d{4,10}\b"#, "[MRN]"),
+        // SSN before dates: xxx-xx-xxxx would otherwise be partly consumed as a
+        // date (23-45-6789 → [DATE]), leaking the leading digit(s) and losing
+        // the [SSN] tag.
         (#"\b\d{3}-\d{2}-\d{4}\b"#, "[SSN]"),
         (#"\b\d{9}\b"#, "[SSN]"),
+        (#"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"#, "[PHONE]"),
+        (#"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"#, "[EMAIL]"),
         (#"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"#, "[DATE]"),
         (#"\d{4}-\d{2}-\d{2}"#, "[DATE]"),
-        (#"(?i)\bMRN[:\-\s#]*\d{4,10}\b"#, "[MRN]"),
         (#"\b[A-Z]\d{2}\.?\d{0,4}\b"#, "[DX]"),
     ]
 }

@@ -6,8 +6,7 @@
     Title="Session Details"
     CloseButtonText="Close"
     DefaultButton="Close"
-    FullSizeDesired="False"
-    Closing="Dialog_Closing">
+    FullSizeDesired="False">
 
     <ScrollViewer MaxHeight="500" VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="20" MinWidth="400">
@@ -112,60 +111,9 @@
                         Padding="16"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1">
-                    <StackPanel Spacing="8">
-                        <TextBlock x:Name="RecordingText"
-                                   Style="{StaticResource PabloBodyMedium}"
-                                   Foreground="{StaticResource PabloBrownSoft}" />
-
-                        <!-- Playback controls -->
-                        <StackPanel x:Name="PlaybackControls" Visibility="Collapsed" Spacing="8">
-                            <Grid ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <Button x:Name="PlayPauseButton"
-                                        Grid.Column="0"
-                                        Click="PlayPause_Click"
-                                        Style="{StaticResource PabloPrimaryButton}"
-                                        Padding="10,6"
-                                        AutomationProperties.Name="Play or pause recording">
-                                    <SymbolIcon x:Name="PlayPauseIcon" Symbol="Play" />
-                                </Button>
-
-                                <Button x:Name="StopButton"
-                                        Grid.Column="1"
-                                        Click="Stop_Click"
-                                        Style="{StaticResource PabloSecondaryButton}"
-                                        Padding="10,6"
-                                        IsEnabled="False"
-                                        AutomationProperties.Name="Stop playback">
-                                    <SymbolIcon Symbol="Stop" />
-                                </Button>
-
-                                <Slider x:Name="PositionSlider"
-                                        Grid.Column="2"
-                                        Minimum="0"
-                                        Maximum="100"
-                                        Value="0"
-                                        VerticalAlignment="Center"
-                                        ThumbToolTipValueConverter="{x:Null}"
-                                        PointerPressed="PositionSlider_PointerPressed"
-                                        PointerReleased="PositionSlider_PointerReleased"
-                                        AutomationProperties.Name="Playback position" />
-
-                                <TextBlock x:Name="PositionText"
-                                           Grid.Column="3"
-                                           VerticalAlignment="Center"
-                                           Style="{StaticResource PabloBodySmall}"
-                                           Foreground="{StaticResource PabloBrownSoft}"
-                                           Text="0:00 / 0:00" />
-                            </Grid>
-                        </StackPanel>
-                    </StackPanel>
+                    <TextBlock x:Name="RecordingText"
+                               Style="{StaticResource PabloBodyMedium}"
+                               Foreground="{StaticResource PabloBrownSoft}" />
                 </Border>
             </StackPanel>
 

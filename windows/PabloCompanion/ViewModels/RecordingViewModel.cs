@@ -51,10 +51,22 @@ public partial class RecordingViewModel : ObservableObject
     [ObservableProperty]
     public partial string? ActiveSessionId { get; set; }
 
+    /// <summary>
+    /// True while the capture has stopped writing audio to disk. Drives the
+    /// stall warning on <c>DayPage</c>; mirrors <c>recordingStalled</c> on macOS.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool RecordingStalled { get; set; }
+
     public RecordingViewModel(RecordingService recordingService, SessionRecordingStore store)
     {
         _recordingService = recordingService;
         _store = store;
+
+        // Raised from the watchdog's timer thread. The views that observe this VM
+        // already marshal PropertyChanged onto the UI thread themselves.
+        _recordingService.RecordingStalled += (_, _) => RecordingStalled = true;
+        _recordingService.RecordingResumed += (_, _) => RecordingStalled = false;
     }
 
     [RelayCommand]
@@ -68,6 +80,7 @@ public partial class RecordingViewModel : ObservableObject
             ActiveSessionId = sessionId;
             State = RecordingUIState.Recording;
             Duration = 0;
+            RecordingStalled = false;
 
             StartTimers();
 
@@ -116,6 +129,7 @@ public partial class RecordingViewModel : ObservableObject
         {
             State = RecordingUIState.Idle;
             ActiveSessionId = null;
+            RecordingStalled = false;
             MicLevel = 0;
             SystemLevel = 0;
             PeakMicLevel = 0;
@@ -180,6 +194,7 @@ public partial class RecordingViewModel : ObservableObject
 
         _store.Clear();
         State = RecordingUIState.Idle;
+        RecordingStalled = false;
         Duration = 0;
         MicLevel = 0;
         SystemLevel = 0;

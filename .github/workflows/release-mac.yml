@@ -3,6 +3,10 @@ name: Release macOS
 on:
   push:
     tags: ['v*']
+  # Build + sign + verify without publishing, so the signing path can be
+  # exercised without burning a version tag. Publishing steps are gated on
+  # `github.event_name == 'push'`, so a dispatch run never releases.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -20,7 +24,12 @@ jobs:
 
       - name: Set version from tag
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          else
+            # Dispatch runs never publish, so the version only has to be valid.
+            VERSION=0.0.${{ github.run_number }}
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "DMG_NAME=Pablo-${VERSION}.dmg" >> $GITHUB_ENV
           BUILD=${{ github.run_number }}
@@ -45,12 +54,41 @@ jobs:
             -s -k "" $KEYCHAIN_PATH
           security list-keychains -d user -s $KEYCHAIN_PATH
 
+      # The same App Store Connect key authenticates two things: fetching the
+      # Developer ID provisioning profile during archive/export (which is what
+      # authorizes the restricted associated-domains entitlement), and
+      # notarization at the end.
+      - name: Stage App Store Connect API key
+        env:
+          ASC_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+        run: |
+          echo "$ASC_KEY" | base64 --decode > $RUNNER_TEMP/asc.p8
+
       - name: Cache SPM
         uses: actions/cache@v6
         with:
           path: mac/SourcePackages
           key: spm-${{ hashFiles('mac/PabloCompanion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
 
+      # Signing happens HERE, via Xcode, and must not be disabled. The target
+      # already sets CODE_SIGN_ENTITLEMENTS, ENABLE_HARDENED_RUNTIME and
+      # DEVELOPMENT_TEAM (mac/PabloCompanion.xcodeproj), so letting Xcode sign
+      # is what attaches the entitlements and the provisioning profile.
+      #
+      # Archiving stays unsigned ON PURPOSE. Letting Xcode sign requires a Mac
+      # Development certificate (automatic signing archives with a development
+      # identity and only re-signs with Developer ID at export), and the runner
+      # keychain holds only the Developer ID cert. Pinning CODE_SIGN_IDENTITY
+      # instead fails differently: command-line build settings apply to every
+      # target, so the SPM dependencies error with "conflicting provisioning
+      # settings". Signing by hand after export sidesteps both.
+      #
+      # What must NEVER happen again is signing by hand WITHOUT --entitlements
+      # and without embedding the provisioning profile. That produced an app
+      # that is correctly Developer ID signed, notarizes, staples and passes
+      # `codesign --verify --deep --strict`, yet carries no
+      # com.apple.developer.associated-domains at all — so every universal link
+      # fell through to the browser. "Verify signing" below is the guard.
       - name: Archive
         run: |
           xcodebuild archive \
@@ -72,16 +110,130 @@ jobs:
       - name: Sign app with Developer ID
         env:
           IDENTITY: "Developer ID Application: LLL Solutions, LLC (L8KG4FA2R9)"
+          PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
         run: |
+          set -euo pipefail
           APP="$RUNNER_TEMP/export/Pablo.app"
-          # Sign all nested frameworks and bundles first
-          find "$APP/Contents/Frameworks" -type d \( -name "*.framework" -o -name "*.bundle" \) | while read fw; do
-            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$fw"
+
+          if [ -z "${PROFILE:-}" ]; then
+            echo "::error::APPLE_PROVISIONING_PROFILE secret is not set. associated-domains is a restricted entitlement; without an embedded Developer ID profile that grants it, macOS ignores it and universal links stay broken."
+            exit 1
+          fi
+
+          # On macOS outside the App Store, a restricted entitlement is only
+          # honored when an embedded profile authorizes it.
+          echo "$PROFILE" | base64 --decode > "$APP/Contents/embedded.provisionprofile"
+
+          # codesign does not expand Xcode build variables, so materialize a
+          # resolved copy of the entitlements rather than passing the source
+          # file (which would sign a literal "$(AppIdentifierPrefix)…" group).
+          sed -e 's|$(AppIdentifierPrefix)$(CFBundleIdentifier)|L8KG4FA2R9.health.pablo.companion|' \
+            mac/PabloCompanion/PabloCompanion.entitlements > $RUNNER_TEMP/entitlements.plist
+          plutil -lint $RUNNER_TEMP/entitlements.plist
+          echo "Signing with entitlements:"
+          plutil -p $RUNNER_TEMP/entitlements.plist
+
+          # Nested code is signed first, and without entitlements — only the
+          # main bundle carries them.
+          find "$APP/Contents/Frameworks" -type d \( -name "*.framework" -o -name "*.bundle" \) -print0 \
+            | while IFS= read -r -d '' FW; do
+                codesign --force --options runtime --timestamp --sign "$IDENTITY" "$FW"
+              done
+
+          codesign --force --options runtime --timestamp \
+            --entitlements $RUNNER_TEMP/entitlements.plist \
+            --sign "$IDENTITY" "$APP"
+
+      # Fail the release rather than ship an app whose universal links are dead.
+      # Each check below corresponds to a way the signed bundle can look healthy
+      # while being functionally broken.
+      - name: Verify signing
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/export/Pablo.app"
+
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          # -dvvv, not -dv: the Authority= lines are only emitted at -vvv.
+          DETAIL=$(codesign -dvvv "$APP" 2>&1)
+          echo "$DETAIL"
+
+          echo "$DETAIL" | grep -q "Authority=Developer ID Application" \
+            || { echo "::error::not signed with a Developer ID Application identity"; exit 1; }
+
+          # An association is keyed on the appID, which is <teamID>.<bundleID> —
+          # both halves must match the appIDs served in the AASA, or the
+          # association silently fails to form even though signing looks fine.
+          # These two constants and the AASA must be changed together.
+          EXPECTED_TEAM=L8KG4FA2R9
+          EXPECTED_BUNDLE=health.pablo.companion
+
+          echo "$DETAIL" | grep -q "^TeamIdentifier=${EXPECTED_TEAM}$" \
+            || { echo "::error::signed by the wrong team — expected TeamIdentifier=${EXPECTED_TEAM}"; exit 1; }
+
+          # ^Identifier= anchored so it can't match the TeamIdentifier= line.
+          echo "$DETAIL" | grep -q "^Identifier=${EXPECTED_BUNDLE}$" \
+            || { echo "::error::wrong bundle identifier — expected ${EXPECTED_BUNDLE}"; exit 1; }
+
+          # Hardened runtime is required for notarization.
+          echo "$DETAIL" | grep -qE "flags=.*runtime" \
+            || { echo "::error::hardened runtime is not enabled"; exit 1; }
+
+          # Distinguish "extraction failed" from "extracted, and it is empty".
+          # An empty read is the defect this gate exists to catch; a codesign
+          # error is a different problem entirely, and reporting one as the
+          # other is how the original bug stayed hidden for so long.
+          if ! ENTS=$(codesign -d --entitlements :- "$APP" 2>"$RUNNER_TEMP/ents.err"); then
+            echo "::error::could not read entitlements from the bundle (codesign failed):"
+            cat "$RUNNER_TEMP/ents.err"
+            exit 1
+          fi
+          if [ -z "$ENTS" ]; then
+            echo "::error::app carries NO entitlements — universal links cannot work"
+            exit 1
+          fi
+
+          # The associated domains must match the AASA files served at
+          # https://<domain>/.well-known/apple-app-site-association.
+          # The launch.* hosts exist because a browser follows a link to the
+          # host it is already on as ordinary navigation, so a handoff link
+          # has to be on a different hostname to reach this app at all.
+          for DOMAIN in app.pablo.health dev.pablo.health \
+                        launch.app.pablo.health launch.dev.pablo.health; do
+            echo "$ENTS" | grep -q "applinks:${DOMAIN}" \
+              || { echo "::error::missing entitlement applinks:${DOMAIN}"; exit 1; }
           done
-          # Sign the main app
-          codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
-          # Verify
-          codesign --verify --deep --strict "$APP"
+
+          # On macOS, associated-domains is a restricted entitlement: outside the
+          # App Store it is only honored when authorized by an embedded profile.
+          PROFILE_PATH="$APP/Contents/embedded.provisionprofile"
+          test -f "$PROFILE_PATH" \
+            || { echo "::error::no embedded.provisionprofile — the restricted associated-domains entitlement will be ignored"; exit 1; }
+
+          # Having the entitlement in the signature is NOT enough: the embedded
+          # profile must also grant it, or macOS ignores it at runtime and
+          # universal links stay broken while every check above still passes.
+          # A Developer ID profile only carries associated-domains if its App ID
+          # had the capability enabled when the profile was generated — enabling
+          # it later does not retroactively update an existing profile.
+          PROFILE_ENTS=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null \
+            | plutil -extract Entitlements xml1 -o - - 2>/dev/null || true)
+          if [ -z "$PROFILE_ENTS" ]; then
+            echo "::error::could not read entitlements out of embedded.provisionprofile"
+            exit 1
+          fi
+          echo "$PROFILE_ENTS" | grep -q "com.apple.developer.associated-domains" \
+            || { echo "::error::the embedded provisioning profile does not grant com.apple.developer.associated-domains — regenerate it from an App ID with the Associated Domains capability enabled"; exit 1; }
+
+          # get-task-allow is a debug-only entitlement; notarization rejects it.
+          # Written as an `if` on purpose: `grep -q X && exit 1` would abort the
+          # step under `set -e` on the no-match (healthy) path.
+          if echo "$ENTS" | grep -q "com.apple.security.get-task-allow"; then
+            echo "::error::get-task-allow present — this is a debug-signed build"
+            exit 1
+          fi
+
+          echo "Signing verified: Developer ID + hardened runtime + associated domains."
 
       - name: Create DMG
         run: |
@@ -94,18 +246,17 @@ jobs:
             $RUNNER_TEMP/$DMG_NAME
 
       - name: Notarize
-        env:
-          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+        if: github.event_name == 'push'
         run: |
-          echo $NOTARY_KEY | base64 --decode > $RUNNER_TEMP/notary.p8
           xcrun notarytool submit $RUNNER_TEMP/$DMG_NAME \
-            --key $RUNNER_TEMP/notary.p8 \
+            --key $RUNNER_TEMP/asc.p8 \
             --key-id ${{ secrets.APPLE_NOTARY_KEY_ID }} \
             --issuer ${{ secrets.APPLE_NOTARY_ISSUER_ID }} \
             --wait --timeout 30m
           xcrun stapler staple $RUNNER_TEMP/$DMG_NAME
 
       - name: Generate appcast
+        if: github.event_name == 'push'
         env:
           SPARKLE_KEY: ${{ secrets.SPARKLE_EDDSA_KEY }}
         run: |
@@ -118,12 +269,14 @@ jobs:
             $RUNNER_TEMP/releases
 
       - name: Create GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ runner.temp }}/${{ env.DMG_NAME }}
           generate_release_notes: true
 
       - name: Publish appcast
+        if: github.event_name == 'push'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -33,7 +33,7 @@ final class PracticeViewModel {
 
     // MARK: - Dependencies
 
-    var backendURL = "https://api.pablo.health" {
+    var backendURL = AppConstants.defaultBackendAPIURL {
         didSet { apiClient.baseURL = backendURL }
     }
 

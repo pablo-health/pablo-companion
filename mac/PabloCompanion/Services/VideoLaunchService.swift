@@ -45,17 +45,21 @@ enum VideoLaunchService {
             logger.error("Blocked Zoom URL for session \(sessionId): not an allowed domain")
             return
         }
-        // Extract meeting ID from Zoom URL (e.g., https://zoom.us/j/123456789)
-        let meetingId = extractZoomMeetingId(from: link)
-        let scheme = "zoommtg://zoom.us/join?confno=\(meetingId)"
-
-        if let url = URL(string: scheme) {
-            logger.info("Launching Zoom for session \(sessionId)")
-            NSWorkspace.shared.open(url)
-        } else {
-            // Fall back to browser if scheme URL is invalid
+        // Only a `/j/<id>` link carries a meeting number for `confno`. Personal
+        // rooms (`/my/<name>`) and webinars (`/w/<id>`) have none, so hand those
+        // to the browser, which redirects into the Zoom app itself.
+        guard let meetingId = extractZoomMeetingId(from: link) else {
+            logger.info("Zoom link has no meeting ID for session \(sessionId), opening in browser")
             launchBrowser(link: link, sessionId: sessionId)
+            return
         }
+
+        guard let url = URL(string: "zoommtg://zoom.us/join?confno=\(meetingId)") else {
+            launchBrowser(link: link, sessionId: sessionId)
+            return
+        }
+        logger.info("Launching Zoom for session \(sessionId)")
+        NSWorkspace.shared.open(url)
     }
 
     private static func launchTeams(link: String, sessionId: String) {
@@ -103,16 +107,25 @@ enum VideoLaunchService {
 
     // MARK: - URL Parsing
 
-    /// Extracts the Zoom meeting ID from a URL like `https://zoom.us/j/123456789`.
-    private static func extractZoomMeetingId(from link: String) -> String {
-        guard let url = URL(string: link),
-              let pathComponents = Optional(url.pathComponents),
-              let jIndex = pathComponents.firstIndex(of: "j"),
+    /// Extracts the numeric Zoom meeting ID from a URL like `https://zoom.us/j/123456789`.
+    ///
+    /// Returns `nil` when the link carries no `/j/<numeric-id>` path — personal
+    /// rooms, webinars, and vanity links have no meeting number, and `confno`
+    /// is interpolated into a URL string, so a non-numeric component must never
+    /// reach it.
+    ///
+    /// Internal rather than private so `VideoLaunchServiceTests` can cover the
+    /// URL shapes directly; `NSWorkspace.open` is not reachable from a test.
+    static func extractZoomMeetingId(from link: String) -> String? {
+        guard let url = URL(string: link) else { return nil }
+        let pathComponents = url.pathComponents
+        guard let jIndex = pathComponents.firstIndex(of: "j"),
               jIndex + 1 < pathComponents.count
         else {
-            // If we can't parse it, return the whole link — Zoom may handle it
-            return link
+            return nil
         }
-        return pathComponents[jIndex + 1]
+        let meetingId = pathComponents[jIndex + 1]
+        guard !meetingId.isEmpty, meetingId.allSatisfy(\.isNumber) else { return nil }
+        return meetingId
     }
 }

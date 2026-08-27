@@ -172,7 +172,6 @@ struct SettingsView: View {
 
     @AppStorage("deleteAfterUpload") private var deleteAfterUpload = true
     @AppStorage("autoTranscribe") private var autoTranscribe = true
-    private let hardware = HardwareCapabilityService()
 
     #if DEBUG
     @State private var showDebugRecordingView = false
@@ -267,7 +266,7 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView(
-        backendURL: .constant("https://api.pablo.health"),
+        backendURL: .constant(AppConstants.defaultBackendAPIURL),
         authServerURL: .constant("https://auth.pablo.health"),
         selectedMicID: .constant(nil),
         encryptionEnabled: .constant(true),
