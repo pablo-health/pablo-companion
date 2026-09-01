@@ -32,20 +32,44 @@ final class RecordingService {
 
     // MARK: - Internal
 
-    /// Directory for session recordings. Migrates from legacy name on first access.
+    /// Directory for session recordings: `AppPaths.recordings`, excluded from
+    /// backup. Audio an earlier build left under ~/Documents is moved here on
+    /// first use, so nothing is ever written to the old location again.
     var recordingsDirectory: URL {
-        let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dir = base.appendingPathComponent("PabloCompanion-Recordings", isDirectory: true)
-
-        // Migrate from legacy directory name if it exists and new one doesn't
-        let legacyDir = base.appendingPathComponent("MacOSSample-Recordings", isDirectory: true)
-        let legacyExists = FileManager.default.fileExists(atPath: legacyDir.path)
-        if legacyExists, !FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.moveItem(at: legacyDir, to: dir)
-        }
-
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = AppPaths.recordings
+        Self.migrateLegacyRecordings(into: dir)
+        AppPaths.excludeFromBackup(dir)
         return dir
+    }
+
+    private static let migrationLogger = Logger(
+        subsystem: AppConstants.appBundleID, category: "RecordingService"
+    )
+
+    /// Moves everything from each legacy recordings directory into `dir` and
+    /// removes the emptied directory. Idempotent: a directory that is already
+    /// gone is skipped, and a file that already exists at the destination is
+    /// left where it is. Callers that persist absolute paths repoint them
+    /// afterwards (`RecordingViewModel.migrateLegacyStorage`).
+    static func migrateLegacyRecordings(into dir: URL) {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        for legacy in AppPaths.legacyRecordingsDirectories where fm.fileExists(atPath: legacy.path) {
+            let items = (try? fm.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil)) ?? []
+            var moved = 0
+            for item in items {
+                let target = dir.appendingPathComponent(item.lastPathComponent)
+                guard !fm.fileExists(atPath: target.path) else { continue }
+                if (try? fm.moveItem(at: item, to: target)) != nil { moved += 1 }
+            }
+            let remaining = (try? fm.contentsOfDirectory(atPath: legacy.path))?.count ?? 0
+            if remaining == 0 { try? fm.removeItem(at: legacy) }
+            if moved > 0 || remaining > 0 {
+                migrationLogger.info(
+                    "Moved \(moved) recording file(s) out of the legacy directory; \(remaining) left behind"
+                )
+            }
+        }
     }
 
     // MARK: - Private

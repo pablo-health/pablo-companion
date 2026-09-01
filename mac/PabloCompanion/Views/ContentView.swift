@@ -477,7 +477,6 @@ extension ContentView {
             backendURL: $uploadVM.backendURL,
             authServerURL: Bindable(authVM).authServerURL,
             selectedMicID: $recordingVM.selectedMicID,
-            encryptionEnabled: $recordingVM.encryptionEnabled,
             debugEnableMic: $recordingVM.debugEnableMic,
             debugEnableSystem: $recordingVM.debugEnableSystem,
             userEmail: authVM.authenticatedEmail,

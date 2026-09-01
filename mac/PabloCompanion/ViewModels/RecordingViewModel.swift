@@ -23,7 +23,13 @@ final class RecordingViewModel {
         didSet { service.updateSelectedMic(selectedMicID) }
     }
 
+    #if DEBUG
+    /// Debug builds can switch encryption off to inspect raw capture output.
     var encryptionEnabled = true
+    #else
+    /// Release builds always encrypt; there is no switch for a user to find.
+    let encryptionEnabled = true
+    #endif
     var errorMessage: String?
     var showError = false
     var playingRecordingID: UUID?
@@ -217,6 +223,16 @@ final class RecordingViewModel {
     private func persistMapping(sessionId: String, recording: LocalRecording) {
         let entry = SessionRecordingStore.entry(from: recording)
         recordingStore.save(sessionId: sessionId, entry: entry)
+    }
+
+    /// Moves audio an earlier build kept under ~/Documents into Application
+    /// Support and repoints the session→recording map at it. Safe on every
+    /// launch; a clean install does nothing.
+    func migrateLegacyStorage() {
+        let dir = service.recordingsDirectory // moves the files
+        for legacy in AppPaths.legacyRecordingsDirectories {
+            recordingStore.relocateAudio(from: legacy, to: dir)
+        }
     }
 
     /// Returns recordings on disk that are not linked to any session.

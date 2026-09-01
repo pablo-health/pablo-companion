@@ -29,6 +29,23 @@ struct SessionRecordingStoreTests {
         return store
     }
 
+    @Test func relocateRepointsEveryPathThatMoved() throws {
+        let dir = Self.tempDir()
+        let store = Self.makeStore(directory: dir)
+        let id = UUID()
+        store.save(sessionId: "s1", entry: Self.entry(id))
+        let old = URL(fileURLWithPath: "/recordings", isDirectory: true)
+        let new = URL(fileURLWithPath: "/moved", isDirectory: true)
+
+        store.relocateAudio(from: old, to: new)
+
+        let entry = try #require(store.loadAll()["s1"])
+        #expect(entry.fileURL == "/moved/\(id)/session.wav")
+        #expect(entry.micPCMFilePath == "/moved/\(id)/mic.pcm")
+        #expect(entry.systemPCMFilePath == "/moved/\(id)/system.pcm")
+        #expect(entry.checksum == "abc123")
+    }
+
     private static func entry(_ id: UUID = UUID()) -> SessionRecordingStore.RecordingEntry {
         SessionRecordingStore.RecordingEntry(
             recordingID: id,

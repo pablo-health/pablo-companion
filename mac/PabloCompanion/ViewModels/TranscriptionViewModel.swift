@@ -204,7 +204,12 @@ final class TranscriptionViewModel {
                 try await self.upload(entry)
             },
             cleanup: { entry in
-                RecordingCleaner.removeAudio(micPath: entry.micPath, systemPath: entry.systemPath)
+                RecordingCleaner.removeAudio(
+                    micPath: entry.micPath,
+                    systemPath: entry.systemPath,
+                    mixedPath: entry.mixedPath
+                        ?? RecordingCleaner.siblingMixedFile(forMicPath: entry.micPath)
+                )
             },
             checkOutcome: { [apiClient] sessionId in
                 // Local audio is PHI; it is deleted only once the backend has
@@ -280,10 +285,16 @@ final class TranscriptionViewModel {
     /// - Parameter sampleRate: `nil` for a recording adopted off disk, whose
     ///   capture rate is not recoverable from headerless PCM. The retry then
     ///   falls back to `fallbackSampleRate`.
+    /// Repoints queued uploads at audio that moved out of a legacy directory.
+    func relocateQueuedAudio(from legacy: URL, to dir: URL) {
+        audioStore.relocateAudio(from: legacy, to: dir)
+    }
+
     func enqueuePendingAudioUpload(
         sessionId: String,
         micPath: String,
         systemPath: String?,
+        mixedPath: String? = nil,
         isEncrypted: Bool,
         sampleRate: Double? = nil
     ) {
@@ -291,6 +302,7 @@ final class TranscriptionViewModel {
             sessionId: sessionId,
             micPath: micPath,
             systemPath: systemPath,
+            mixedPath: mixedPath,
             isEncrypted: isEncrypted,
             sampleRate: sampleRate
         )

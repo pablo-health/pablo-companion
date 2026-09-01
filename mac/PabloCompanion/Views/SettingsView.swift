@@ -9,7 +9,6 @@ struct SettingsView: View {
     @Binding var selectedMicID: String?
     @State private var backendURLError: String?
     @State private var authServerURLError: String?
-    @Binding var encryptionEnabled: Bool
     @Binding var debugEnableMic: Bool
     @Binding var debugEnableSystem: Bool
     let userEmail: String
@@ -170,7 +169,6 @@ struct SettingsView: View {
         }
     }
 
-    @AppStorage("deleteAfterUpload") private var deleteAfterUpload = true
     @AppStorage("autoTranscribe") private var autoTranscribe = true
 
     #if DEBUG
@@ -183,11 +181,10 @@ struct SettingsView: View {
             LabeledContent("Sample Rate", value: "48,000 Hz")
             LabeledContent("Bit Depth", value: "16-bit")
             LabeledContent("Channels", value: "Stereo (Mic+System mixed)")
-            Toggle("Encrypt recordings", isOn: $encryptionEnabled)
-            if encryptionEnabled {
-                LabeledContent("Algorithm", value: "AES-256-GCM")
-            }
-            Toggle("Delete recording from device after upload", isOn: $deleteAfterUpload)
+            LabeledContent("Encryption", value: "AES-256-GCM")
+            Text("Recordings are always encrypted on this Mac and are deleted once Pablo has produced the note.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

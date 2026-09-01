@@ -6,6 +6,12 @@ extension ContentView {
     /// then drain the audio retry queue. Mirrors the Windows scanner +
     /// `ResumePendingUploadsAsync` (App.xaml.cs:190-212).
     func resumeAllPendingUploads() async {
+        // Files first, then every store that holds their paths, before anything
+        // below tries to read them.
+        recordingVM.migrateLegacyStorage()
+        for legacy in AppPaths.legacyRecordingsDirectories {
+            transcriptionVM.relocateQueuedAudio(from: legacy, to: AppPaths.recordings)
+        }
         await adoptAndRetryPendingAudioUploads()
     }
 
@@ -42,6 +48,7 @@ extension ContentView {
                 sessionId: sessionId,
                 micPath: micURL.path,
                 systemPath: segment.systemPCMFileURL?.path,
+                mixedPath: segment.fileURL.path,
                 isEncrypted: segment.isEncrypted
             )
         }
@@ -64,6 +71,7 @@ extension ContentView {
                     sessionId: sessionId,
                     micPath: micURL.path,
                     systemPath: orphan.systemPCMFileURL?.path,
+                    mixedPath: orphan.fileURL.path,
                     isEncrypted: orphan.isEncrypted
                 )
             }
