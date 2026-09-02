@@ -95,11 +95,12 @@ struct DebugRecordingView: View {
                 VStack(spacing: 8) {
                     #if DEBUG
                     Toggle("Encryption", isOn: $vm.encryptionEnabled)
-                    #else
-                    LabeledContent("Encryption", value: "always on")
-                    #endif
                         .toggleStyle(.checkbox)
                         .font(.caption)
+                    #else
+                    Text("Encryption: always on")
+                        .font(.caption)
+                    #endif
                     Toggle("Transcribe after recording", isOn: $autoTranscribe)
                         .toggleStyle(.checkbox)
                         .font(.caption)
