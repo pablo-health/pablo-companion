@@ -41,6 +41,8 @@ windows/**/BundleArtifacts/
 
 # Claude Code local settings
 .claude/settings.local.json
+# Claude Code plan files: per-session working notes, not shared design docs.
+.claude/plans/
 .claude/scheduled_tasks.lock
 windows/scripts/.claude/
 
