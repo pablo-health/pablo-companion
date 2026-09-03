@@ -35,6 +35,11 @@ public struct PendingAudioUploadStore: Sendable {
         public let sessionId: String
         public let micPath: String
         public let systemPath: String?
+        /// The mixed WAV the capture produced alongside the sidecars. Not
+        /// uploaded — the backend takes the sidecars — but it is the same
+        /// session's audio and is deleted with them once the note exists.
+        /// Optional because entries queued before it was recorded lack it.
+        public let mixedPath: String?
         public let isEncrypted: Bool
         public let createdAt: Date
         public var retryCount: Int
@@ -53,7 +58,7 @@ public struct PendingAudioUploadStore: Sendable {
         public var state: State
 
         enum CodingKeys: String, CodingKey {
-            case sessionId, micPath, systemPath, isEncrypted, createdAt, retryCount, sampleRate, state
+            case sessionId, micPath, systemPath, mixedPath, isEncrypted, createdAt, retryCount, sampleRate, state
         }
 
         public init(from decoder: Decoder) throws {
@@ -61,6 +66,7 @@ public struct PendingAudioUploadStore: Sendable {
             sessionId = try c.decode(String.self, forKey: .sessionId)
             micPath = try c.decode(String.self, forKey: .micPath)
             systemPath = try c.decodeIfPresent(String.self, forKey: .systemPath)
+            mixedPath = try c.decodeIfPresent(String.self, forKey: .mixedPath)
             isEncrypted = try c.decode(Bool.self, forKey: .isEncrypted)
             createdAt = try c.decode(Date.self, forKey: .createdAt)
             retryCount = try c.decode(Int.self, forKey: .retryCount)
@@ -70,12 +76,14 @@ public struct PendingAudioUploadStore: Sendable {
 
         init(
             sessionId: String, micPath: String, systemPath: String?,
+            mixedPath: String? = nil,
             isEncrypted: Bool, createdAt: Date, retryCount: Int,
             sampleRate: Double?, state: State
         ) {
             self.sessionId = sessionId
             self.micPath = micPath
             self.systemPath = systemPath
+            self.mixedPath = mixedPath
             self.isEncrypted = isEncrypted
             self.createdAt = createdAt
             self.retryCount = retryCount
@@ -141,6 +149,7 @@ public struct PendingAudioUploadStore: Sendable {
         sessionId: String,
         micPath: String,
         systemPath: String?,
+        mixedPath: String? = nil,
         isEncrypted: Bool,
         sampleRate: Double?
     ) {
@@ -149,6 +158,7 @@ public struct PendingAudioUploadStore: Sendable {
             sessionId: sessionId,
             micPath: micPath,
             systemPath: systemPath,
+            mixedPath: mixedPath ?? existing?.mixedPath,
             isEncrypted: isEncrypted,
             createdAt: existing?.createdAt ?? Date(),
             retryCount: existing?.retryCount ?? 0,
@@ -156,6 +166,28 @@ public struct PendingAudioUploadStore: Sendable {
             state: existing?.state ?? .pendingUpload
         )
         save(pending)
+    }
+
+    /// Points every queued entry whose audio moved out of `old` at its new
+    /// home under `new`. Entries elsewhere are left alone.
+    public func relocateAudio(from old: URL, to new: URL) {
+        for entry in loadAll() {
+            let mic = RecordingRelocation.rewrite(entry.micPath, from: old, to: new)
+            let system = RecordingRelocation.rewrite(entry.systemPath, from: old, to: new)
+            let mixed = RecordingRelocation.rewrite(entry.mixedPath, from: old, to: new)
+            guard mic != entry.micPath || system != entry.systemPath || mixed != entry.mixedPath else { continue }
+            save(PendingAudioUpload(
+                sessionId: entry.sessionId,
+                micPath: mic,
+                systemPath: system,
+                mixedPath: mixed,
+                isEncrypted: entry.isEncrypted,
+                createdAt: entry.createdAt,
+                retryCount: entry.retryCount,
+                sampleRate: entry.sampleRate,
+                state: entry.state
+            ))
+        }
     }
 
     /// Move an entry to a new lifecycle state, preserving everything else.

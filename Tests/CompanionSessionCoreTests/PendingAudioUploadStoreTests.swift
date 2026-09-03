@@ -53,6 +53,35 @@ struct PendingAudioUploadStoreTests {
         #expect(item.retryCount == 0)
     }
 
+    @Test func relocateRepointsEntriesThatMovedAndLeavesOthersAlone() throws {
+        let store = Self.makeStore()
+        let old = URL(fileURLWithPath: "/old/recordings", isDirectory: true)
+        let new = URL(fileURLWithPath: "/new/recordings", isDirectory: true)
+        store.add(
+            sessionId: "moved",
+            micPath: "/old/recordings/r_mic.pcm",
+            systemPath: "/old/recordings/r_system.pcm",
+            mixedPath: "/old/recordings/r.wav",
+            isEncrypted: true,
+            sampleRate: 48000
+        )
+        store.add(sessionId: "elsewhere", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: true, sampleRate: nil)
+        defer {
+            store.remove(sessionId: "moved")
+            store.remove(sessionId: "elsewhere")
+        }
+
+        store.relocateAudio(from: old, to: new)
+
+        let moved = try #require(store.get(sessionId: "moved"))
+        #expect(moved.micPath == "/new/recordings/r_mic.pcm")
+        #expect(moved.systemPath == "/new/recordings/r_system.pcm")
+        #expect(moved.mixedPath == "/new/recordings/r.wav")
+        #expect(moved.isEncrypted == true)
+        let other = try #require(store.get(sessionId: "elsewhere"))
+        #expect(other.micPath == "/tmp/m.pcm")
+    }
+
     @Test func removeDropsEntry() {
         let store = Self.makeStore()
         store.add(sessionId: "session-B", micPath: "/tmp/m.pcm", systemPath: nil, isEncrypted: false, sampleRate: 48000)

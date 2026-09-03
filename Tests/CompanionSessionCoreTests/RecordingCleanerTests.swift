@@ -34,6 +34,35 @@ struct RecordingCleanerTests {
         #expect(!FileManager.default.fileExists(atPath: system))
     }
 
+    @Test func theMixedFileGoesWithTheSidecars() {
+        // The capture leaves three files per session. Deleting only the
+        // sidecars once kept every mixed WAV on disk for the life of the
+        // install.
+        let dir = Self.tempDir()
+        let mixed = Self.write("session.wav", in: dir)
+        let mic = Self.write("mic.pcm", in: dir)
+        let system = Self.write("system.pcm", in: dir)
+
+        RecordingCleaner.removeAudio(micPath: mic, systemPath: system, mixedPath: mixed)
+
+        #expect(!FileManager.default.fileExists(atPath: mixed))
+        #expect(!FileManager.default.fileExists(atPath: mic))
+        #expect(!FileManager.default.fileExists(atPath: system))
+    }
+
+    @Test func theMixedFileIsFoundFromTheSidecarNameForOlderQueueEntries() {
+        // Entries queued before the mixed path was recorded only know the
+        // sidecar; the capture's naming puts the mixed file right beside it.
+        let dir = Self.tempDir()
+        let mixed = Self.write("recording_abc.enc.wav", in: dir)
+        let mic = Self.write("recording_abc_mic.enc.pcm", in: dir)
+        _ = Self.write("recording_abc_system.enc.pcm", in: dir)
+        _ = Self.write("recording_abcd.enc.wav", in: dir)
+
+        #expect(RecordingCleaner.siblingMixedFile(forMicPath: mic) == mixed)
+        #expect(RecordingCleaner.siblingMixedFile(forMicPath: dir.appendingPathComponent("nope.pcm").path) == nil)
+    }
+
     @Test func aMissingSystemSidecarIsFine() {
         // Mic-only sessions are normal — system audio is absent when the
         // therapist is in the room rather than on a call.
