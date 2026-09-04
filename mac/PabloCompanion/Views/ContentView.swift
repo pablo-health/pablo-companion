@@ -219,8 +219,6 @@ struct ContentView: View {
         }
     }
 
-    /// The thin-client minimal window (flag off, default). Status + "Open Web
-    /// Dashboard" + footer. Designed to be glanced at, not lived in.
     private var minimalShell: some View {
         MinimalMainView(
             email: authVM.authenticatedEmail,
@@ -228,18 +226,23 @@ struct ContentView: View {
             isBackendReachable: uploadVM.isBackendReachable,
             micReady: recordingVM.systemAudioPermitted,
             appVersion: AppConstants.appVersion,
+            appointments: sessionVM.todayAppointments,
+            appointmentsLoading: sessionVM.isLoading,
+            appointmentsError: sessionVM.errorMessage,
+            activeSessionId: activeSessionId,
+            onStartAppointment: { startSession(fromAppointmentId: $0.id) },
+            onStopRecording: { stopActiveSession() },
+            onRetryAppointments: { Task { await sessionVM.loadTodayAppointments() } },
             onOpenDashboard: { openWebDashboard() },
             onOpenPreferences: { showPreferences = true },
             onSignOut: { authVM.signOut() }
         )
-        .frame(width: 480, height: 360)
+        .frame(minWidth: 480, idealWidth: 520, minHeight: 420, idealHeight: 480)
         .sheet(isPresented: $showPreferences) {
             settingsTab
                 .frame(minWidth: 460, minHeight: 520)
         }
     }
-
-    // MARK: - Web dashboard
 
     /// The web dashboard URL, derived from the configured auth-server (Next.js
     /// front-end) host so it tracks dev vs prod automatically — same value the
