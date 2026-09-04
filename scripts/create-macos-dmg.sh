@@ -31,7 +31,9 @@ hdiutil attach -quiet -readwrite -noverify -noautoopen \
 
 osascript <<APPLESCRIPT
 tell application "Finder"
-  tell disk "Pablo"
+  set mountedVolume to POSIX file "$work_dir/mount" as alias
+  set backgroundFile to POSIX file "$work_dir/mount/.background/background.png" as alias
+  tell folder mountedVolume
     open
     set current view of container window to icon view
     set toolbar visible of container window to false
@@ -42,7 +44,7 @@ tell application "Finder"
     set arrangement of theViewOptions to not arranged
     set icon size of theViewOptions to 104
     set text size of theViewOptions to 13
-    set background picture of theViewOptions to file ".background:background.png"
+    set background picture of theViewOptions to backgroundFile
     set position of item "Pablo.app" of container window to {165, 225}
     set position of item "Applications" of container window to {495, 225}
     close
@@ -57,4 +59,3 @@ APPLESCRIPT
 hdiutil detach "$work_dir/mount" -quiet
 hdiutil convert -quiet "$work_dir/Pablo-rw.dmg" -format UDZO \
   -imagekey zlib-level=9 -o "$output_path"
-
