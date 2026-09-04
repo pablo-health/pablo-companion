@@ -1,6 +1,27 @@
 import SwiftUI
 
 extension ContentView {
+    /// Ends the active recording, preserves its audio before network calls,
+    /// uploads every segment, and refreshes the day in either app shell.
+    func stopActiveSession() {
+        Task {
+            await recordingVM.stopRecording()
+            let sessionId = activeSessionId
+            recordingVM.activeSessionId = nil
+            activeSessionId = nil
+            if let sessionId {
+                queueSessionAudioForUpload(sessionId)
+                _ = await sessionVM.endSession(sessionId)
+                let segments = recordingVM.allRecordingsForSession(sessionId)
+                if !segments.isEmpty {
+                    await transcriptionVM.uploadAudioSegments(segments, sessionId: sessionId)
+                }
+                recordingVM.clearSessionSegments(sessionId)
+            }
+            await sessionVM.loadTodayAppointments()
+        }
+    }
+
     /// Launch-time recovery: drain the transcript-text retry queue, sweep the
     /// recordings directory for orphaned audio with a known session linkage,
     /// then drain the audio retry queue. Mirrors the Windows scanner +
