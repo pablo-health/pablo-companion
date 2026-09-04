@@ -24,8 +24,15 @@ struct MinimalMainView: View {
     let appointmentsLoading: Bool
     let appointmentsError: String?
     let activeSessionId: String?
+    let recordingState: RecordingUIState
+    let recordingDuration: TimeInterval
+    let micLevel: Float
+    let systemLevel: Float
+    let systemAudioActive: Bool
     let onStartAppointment: (Appointment) -> Void
-    let onStopRecording: () -> Void
+    let onPauseRecording: () -> Void
+    let onResumeRecording: () -> Void
+    let onEndSession: () -> Void
     let onRetryAppointments: () -> Void
     let onOpenDashboard: () -> Void
     let onOpenPreferences: () -> Void
@@ -55,8 +62,6 @@ struct MinimalMainView: View {
                         .padding(.top, Layout.sectionSpacing)
                 }
             }
-            statusBlock
-                .padding(.top, Layout.sectionSpacing)
             Spacer(minLength: Layout.sectionSpacing)
             Button(action: onOpenDashboard) {
                 Label("Open Web Dashboard", systemImage: "safari")
@@ -92,8 +97,10 @@ struct MinimalMainView: View {
         .padding(.horizontal, 24)
     }
 
+    /// Connection + mic readiness. Lives in the footer with the other
+    /// ambient chrome so the appointment card owns the middle of the window.
     private var statusBlock: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             statusRow(
                 ok: isBackendReachable,
                 okText: "Connected to \(host) as \(email)",
@@ -106,12 +113,6 @@ struct MinimalMainView: View {
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: Layout.cardRadius, style: .continuous)
-                .fill(Color.white.opacity(0.5))
-        )
-        .padding(.horizontal, Layout.pageInset)
     }
 
     private func nextAppointmentCard(_ appointment: Appointment) -> some View {
@@ -131,22 +132,32 @@ struct MinimalMainView: View {
         .padding(.horizontal, Layout.pageInset)
     }
 
+    /// Which action the appointment card offers. Extracted so the nil-vs-nil
+    /// trap below stays covered by tests: an appointment with no session and no
+    /// active recording are BOTH `nil`, and a bare `==` reads that as "this is
+    /// the recording in flight" — showing Stop Recording on a session that was
+    /// never started, whose button then no-ops.
+    enum AppointmentAction: Equatable {
+        case start
+        case stopRecording
+        case alreadyStarted
+    }
+
+    static func action(for appointment: Appointment, activeSessionId: String?) -> AppointmentAction {
+        guard let sessionId = appointment.sessionId else { return .start }
+        return sessionId == activeSessionId ? .stopRecording : .alreadyStarted
+    }
+
     @ViewBuilder
     private func appointmentAction(_ appointment: Appointment) -> some View {
-        if appointment.sessionId == activeSessionId {
-            Button(role: .destructive, action: onStopRecording) {
-                Label("Stop Recording", systemImage: "stop.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .tint(Color.pabloError)
-            .accessibilityLabel("Stop recording \(appointment.title)")
-        } else if appointment.sessionId != nil {
+        switch Self.action(for: appointment, activeSessionId: activeSessionId) {
+        case .stopRecording:
+            recordingPanel(appointment)
+        case .alreadyStarted:
             Label("Session started", systemImage: "checkmark.circle.fill")
                 .font(.pabloBody(14).weight(.semibold))
                 .foregroundStyle(Color.pabloSage)
-        } else {
+        case .start:
             Button { onStartAppointment(appointment) } label: {
                 Label("Start Session", systemImage: "play.fill")
                     .frame(maxWidth: .infinity)
@@ -155,6 +166,84 @@ struct MinimalMainView: View {
             .controlSize(.large)
             .tint(Color.pabloHoney)
             .accessibilityLabel("Start session for \(appointment.title)")
+        }
+    }
+
+    /// Live capture state plus the two controls a therapist needs mid-session:
+    /// pause (a brief hold — the session stays open) and end session (stop,
+    /// upload, close). Mirrors the full dashboard's recording banner.
+    private func recordingPanel(_ appointment: Appointment) -> some View {
+        VStack(spacing: 12) {
+            captureStatusRow
+            StatusIndicator(
+                isActive: systemAudioActive,
+                activeLabel: "System audio",
+                inactiveLabel: "No system audio"
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            recordingButtons(appointment)
+        }
+    }
+
+    private var captureStatusRow: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(recordingState == .paused ? Color.pabloHoney : Color.pabloSage)
+                .frame(width: 10, height: 10)
+                .accessibilityHidden(true)
+            Text(captureStateLabel)
+                .font(.pabloBody(13).weight(.medium))
+                .foregroundStyle(Color.pabloBrownDeep)
+            Text(Self.formattedDuration(recordingDuration))
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(Color.pabloBrownSoft)
+            Spacer(minLength: 8)
+            HStack(spacing: 8) {
+                LevelMeter(label: "Mic", level: micLevel)
+                LevelMeter(label: "Sys", level: systemLevel)
+            }
+            .frame(height: 30)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(captureStateLabel), \(Self.spokenDuration(recordingDuration))")
+    }
+
+    private var captureStateLabel: String {
+        recordingState == .paused ? "Paused" : "Recording"
+    }
+
+    private func recordingButtons(_ appointment: Appointment) -> some View {
+        HStack(spacing: 10) {
+            pauseResumeButton
+            Button(role: .destructive, action: onEndSession) {
+                Label("End Session", systemImage: "stop.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(Color.pabloError)
+            .accessibilityLabel("End session for \(appointment.title)")
+        }
+    }
+
+    @ViewBuilder
+    private var pauseResumeButton: some View {
+        if recordingState == .paused {
+            Button(action: onResumeRecording) {
+                Label("Resume", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .accessibilityLabel("Resume recording")
+        } else {
+            Button(action: onPauseRecording) {
+                Label("Pause", systemImage: "pause.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .accessibilityLabel("Pause recording")
         }
     }
 
@@ -250,6 +339,17 @@ struct MinimalMainView: View {
         return formatter.date(from: value)
     }
 
+    static func formattedDuration(_ duration: TimeInterval) -> String {
+        let total = max(0, Int(duration))
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    /// VoiceOver reads "12:34" as a time of day; spell the elapsed time out.
+    static func spokenDuration(_ duration: TimeInterval) -> String {
+        let total = max(0, Int(duration))
+        return "\(total / 60) minutes \(total % 60) seconds elapsed"
+    }
+
     private static func formattedTime(_ value: String) -> String {
         guard let date = parseDate(value) else { return "Time unavailable" }
         return date.formatted(date: .omitted, time: .shortened)
@@ -264,10 +364,10 @@ struct MinimalMainView: View {
         HStack(spacing: 10) {
             Circle()
                 .fill(ok ? Color.pabloSage : Color.pabloError)
-                .frame(width: 10, height: 10)
+                .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
             Text(ok ? okText : offText)
-                .font(.subheadline)
+                .font(.pabloBody(12))
                 .foregroundStyle(Color.pabloBrownDeep)
                 .lineLimit(2)
             Spacer(minLength: 0)
@@ -276,6 +376,17 @@ struct MinimalMainView: View {
     }
 
     private var footer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            statusBlock
+            Divider()
+            footerLinks
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.35))
+    }
+
+    private var footerLinks: some View {
         HStack(spacing: 16) {
             Button("Preferences", action: onOpenPreferences)
                 .buttonStyle(.link)
@@ -289,8 +400,86 @@ struct MinimalMainView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Version \(appVersion)")
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
-        .background(Color.white.opacity(0.35))
     }
+}
+
+// MARK: - Previews
+
+private func previewAppointment(sessionId: String? = nil) -> Appointment {
+    Appointment(
+        id: "appointment",
+        patientId: "patient",
+        title: "Initial consultation",
+        startAt: ISO8601DateFormatter().string(from: .now.addingTimeInterval(600)),
+        endAt: ISO8601DateFormatter().string(from: .now.addingTimeInterval(3600)),
+        durationMinutes: 50,
+        status: "scheduled",
+        sessionType: nil,
+        videoLink: nil,
+        videoPlatform: "zoom",
+        notes: nil,
+        icalSource: nil,
+        ehrAppointmentUrl: nil,
+        sessionId: sessionId,
+        createdAt: ISO8601DateFormatter().string(from: .now),
+        updatedAt: nil
+    )
+}
+
+private func previewView(
+    appointment: Appointment,
+    activeSessionId: String?,
+    recordingState: RecordingUIState
+) -> MinimalMainView {
+    MinimalMainView(
+        email: "therapist@pablo.health",
+        webDashboardURL: URL(string: "https://app.pablo.health/dashboard") ?? URL(fileURLWithPath: "/"),
+        isBackendReachable: true,
+        micReady: true,
+        appVersion: "1.0.0",
+        appointments: [appointment],
+        appointmentsLoading: false,
+        appointmentsError: nil,
+        activeSessionId: activeSessionId,
+        recordingState: recordingState,
+        recordingDuration: 754,
+        micLevel: 0.62,
+        systemLevel: 0.31,
+        systemAudioActive: true,
+        onStartAppointment: { _ in },
+        onPauseRecording: {},
+        onResumeRecording: {},
+        onEndSession: {},
+        onRetryAppointments: {},
+        onOpenDashboard: {},
+        onOpenPreferences: {},
+        onSignOut: {}
+    )
+}
+
+#Preview("Ready to start") {
+    previewView(
+        appointment: previewAppointment(),
+        activeSessionId: nil,
+        recordingState: .idle
+    )
+    .frame(width: 520, height: 560)
+}
+
+#Preview("Recording") {
+    previewView(
+        appointment: previewAppointment(sessionId: "session-1"),
+        activeSessionId: "session-1",
+        recordingState: .recording
+    )
+    .frame(width: 520, height: 560)
+}
+
+#Preview("Paused") {
+    previewView(
+        appointment: previewAppointment(sessionId: "session-1"),
+        activeSessionId: "session-1",
+        recordingState: .paused
+    )
+    .frame(width: 520, height: 560)
 }
