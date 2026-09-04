@@ -48,19 +48,8 @@ struct MinimalMainView: View {
             Spacer(minLength: 12)
             header
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                if appointmentsLoading, appointments.isEmpty {
-                    appointmentsLoadingCard
-                        .padding(.top, Layout.sectionSpacing)
-                } else if appointmentsError != nil, appointments.isEmpty {
-                    appointmentsErrorCard
-                        .padding(.top, Layout.sectionSpacing)
-                } else if let appointment = Self.nextAppointment(in: appointments, now: context.date) {
-                    nextAppointmentCard(appointment)
-                        .padding(.top, Layout.sectionSpacing)
-                } else {
-                    noAppointmentsCard
-                        .padding(.top, Layout.sectionSpacing)
-                }
+                appointmentSection(now: context.date)
+                    .padding(.top, Layout.sectionSpacing)
             }
             Spacer(minLength: Layout.sectionSpacing)
             Button(action: onOpenDashboard) {
@@ -76,6 +65,45 @@ struct MinimalMainView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.pabloCream)
+    }
+
+    /// Card selection. A recording in flight wins over every other state —
+    /// including a failed refresh — because this window holds the only End
+    /// Session button, and hiding it strands a live recording.
+    @ViewBuilder
+    private func appointmentSection(now: Date) -> some View {
+        if let appointment = Self.nextAppointment(
+            in: appointments, now: now, activeSessionId: activeSessionId
+        ) {
+            nextAppointmentCard(appointment)
+        } else if activeSessionId != nil {
+            untrackedRecordingCard
+        } else if appointmentsLoading, appointments.isEmpty {
+            appointmentsLoadingCard
+        } else if appointmentsError != nil, appointments.isEmpty {
+            appointmentsErrorCard
+        } else {
+            noAppointmentsCard
+        }
+    }
+
+    /// Recording is live but its appointment isn't in today's list — a handoff
+    /// for another day, or a list that failed to refresh. Show the controls
+    /// anyway; the therapist still has to be able to end the session.
+    private var untrackedRecordingCard: some View {
+        honeyCard {
+            HStack(spacing: 12) {
+                Image(systemName: "waveform")
+                    .font(.title2)
+                    .foregroundStyle(Color.pabloHoney)
+                    .accessibilityHidden(true)
+                Text("Session in progress")
+                    .font(.pabloDisplay(16))
+                    .foregroundStyle(Color.pabloBrownDeep)
+                Spacer(minLength: 0)
+            }
+            recordingPanel(title: nil)
+        }
     }
 
     private var header: some View {
@@ -116,9 +144,15 @@ struct MinimalMainView: View {
     }
 
     private func nextAppointmentCard(_ appointment: Appointment) -> some View {
-        VStack(spacing: 14) {
+        honeyCard {
             appointmentSummary(appointment)
             appointmentAction(appointment)
+        }
+    }
+
+    private func honeyCard(@ViewBuilder content: () -> some View) -> some View {
+        VStack(spacing: 14) {
+            content()
         }
         .padding()
         .background(
@@ -152,7 +186,7 @@ struct MinimalMainView: View {
     private func appointmentAction(_ appointment: Appointment) -> some View {
         switch Self.action(for: appointment, activeSessionId: activeSessionId) {
         case .stopRecording:
-            recordingPanel(appointment)
+            recordingPanel(title: appointment.title)
         case .alreadyStarted:
             Label("Session started", systemImage: "checkmark.circle.fill")
                 .font(.pabloBody(14).weight(.semibold))
@@ -172,7 +206,7 @@ struct MinimalMainView: View {
     /// Live capture state plus the two controls a therapist needs mid-session:
     /// pause (a brief hold — the session stays open) and end session (stop,
     /// upload, close). Mirrors the full dashboard's recording banner.
-    private func recordingPanel(_ appointment: Appointment) -> some View {
+    private func recordingPanel(title: String?) -> some View {
         VStack(spacing: 12) {
             captureStatusRow
             StatusIndicator(
@@ -181,7 +215,7 @@ struct MinimalMainView: View {
                 inactiveLabel: "No system audio"
             )
             .frame(maxWidth: .infinity, alignment: .leading)
-            recordingButtons(appointment)
+            recordingButtons(title: title)
         }
     }
 
@@ -212,7 +246,7 @@ struct MinimalMainView: View {
         recordingState == .paused ? "Paused" : "Recording"
     }
 
-    private func recordingButtons(_ appointment: Appointment) -> some View {
+    private func recordingButtons(title: String?) -> some View {
         HStack(spacing: 10) {
             pauseResumeButton
             Button(role: .destructive, action: onEndSession) {
@@ -222,7 +256,7 @@ struct MinimalMainView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(Color.pabloError)
-            .accessibilityLabel("End session for \(appointment.title)")
+            .accessibilityLabel(title.map { "End session for \($0)" } ?? "End session")
         }
     }
 
@@ -315,8 +349,22 @@ struct MinimalMainView: View {
         .padding(.horizontal, Layout.pageInset)
     }
 
-    static func nextAppointment(in appointments: [Appointment], now: Date) -> Appointment? {
-        appointments
+    /// The appointment the card shows.
+    ///
+    /// A session being recorded pins the card regardless of its end time or
+    /// status. Without this, the moment the scheduled end passed the `end >= now`
+    /// filter dropped the appointment, the window flipped to "all caught up",
+    /// and a still-running recording lost its only End Session button.
+    static func nextAppointment(
+        in appointments: [Appointment],
+        now: Date,
+        activeSessionId: String? = nil
+    ) -> Appointment? {
+        if let activeSessionId {
+            let recording = appointments.first { $0.sessionId == activeSessionId }
+            if let recording { return recording }
+        }
+        return appointments
             .compactMap { appointment -> (appointment: Appointment, start: Date)? in
                 guard appointment.status.lowercased() != "cancelled",
                       let start = parseDate(appointment.startAt),
@@ -355,8 +403,9 @@ struct MinimalMainView: View {
         return date.formatted(date: .omitted, time: .shortened)
     }
 
-    private static func timingLabel(_ appointment: Appointment, now: Date) -> String {
+    static func timingLabel(_ appointment: Appointment, now: Date) -> String {
         guard let start = parseDate(appointment.startAt) else { return "UPCOMING" }
+        if let end = parseDate(appointment.endAt), end < now { return "RUNNING OVER" }
         return start <= now ? "IN PROGRESS" : "NEXT UP"
     }
 
@@ -401,85 +450,4 @@ struct MinimalMainView: View {
                 .accessibilityLabel("Version \(appVersion)")
         }
     }
-}
-
-// MARK: - Previews
-
-private func previewAppointment(sessionId: String? = nil) -> Appointment {
-    Appointment(
-        id: "appointment",
-        patientId: "patient",
-        title: "Initial consultation",
-        startAt: ISO8601DateFormatter().string(from: .now.addingTimeInterval(600)),
-        endAt: ISO8601DateFormatter().string(from: .now.addingTimeInterval(3600)),
-        durationMinutes: 50,
-        status: "scheduled",
-        sessionType: nil,
-        videoLink: nil,
-        videoPlatform: "zoom",
-        notes: nil,
-        icalSource: nil,
-        ehrAppointmentUrl: nil,
-        sessionId: sessionId,
-        createdAt: ISO8601DateFormatter().string(from: .now),
-        updatedAt: nil
-    )
-}
-
-private func previewView(
-    appointment: Appointment,
-    activeSessionId: String?,
-    recordingState: RecordingUIState
-) -> MinimalMainView {
-    MinimalMainView(
-        email: "therapist@pablo.health",
-        webDashboardURL: URL(string: "https://app.pablo.health/dashboard") ?? URL(fileURLWithPath: "/"),
-        isBackendReachable: true,
-        micReady: true,
-        appVersion: "1.0.0",
-        appointments: [appointment],
-        appointmentsLoading: false,
-        appointmentsError: nil,
-        activeSessionId: activeSessionId,
-        recordingState: recordingState,
-        recordingDuration: 754,
-        micLevel: 0.62,
-        systemLevel: 0.31,
-        systemAudioActive: true,
-        onStartAppointment: { _ in },
-        onPauseRecording: {},
-        onResumeRecording: {},
-        onEndSession: {},
-        onRetryAppointments: {},
-        onOpenDashboard: {},
-        onOpenPreferences: {},
-        onSignOut: {}
-    )
-}
-
-#Preview("Ready to start") {
-    previewView(
-        appointment: previewAppointment(),
-        activeSessionId: nil,
-        recordingState: .idle
-    )
-    .frame(width: 520, height: 560)
-}
-
-#Preview("Recording") {
-    previewView(
-        appointment: previewAppointment(sessionId: "session-1"),
-        activeSessionId: "session-1",
-        recordingState: .recording
-    )
-    .frame(width: 520, height: 560)
-}
-
-#Preview("Paused") {
-    previewView(
-        appointment: previewAppointment(sessionId: "session-1"),
-        activeSessionId: "session-1",
-        recordingState: .paused
-    )
-    .frame(width: 520, height: 560)
 }
