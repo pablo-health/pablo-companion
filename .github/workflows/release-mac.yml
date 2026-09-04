@@ -237,13 +237,10 @@ jobs:
 
       - name: Create DMG
         run: |
-          mkdir -p $RUNNER_TEMP/dmg-contents
-          cp -R $RUNNER_TEMP/export/Pablo.app $RUNNER_TEMP/dmg-contents/
-          ln -s /Applications $RUNNER_TEMP/dmg-contents/Applications
-          hdiutil create -volname "Pablo" \
-            -srcfolder $RUNNER_TEMP/dmg-contents \
-            -ov -format UDZO \
-            $RUNNER_TEMP/$DMG_NAME
+          scripts/create-macos-dmg.sh \
+            $RUNNER_TEMP/export/Pablo.app \
+            $RUNNER_TEMP/$DMG_NAME \
+            release-assets/macos/dmg-paper-background.png
 
       - name: Notarize
         if: github.event_name == 'push'
@@ -254,6 +251,9 @@ jobs:
             --issuer ${{ secrets.APPLE_NOTARY_ISSUER_ID }} \
             --wait --timeout 30m
           xcrun stapler staple $RUNNER_TEMP/$DMG_NAME
+          # Publish the same notarized bytes under a stable name so browsers can
+          # use GitHub's /releases/latest/download/Pablo.dmg redirect directly.
+          cp $RUNNER_TEMP/$DMG_NAME $RUNNER_TEMP/Pablo.dmg
 
       - name: Generate appcast
         if: github.event_name == 'push'
@@ -272,7 +272,9 @@ jobs:
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
-          files: ${{ runner.temp }}/${{ env.DMG_NAME }}
+          files: |
+            ${{ runner.temp }}/${{ env.DMG_NAME }}
+            ${{ runner.temp }}/Pablo.dmg
           generate_release_notes: true
 
       - name: Publish appcast
