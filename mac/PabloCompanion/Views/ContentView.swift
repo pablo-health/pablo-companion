@@ -9,8 +9,10 @@ struct ContentView: View {
     @State var sessionVM = SessionViewModel()
     // recordingVM / transcriptionVM are non-private: ContentView+AudioRecovery
     // is a separate-file extension that drives the launch recovery + retry flow.
+    // uploadVM is non-private for the same reason: settingsTab now lives in the
+    // ContentView+Settings extension.
     @State var recordingVM = RecordingViewModel()
-    @State private var uploadVM = UploadViewModel()
+    @State var uploadVM = UploadViewModel()
     @State var patientVM = PatientViewModel()
     @State var transcriptionVM = TranscriptionViewModel()
     @State var practiceVM = PracticeViewModel()
@@ -43,7 +45,8 @@ struct ContentView: View {
     @State var apiClientsConfigured = false
 
     /// Whether the preferences sheet is shown from the minimal window's footer.
-    @State private var showPreferences = false
+    /// Non-private: `preferencesSheet` lives in the ContentView+Settings extension.
+    @State var showPreferences = false
 
     /// Gates the full four-tab native dashboard. Default `false`: the companion
     /// shows only the minimal handoff window and the web app is the dashboard.
@@ -230,17 +233,23 @@ struct ContentView: View {
             appointmentsLoading: sessionVM.isLoading,
             appointmentsError: sessionVM.errorMessage,
             activeSessionId: activeSessionId,
+            recordingState: recordingVM.recordingState,
+            recordingDuration: recordingVM.duration,
+            micLevel: recordingVM.micLevel,
+            systemLevel: recordingVM.systemLevel,
+            systemAudioActive: recordingVM.systemAudioActive,
             onStartAppointment: { startSession(fromAppointmentId: $0.id) },
-            onStopRecording: { stopActiveSession() },
+            onPauseRecording: { recordingVM.pauseRecording() },
+            onResumeRecording: { recordingVM.resumeRecording() },
+            onEndSession: { stopActiveSession() },
             onRetryAppointments: { Task { await sessionVM.loadTodayAppointments() } },
             onOpenDashboard: { openWebDashboard() },
             onOpenPreferences: { showPreferences = true },
             onSignOut: { authVM.signOut() }
         )
-        .frame(minWidth: 480, idealWidth: 520, minHeight: 420, idealHeight: 480)
+        .frame(minWidth: 480, idealWidth: 520, minHeight: 480, idealHeight: 560)
         .sheet(isPresented: $showPreferences) {
-            settingsTab
-                .frame(minWidth: 460, minHeight: 520)
+            preferencesSheet
         }
     }
 
@@ -470,31 +479,4 @@ struct ContentView: View {
         )
     }
 
-}
-
-// MARK: - Settings Tab
-
-extension ContentView {
-    var settingsTab: some View {
-        SettingsView(
-            backendURL: $uploadVM.backendURL,
-            authServerURL: Bindable(authVM).authServerURL,
-            selectedMicID: $recordingVM.selectedMicID,
-            debugEnableMic: $recordingVM.debugEnableMic,
-            debugEnableSystem: $recordingVM.debugEnableSystem,
-            userEmail: authVM.authenticatedEmail,
-            availableMics: recordingVM.availableMics,
-            isBackendReachable: uploadVM.isBackendReachable,
-            bluetoothRoutingConflict: recordingVM.bluetoothRoutingConflict,
-            bluetoothRecommendation: recordingVM.bluetoothRecommendation,
-            systemAudioPermitted: recordingVM.systemAudioPermitted,
-            recordingState: recordingVM.recordingState,
-            diagnostics: recordingVM.debugDiagnostics,
-            onCheckHealth: { Task { await uploadVM.checkBackendHealth() } },
-            onGenerateTestTone: { recordingVM.generateTestTone() },
-            onSignOut: { authVM.signOut() }
-        )
-        .tabItem { Label("Settings", systemImage: "gear") }
-        .tag(3)
-    }
 }
