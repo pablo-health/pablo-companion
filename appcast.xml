@@ -3,12 +3,12 @@
     <channel>
         <title>Pablo</title>
         <item>
-            <title>0.9.10</title>
-            <pubDate>Fri, 04 Sep 2026 02:32:45 +0000</pubDate>
-            <sparkle:version>15</sparkle:version>
-            <sparkle:shortVersionString>0.9.10</sparkle:shortVersionString>
+            <title>0.9.11</title>
+            <pubDate>Fri, 04 Sep 2026 17:45:48 +0000</pubDate>
+            <sparkle:version>16</sparkle:version>
+            <sparkle:shortVersionString>0.9.11</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/pablo-health/pablo-companion/releases/download/v0.9.10/Pablo-0.9.10.dmg" length="6534837" type="application/octet-stream" sparkle:edSignature="RqWFRgz9UVwCYpNXL1IaBmdvKdjmACOK6KupOd+nu1AE6FW/jJkFclPzm5+ZvEaWMG26cw4Fiax/Gy0WPFZIBw=="/>
+            <enclosure url="https://github.com/pablo-health/pablo-companion/releases/download/v0.9.11/Pablo-0.9.11.dmg" length="6574292" type="application/octet-stream" sparkle:edSignature="UMPHUputF8e8jL8hJjAFKER1cptKmUpwyziQZv9ph5Wdry29iYe4lSrLtDYEXST+jh9wKfyJUNWAd73nygP1Ag=="/>
         </item>
     </channel>
 </rss>
