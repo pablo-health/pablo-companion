@@ -19,4 +19,31 @@ enum AppPaths {
     static var pendingAudioUploads: URL {
         support.appendingPathComponent("PendingAudioUploads", isDirectory: true)
     }
+
+    /// Session audio: the mixed file and the PCM sidecars for each session.
+    ///
+    /// Under Application Support, not Documents. Documents is what iCloud
+    /// "Desktop & Documents", Time Machine and folder-sync tools carry off the
+    /// machine, and session audio must not follow them. The directory is also
+    /// marked excluded from backup once it exists (`excludeFromBackup`).
+    static var recordings: URL {
+        support.appendingPathComponent("Recordings", isDirectory: true)
+    }
+
+    /// Where earlier builds kept session audio. Read only to move it across.
+    static var legacyRecordingsDirectories: [URL] {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return [
+            documents.appendingPathComponent("PabloCompanion-Recordings", isDirectory: true),
+            documents.appendingPathComponent("MacOSSample-Recordings", isDirectory: true),
+        ]
+    }
+
+    /// Asks Time Machine and iCloud backup to skip `url`. Best effort.
+    static func excludeFromBackup(_ url: URL) {
+        var target = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? target.setResourceValues(values)
+    }
 }
