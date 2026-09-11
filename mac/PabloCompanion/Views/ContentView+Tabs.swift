@@ -23,27 +23,7 @@ extension ContentView {
             playingSessionId: recordingVM.playingSessionId,
             onStartSession: { startSession(fromAppointmentId: $0.id) },
             onQuickStart: { handleQuickStart($0, noteType: $1) },
-            onStopRecording: {
-                Task {
-                    await recordingVM.stopRecording()
-                    let sessionId = activeSessionId
-                    recordingVM.activeSessionId = nil
-                    activeSessionId = nil
-                    if let sessionId {
-                        // Queue the audio on disk BEFORE any network call —
-                        // endSession can 401 into the forced sign-out flow,
-                        // and the recording must already be safe when it does.
-                        queueSessionAudioForUpload(sessionId)
-                        _ = await sessionVM.endSession(sessionId)
-                        let segments = recordingVM.allRecordingsForSession(sessionId)
-                        if !segments.isEmpty {
-                            await transcriptionVM.uploadAudioSegments(segments, sessionId: sessionId)
-                        }
-                        recordingVM.clearSessionSegments(sessionId)
-                    }
-                    await sessionVM.loadTodayAppointments()
-                }
-            },
+            onStopRecording: { stopActiveSession() },
             recordingStalled: recordingVM.recordingStalled,
             recordingError: recordingVM.persistentError,
             onRetryCapture: { Task { await recordingVM.retryCapture() } },

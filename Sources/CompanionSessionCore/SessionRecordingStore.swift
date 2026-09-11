@@ -142,6 +142,36 @@ public struct SessionRecordingStore: Sendable {
         return [:]
     }
 
+    /// Points every entry whose files moved out of `old` at their new home
+    /// under `new`. Entries that lived elsewhere are untouched, and nothing is
+    /// written when no entry changed.
+    public func relocateAudio(from old: URL, to new: URL) {
+        let map = loadAll()
+        var changed = false
+        var updated: [String: RecordingEntry] = [:]
+        for (sessionId, entry) in map {
+            let fileURL = RecordingRelocation.rewrite(entry.fileURL, from: old, to: new)
+            let mic = RecordingRelocation.rewrite(entry.micPCMFilePath, from: old, to: new)
+            let system = RecordingRelocation.rewrite(entry.systemPCMFilePath, from: old, to: new)
+            if fileURL != entry.fileURL || mic != entry.micPCMFilePath || system != entry.systemPCMFilePath {
+                changed = true
+            }
+            updated[sessionId] = RecordingEntry(
+                recordingID: entry.recordingID,
+                fileURL: fileURL,
+                duration: entry.duration,
+                createdAt: entry.createdAt,
+                isEncrypted: entry.isEncrypted,
+                checksum: entry.checksum,
+                channelLayout: entry.channelLayout,
+                micPCMFilePath: mic,
+                systemPCMFilePath: system,
+                sampleRate: entry.sampleRate
+            )
+        }
+        if changed { write(updated) }
+    }
+
     /// Save a single session→recording mapping, merging with existing entries.
     public func save(sessionId: String, entry: RecordingEntry) {
         var map = loadAll()
