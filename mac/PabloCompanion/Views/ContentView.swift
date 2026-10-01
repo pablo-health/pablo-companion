@@ -23,6 +23,7 @@ struct ContentView: View {
     @State var viewingTranscript: TranscriptViewerItem?
     @State var detailSession: Session?
     @State var activeSessionId: String?
+    @State var startingAppointmentId: String?
     @State var selectedTab = 0
     @State private var versionBlock: UpdateRequiredView.Reason?
     @State private var screenLockObserver: NSObjectProtocol?
@@ -233,6 +234,7 @@ struct ContentView: View {
             appointmentsLoading: sessionVM.isLoading,
             appointmentsError: sessionVM.errorMessage,
             activeSessionId: activeSessionId,
+            startingAppointmentId: startingAppointmentId,
             recordingState: recordingVM.recordingState,
             recordingDuration: recordingVM.duration,
             micLevel: recordingVM.micLevel,
@@ -361,7 +363,10 @@ struct ContentView: View {
     // MARK: - Session orchestration
 
     func startSession(fromAppointmentId appointmentId: String) {
+        guard startingAppointmentId == nil else { return }
+        startingAppointmentId = appointmentId
         Task {
+            defer { startingAppointmentId = nil }
             guard let session = await sessionVM.startSessionFromAppointment(
                 appointmentId: appointmentId
             ) else { return }
