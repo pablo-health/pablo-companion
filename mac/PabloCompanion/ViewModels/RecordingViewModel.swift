@@ -47,7 +47,15 @@ final class RecordingViewModel {
     /// `ClientAudioMonitor`. Published only when it changes; the monitor
     /// itself sees every level update.
     var clientAudioStatus: ClientAudioMonitor.Status = .listening
+    /// Set when the therapist closes the warning; cleared whenever the status
+    /// changes, so a client lost again later warns again.
+    private(set) var clientAudioWarningDismissed = false
     @ObservationIgnored private var clientAudioMonitor = ClientAudioMonitor()
+
+    var showsClientAudioWarning: Bool {
+        clientAudioStatus == .noClientAudio && !clientAudioWarningDismissed
+    }
+
     var recordingStalled = false
     var persistentError: String?
     var bluetoothRoutingConflict = false
@@ -367,12 +375,18 @@ final class RecordingViewModel {
         clientAudioMonitor.record(micRMS: mic, systemRMS: system, at: Date())
         if clientAudioMonitor.status != clientAudioStatus {
             clientAudioStatus = clientAudioMonitor.status
+            clientAudioWarningDismissed = false
         }
+    }
+
+    func dismissClientAudioWarning() {
+        clientAudioWarningDismissed = true
     }
 
     private func resetClientAudio() {
         clientAudioMonitor.reset()
         clientAudioStatus = .listening
+        clientAudioWarningDismissed = false
     }
 
     private func resetLevels() {

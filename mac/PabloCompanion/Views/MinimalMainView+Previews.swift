@@ -26,7 +26,8 @@ private func previewView(
     appointment: Appointment,
     activeSessionId: String?,
     recordingState: RecordingUIState,
-    startingAppointmentId: String? = nil
+    startingAppointmentId: String? = nil,
+    clientAudioStatus: ClientAudioMonitor.Status = .hearingClient
 ) -> MinimalMainView {
     MinimalMainView(
         email: "therapist@pablo.health",
@@ -44,6 +45,9 @@ private func previewView(
         micLevel: 0.62,
         systemLevel: 0.31,
         systemAudioActive: true,
+        clientAudioStatus: clientAudioStatus,
+        showsClientAudioWarning: clientAudioStatus == .noClientAudio,
+        onDismissClientAudioWarning: {},
         onStartAppointment: { _ in },
         onPauseRecording: {},
         onResumeRecording: {},
@@ -99,4 +103,14 @@ private func previewView(
         recordingState: .idle
     )
     .frame(width: 520, height: 560)
+}
+
+#Preview("Can't hear client") {
+    previewView(
+        appointment: previewAppointment(sessionId: "session-1"),
+        activeSessionId: "session-1",
+        recordingState: .recording,
+        clientAudioStatus: .noClientAudio
+    )
+    .frame(width: 520, height: 640)
 }
