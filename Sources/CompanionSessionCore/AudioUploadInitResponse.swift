@@ -26,15 +26,20 @@ public struct UploadTarget: Codable, Sendable {
 public struct AudioUploadInitChannel: Codable, Sendable {
     public let upload: UploadTarget
     public let gcsPath: String
+    /// Size of the object an earlier attempt already stored at `gcsPath`, or
+    /// nil. Absent from older backends, which decodes as nil (always upload).
+    public let existingBytes: Int?
 
     enum CodingKeys: String, CodingKey {
         case upload
         case gcsPath = "gcs_path"
+        case existingBytes = "existing_bytes"
     }
 
-    public init(upload: UploadTarget, gcsPath: String) {
+    public init(upload: UploadTarget, gcsPath: String, existingBytes: Int? = nil) {
         self.upload = upload
         self.gcsPath = gcsPath
+        self.existingBytes = existingBytes
     }
 }
 

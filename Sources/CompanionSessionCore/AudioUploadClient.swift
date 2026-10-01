@@ -269,9 +269,9 @@ extension AudioUploadClient {
         let client = try Self.wavFileForUpload(source: clientAudioURL, sampleRate: sampleRate, channels: 2)
         defer { if client.isTemp { try? FileManager.default.removeItem(at: client.url) } }
 
-        try await putChannel(initResponse.therapist.upload, fileURL: therapist.url, label: "therapist")
+        try await putChannelUnlessStored(initResponse.therapist, fileURL: therapist.url, label: "therapist")
         onProgress(0.55)
-        try await putChannel(initResponse.client.upload, fileURL: client.url, label: "client")
+        try await putChannelUnlessStored(initResponse.client, fileURL: client.url, label: "client")
         onProgress(0.85)
 
         // Finalize checks session status; it can 400 INVALID_STATUS just as the
@@ -312,6 +312,22 @@ extension AudioUploadClient {
         let (data, response) = try await session.data(for: request)
         try Self.throwIfError(data: data, response: response)
         return try JSONDecoder().decode(AudioUploadInitResponse.self, from: data)
+    }
+
+    /// Skips the PUT when an earlier attempt already stored this exact file —
+    /// on a slow link, re-sending a channel that landed last time is most of
+    /// what made a long session's retries never finish. Only an exact size
+    /// match counts; anything else uploads (and overwrites).
+    private func putChannelUnlessStored(_ channel: AudioUploadInitChannel, fileURL: URL, label: String) async throws {
+        if let existing = channel.existingBytes,
+           existing == (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int)
+        {
+            #if canImport(os)
+            logger.info("\(label, privacy: .public) channel already in storage; skipping PUT")
+            #endif
+            return
+        }
+        try await putChannel(channel.upload, fileURL: fileURL, label: label)
     }
 
     /// PUTs one channel's file straight to object storage using the signed

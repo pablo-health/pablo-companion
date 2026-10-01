@@ -223,6 +223,106 @@ struct AudioUploadClientTests {
         #expect(finalizeReq.value(forHTTPHeaderField: "DPoP") == "proof-abc")
     }
 
+    /// `initJSON` with `existing_bytes` set on each channel.
+    private static func initJSON(therapistExisting: Int?, clientExisting: Int?) -> String {
+        func field(_ value: Int?) -> String {
+            value.map { #","existing_bytes": \#($0)"# } ?? ""
+        }
+        return initJSON
+            .replacingOccurrences(
+                of: #""gcs_path": "signed/s/therapist.pcm""#,
+                with: #""gcs_path": "signed/s/therapist.pcm""# + field(therapistExisting)
+            )
+            .replacingOccurrences(
+                of: #""gcs_path": "signed/s/client.pcm""#,
+                with: #""gcs_path": "signed/s/client.pcm""# + field(clientExisting)
+            )
+    }
+
+    /// Size of the WAV the client builds from a raw PCM fixture: header + data.
+    private static func wavSize(of pcm: URL) throws -> Int {
+        let pcmBytes = try #require(FileManager.default.attributesOfItem(atPath: pcm.path)[.size] as? Int)
+        return pcmBytes + WAVEncoder.header(dataByteCount: pcmBytes, sampleRate: 48000, channels: 1).count
+    }
+
+    @Test("Signed-URL: a channel already in storage at the same size is not re-sent")
+    func signedUploadSkipsAStoredChannel() async throws {
+        // Regression: a slow retry re-sent the therapist channel it had already
+        // landed, so a long session's retries never finished.
+        let fx = try Fixtures()
+        defer { fx.cleanup() }
+        let recorder = StubURLProtocol.install()
+        defer { StubURLProtocol.reset() }
+        let therapistSize = try Self.wavSize(of: fx.mic)
+        recorder.enqueue(status: 201, json: Self.initJSON(therapistExisting: therapistSize, clientExisting: nil))
+        recorder.enqueue(status: 200, json: "") // client PUT only
+        recorder.enqueue(
+            status: 202,
+            json: #"{"id":"s","status":"transcribing","provider":"assemblyai","queue":"","message":"queued"}"#
+        )
+
+        let response = try await makeClient().uploadWithSelfHeal(
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 48000
+        )
+
+        #expect(response.status == "transcribing")
+        #expect(recorder.captured.count == 3)
+        #expect(recorder.captured[1].url?.absoluteString == Self.clientPutURL)
+        #expect(recorder.captured[2].url?.path == "/api/sessions/s/upload-audio/finalize")
+    }
+
+    @Test("Signed-URL: a stored channel of a different size is uploaded again")
+    func signedUploadReplacesAMismatchedChannel() async throws {
+        let fx = try Fixtures()
+        defer { fx.cleanup() }
+        let recorder = StubURLProtocol.install()
+        defer { StubURLProtocol.reset() }
+        let therapistSize = try Self.wavSize(of: fx.mic)
+        recorder.enqueue(status: 201, json: Self.initJSON(therapistExisting: therapistSize - 1, clientExisting: 7))
+        recorder.enqueue(status: 200, json: "")
+        recorder.enqueue(status: 200, json: "")
+        recorder.enqueue(
+            status: 202,
+            json: #"{"id":"s","status":"transcribing","provider":"assemblyai","queue":"","message":"queued"}"#
+        )
+
+        _ = try await makeClient().uploadWithSelfHeal(
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 48000
+        )
+
+        #expect(recorder.captured.count == 4)
+        #expect(recorder.captured[1].url?.absoluteString == Self.therapistPutURL)
+        #expect(recorder.captured[2].url?.absoluteString == Self.clientPutURL)
+    }
+
+    @Test("Signed-URL: both channels already stored goes straight to finalize")
+    func signedUploadWithBothStoredOnlyFinalizes() async throws {
+        let fx = try Fixtures()
+        defer { fx.cleanup() }
+        let recorder = StubURLProtocol.install()
+        defer { StubURLProtocol.reset() }
+        let systemPCM = try #require(FileManager.default.attributesOfItem(atPath: fx.system.path)[.size] as? Int)
+        let clientSize = systemPCM + WAVEncoder.header(dataByteCount: systemPCM, sampleRate: 48000, channels: 2).count
+        try recorder.enqueue(
+            status: 201,
+            json: Self.initJSON(therapistExisting: Self.wavSize(of: fx.mic), clientExisting: clientSize)
+        )
+        recorder.enqueue(
+            status: 202,
+            json: #"{"id":"s","status":"transcribing","provider":"assemblyai","queue":"","message":"queued"}"#
+        )
+
+        _ = try await makeClient().uploadWithSelfHeal(
+            sessionId: "s", therapistAudioURL: fx.mic, clientAudioURL: fx.system,
+            sampleRate: 48000
+        )
+
+        #expect(recorder.captured.count == 2)
+        #expect(recorder.captured[1].url?.path == "/api/sessions/s/upload-audio/finalize")
+    }
+
     @Test("Signed-URL: the WAV header carries the passed sample rate, not a hardcoded 48 kHz")
     func signedUploadStampsPassedSampleRate() async throws {
         let fx = try Fixtures()
