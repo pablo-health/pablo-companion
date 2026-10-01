@@ -108,6 +108,90 @@ struct PendingAudioUploadCoordinatorTests {
         #expect(!c.isDue(entry))
     }
 
+    @Test func backoffCountsFromTheLastAttemptNotFromCreation() throws {
+        // Regression: measuring from createdAt made every tick "due" once an
+        // entry was older than its backoff, however recently it had failed.
+        let store = Self.makeStore()
+        Self.queue(store, "session-L")
+        let created = try #require(store.get(sessionId: "session-L")).createdAt
+        let failedAt = created.addingTimeInterval(3600)
+        store.incrementRetry(sessionId: "session-L", at: failedAt)
+        let entry = try #require(store.get(sessionId: "session-L"))
+
+        let c = makeCoordinator(store: store, now: { failedAt.addingTimeInterval(10) })
+
+        #expect(entry.lastAttemptAt == failedAt)
+        #expect(!c.isDue(entry))
+    }
+
+    // MARK: - One upload per session
+
+    @Test func aDrainDuringAnInFlightUploadDoesNotStartASecondOne() async throws {
+        // Regression: a slow upload was still running when the 5-minute tick
+        // fired; the entry was still pendingUpload and retryCount 0, so the
+        // tick started another full upload of the same session. On a slow link
+        // the copies split the bandwidth and the session never finished.
+        let store = Self.makeStore()
+        Self.queue(store, "session-S")
+        let inFlight = InFlightUploads()
+        let gate = UploadGate()
+        let attempts = Box<Int>(0)
+        let slow = makeCoordinator(store: store, upload: { _ in
+            attempts.value += 1
+            await gate.wait()
+        }, inFlight: inFlight)
+        let tick = makeCoordinator(store: store, upload: { _ in attempts.value += 1 }, inFlight: inFlight)
+
+        let first = Task { await slow.forceDrain(only: "session-S") }
+        await gate.waitUntilEntered()
+
+        let duringUpload = await tick.drain()
+        // Skipping is not failing: no retry was counted against the entry.
+        // (Checked before release — a successful upload then removes it.)
+        let retriesWhileInFlight = try #require(store.get(sessionId: "session-S")).retryCount
+        gate.release()
+        let firstCount = await first.value
+
+        #expect(duringUpload == 0)
+        #expect(attempts.value == 1)
+        #expect(firstCount == 1)
+        #expect(retriesWhileInFlight == 0)
+    }
+
+    @Test func theSessionCanUploadAgainOnceTheInFlightAttemptFails() async {
+        let store = Self.makeStore()
+        Self.queue(store, "session-R")
+        let inFlight = InFlightUploads()
+        let failing = makeCoordinator(
+            store: store, upload: { _ in throw CoordinatorTestError.uploadFailed }, inFlight: inFlight
+        )
+        let retry = makeCoordinator(store: store, inFlight: inFlight)
+
+        #expect(await failing.forceDrain(only: "session-R") == 0)
+        #expect(await inFlight.contains("session-R") == false)
+        #expect(await retry.forceDrain(only: "session-R") == 1)
+    }
+
+    @Test func otherSessionsStillUploadWhileOneIsInFlight() async {
+        let store = Self.makeStore()
+        Self.queue(store, "session-slow")
+        Self.queue(store, "session-other")
+        let inFlight = InFlightUploads()
+        let gate = UploadGate()
+        let attempted = Box<[String]>([])
+        let slow = makeCoordinator(store: store, upload: { _ in await gate.wait() }, inFlight: inFlight)
+        let tick = makeCoordinator(store: store, upload: { attempted.value.append($0.sessionId) }, inFlight: inFlight)
+
+        let first = Task { await slow.forceDrain(only: "session-slow") }
+        await gate.waitUntilEntered()
+        let count = await tick.drain()
+        gate.release()
+        _ = await first.value
+
+        #expect(count == 1)
+        #expect(attempted.value == ["session-other"])
+    }
+
     // MARK: - Draining
 
     @Test func aSuccessfulDrainRemovesTheEntryAndDeletesTheAudio() async {
@@ -335,12 +419,14 @@ struct PendingAudioUploadCoordinatorTests {
         store: PendingAudioUploadStore,
         upload: @escaping PendingAudioUploadCoordinator.UploadAttempt = { _ in },
         cleanup: @escaping PendingAudioUploadCoordinator.CleanupAttempt = { _ in },
+        inFlight: InFlightUploads = InFlightUploads(),
         now: @escaping @Sendable () -> Date = { Date() }
     ) -> PendingAudioUploadCoordinator {
         PendingAudioUploadCoordinator(
             store: store,
             upload: upload,
             cleanup: cleanup,
+            inFlight: inFlight,
             now: now
         )
     }
@@ -348,4 +434,54 @@ struct PendingAudioUploadCoordinatorTests {
 
 enum CoordinatorTestError: Error {
     case uploadFailed
+}
+
+/// Holds an upload open until the test releases it, so a second drain can run
+/// while the first is genuinely mid-upload.
+final class UploadGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entered = false
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Called by the upload closure: signals "entered", then suspends until released.
+    func wait() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            entered = true
+            let toWake = enteredWaiters
+            enteredWaiters = []
+            if released {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+                lock.unlock()
+            }
+            toWake.forEach { $0.resume() }
+        }
+    }
+
+    func waitUntilEntered() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if entered {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                enteredWaiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
+    func release() {
+        lock.lock()
+        released = true
+        let toWake = waiters
+        waiters = []
+        lock.unlock()
+        toWake.forEach { $0.resume() }
+    }
 }

@@ -91,6 +91,9 @@ final class TranscriptionViewModel {
     private let audioBaseBackoffSeconds: Double = 300
     private let audioMaxBackoffSeconds: Double = 14400
     private let audioMaxAutoRetries = 10
+    /// One for the life of the app: `coordinator` is rebuilt on every access,
+    /// so the in-flight set has to live here or each drain would get its own.
+    private let inFlightUploads = InFlightUploads()
 
     /// Rate assumed for entries queued before `sampleRate` was persisted. Raw
     /// PCM has no header to recover the real rate from, so a legacy entry can
@@ -227,6 +230,7 @@ final class TranscriptionViewModel {
                     return .stillWorking
                 }
             },
+            inFlight: inFlightUploads,
             logSubsystem: AppConstants.appBundleID
         )
     }

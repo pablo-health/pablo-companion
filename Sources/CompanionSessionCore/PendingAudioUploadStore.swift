@@ -57,8 +57,15 @@ public struct PendingAudioUploadStore: Sendable {
         /// behaviour — rather than failing to decode and dropping the upload.
         public var state: State
 
+        /// When the last failed attempt happened; the backoff ladder counts from
+        /// here. Optional so entries written before it existed still decode —
+        /// those fall back to `createdAt`, the old (and wrong) anchor, which made
+        /// every tick "due" once an entry was old enough.
+        public var lastAttemptAt: Date?
+
         enum CodingKeys: String, CodingKey {
             case sessionId, micPath, systemPath, mixedPath, isEncrypted, createdAt, retryCount, sampleRate, state
+            case lastAttemptAt
         }
 
         public init(from decoder: Decoder) throws {
@@ -72,13 +79,15 @@ public struct PendingAudioUploadStore: Sendable {
             retryCount = try c.decode(Int.self, forKey: .retryCount)
             sampleRate = try c.decodeIfPresent(Double.self, forKey: .sampleRate)
             state = try c.decodeIfPresent(State.self, forKey: .state) ?? .pendingUpload
+            lastAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
         }
 
         init(
             sessionId: String, micPath: String, systemPath: String?,
             mixedPath: String? = nil,
             isEncrypted: Bool, createdAt: Date, retryCount: Int,
-            sampleRate: Double?, state: State
+            sampleRate: Double?, state: State,
+            lastAttemptAt: Date? = nil
         ) {
             self.sessionId = sessionId
             self.micPath = micPath
@@ -89,6 +98,7 @@ public struct PendingAudioUploadStore: Sendable {
             self.retryCount = retryCount
             self.sampleRate = sampleRate
             self.state = state
+            self.lastAttemptAt = lastAttemptAt
         }
     }
 
@@ -163,7 +173,8 @@ public struct PendingAudioUploadStore: Sendable {
             createdAt: existing?.createdAt ?? Date(),
             retryCount: existing?.retryCount ?? 0,
             sampleRate: sampleRate,
-            state: existing?.state ?? .pendingUpload
+            state: existing?.state ?? .pendingUpload,
+            lastAttemptAt: existing?.lastAttemptAt
         )
         save(pending)
     }
@@ -265,10 +276,12 @@ public struct PendingAudioUploadStore: Sendable {
         #endif
     }
 
-    /// Increment `retryCount` for an existing entry. No-op if missing.
-    public func incrementRetry(sessionId: String) {
+    /// Record a failed attempt: increment `retryCount` and stamp
+    /// `lastAttemptAt`, which the backoff ladder counts from. No-op if missing.
+    public func incrementRetry(sessionId: String, at date: Date = Date()) {
         guard var pending = get(sessionId: sessionId) else { return }
         pending.retryCount += 1
+        pending.lastAttemptAt = date
         save(pending)
     }
 

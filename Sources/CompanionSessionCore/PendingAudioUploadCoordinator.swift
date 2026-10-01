@@ -85,6 +85,7 @@ public struct PendingAudioUploadCoordinator: Sendable {
     private let upload: UploadAttempt
     private let cleanup: CleanupAttempt
     private let checkOutcome: OutcomeCheck?
+    private let inFlight: InFlightUploads
     private let now: @Sendable () -> Date
 
     #if canImport(os)
@@ -97,6 +98,9 @@ public struct PendingAudioUploadCoordinator: Sendable {
     ///     behaviour) — provided for callers that don't poll. When set, a
     ///     successful upload instead moves the entry to `awaitingNote` and the
     ///     audio is kept until `reconcile()` sees the note.
+    ///   - inFlight: sessions already uploading. The app builds a coordinator per
+    ///     call, so it must pass the same instance every time — a fresh one per
+    ///     coordinator guards nothing.
     ///   - now: injected so a test can age an entry past its backoff instead of
     ///     waiting out a four-hour ladder in real time.
     public init(
@@ -105,6 +109,7 @@ public struct PendingAudioUploadCoordinator: Sendable {
         upload: @escaping UploadAttempt,
         cleanup: @escaping CleanupAttempt,
         checkOutcome: OutcomeCheck? = nil,
+        inFlight: InFlightUploads = InFlightUploads(),
         now: @escaping @Sendable () -> Date = { Date() },
         logSubsystem: String = "health.pablo.companion"
     ) {
@@ -113,6 +118,7 @@ public struct PendingAudioUploadCoordinator: Sendable {
         self.upload = upload
         self.cleanup = cleanup
         self.checkOutcome = checkOutcome
+        self.inFlight = inFlight
         self.now = now
         #if canImport(os)
         logger = Logger(subsystem: logSubsystem, category: "PendingAudioUploadCoordinator")
@@ -133,7 +139,8 @@ public struct PendingAudioUploadCoordinator: Sendable {
     public func isDue(_ entry: PendingAudioUploadStore.PendingAudioUpload) -> Bool {
         guard entry.retryCount < policy.maxAutoRetries else { return false }
         guard entry.retryCount > 0 else { return true }
-        return now().timeIntervalSince(entry.createdAt) >= backoff(forRetryCount: entry.retryCount)
+        let lastAttempt = entry.lastAttemptAt ?? entry.createdAt
+        return now().timeIntervalSince(lastAttempt) >= backoff(forRetryCount: entry.retryCount)
     }
 
     /// Attempt every entry that is due. Called on launch and on a timer.
@@ -165,6 +172,14 @@ public struct PendingAudioUploadCoordinator: Sendable {
         var succeeded = 0
 
         for entry in entries {
+            // Already uploading (a slow upload still running when the timer
+            // ticks): leave it alone. Not a failure, so no retry is counted.
+            guard await inFlight.claim(entry.sessionId) else {
+                #if canImport(os)
+                logger.info("Upload already in flight for session \(entry.sessionId); skipping")
+                #endif
+                continue
+            }
             do {
                 try await upload(entry)
                 succeeded += 1
@@ -185,11 +200,12 @@ public struct PendingAudioUploadCoordinator: Sendable {
                     store.setState(sessionId: entry.sessionId, .awaitingNote)
                 }
             } catch {
-                store.incrementRetry(sessionId: entry.sessionId)
+                store.incrementRetry(sessionId: entry.sessionId, at: now())
                 #if canImport(os)
                 logger.error("Audio upload failed for session \(entry.sessionId): \(error.localizedDescription)")
                 #endif
             }
+            await inFlight.release(entry.sessionId)
         }
         return succeeded
     }
