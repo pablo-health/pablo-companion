@@ -256,6 +256,10 @@ struct ContentView: View {
         .sheet(isPresented: $showPreferences) {
             preferencesSheet
         }
+        .audioCheckOnFirstUse(
+            isBusy: activeSessionId != nil || startingAppointmentId != nil || pendingLaunch != nil,
+            micDeviceID: recordingVM.selectedMicID
+        )
     }
 
     /// The web dashboard URL, derived from the configured auth-server (Next.js
