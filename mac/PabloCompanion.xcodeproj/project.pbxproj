@@ -545,7 +545,7 @@
 			repositoryURL = "https://github.com/pablo-health/AudioCaptureKit.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.0;
+				minimumVersion = 1.3.2;
 			};
 		};
 		AA00000000000010000000 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
