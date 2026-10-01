@@ -24,6 +24,9 @@ struct MinimalMainView: View {
     let appointmentsLoading: Bool
     let appointmentsError: String?
     let activeSessionId: String?
+    /// Appointment whose session is being created/started but isn't recording
+    /// yet. Pinned like a live recording so the card can't skip ahead mid-start.
+    let startingAppointmentId: String?
     let recordingState: RecordingUIState
     let recordingDuration: TimeInterval
     let micLevel: Float
@@ -73,7 +76,10 @@ struct MinimalMainView: View {
     @ViewBuilder
     private func appointmentSection(now: Date) -> some View {
         if let appointment = Self.nextAppointment(
-            in: appointments, now: now, activeSessionId: activeSessionId
+            in: appointments,
+            now: now,
+            activeSessionId: activeSessionId,
+            startingAppointmentId: startingAppointmentId
         ) {
             nextAppointmentCard(appointment)
         } else if activeSessionId != nil {
@@ -166,31 +172,25 @@ struct MinimalMainView: View {
         .padding(.horizontal, Layout.pageInset)
     }
 
-    /// Which action the appointment card offers. Extracted so the nil-vs-nil
-    /// trap below stays covered by tests: an appointment with no session and no
-    /// active recording are BOTH `nil`, and a bare `==` reads that as "this is
-    /// the recording in flight" — showing Stop Recording on a session that was
-    /// never started, whose button then no-ops.
-    enum AppointmentAction: Equatable {
-        case start
-        case stopRecording
-        case alreadyStarted
-    }
-
-    static func action(for appointment: Appointment, activeSessionId: String?) -> AppointmentAction {
-        guard let sessionId = appointment.sessionId else { return .start }
-        return sessionId == activeSessionId ? .stopRecording : .alreadyStarted
-    }
-
     @ViewBuilder
     private func appointmentAction(_ appointment: Appointment) -> some View {
-        switch Self.action(for: appointment, activeSessionId: activeSessionId) {
+        switch Self.action(
+            for: appointment,
+            activeSessionId: activeSessionId,
+            startingAppointmentId: startingAppointmentId
+        ) {
         case .stopRecording:
             recordingPanel(title: appointment.title)
-        case .alreadyStarted:
-            Label("Session started", systemImage: "checkmark.circle.fill")
-                .font(.pabloBody(14).weight(.semibold))
-                .foregroundStyle(Color.pabloSage)
+        case .starting:
+            Button {} label: {
+                Label("Starting session…", systemImage: "hourglass")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(Color.pabloHoney)
+            .disabled(true)
+            .accessibilityLabel("Starting session for \(appointment.title)")
         case .start:
             Button { onStartAppointment(appointment) } label: {
                 Label("Start Session", systemImage: "play.fill")
@@ -308,15 +308,7 @@ struct MinimalMainView: View {
     }
 
     private var noAppointmentsCard: some View {
-        Label("You’re all caught up for today.", systemImage: "checkmark.circle.fill")
-            .font(.headline)
-            .foregroundStyle(Color.pabloBrownDeep)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: Layout.cardRadius, style: .continuous)
-                    .fill(Color.pabloSage.opacity(0.12))
-            )
+        NoUpcomingAppointmentsCard(cornerRadius: Layout.cardRadius)
             .padding(.horizontal, Layout.pageInset)
     }
 
@@ -349,44 +341,6 @@ struct MinimalMainView: View {
         .padding(.horizontal, Layout.pageInset)
     }
 
-    /// The appointment the card shows.
-    ///
-    /// A session being recorded pins the card regardless of its end time or
-    /// status. Without this, the moment the scheduled end passed the `end >= now`
-    /// filter dropped the appointment, the window flipped to "all caught up",
-    /// and a still-running recording lost its only End Session button.
-    static func nextAppointment(
-        in appointments: [Appointment],
-        now: Date,
-        activeSessionId: String? = nil
-    ) -> Appointment? {
-        if let activeSessionId {
-            let recording = appointments.first { $0.sessionId == activeSessionId }
-            if let recording { return recording }
-        }
-        return appointments
-            .compactMap { appointment -> (appointment: Appointment, start: Date)? in
-                guard appointment.status.lowercased() != "cancelled",
-                      let start = parseDate(appointment.startAt),
-                      let end = parseDate(appointment.endAt),
-                      end >= now
-                else {
-                    return nil
-                }
-                return (appointment, start)
-            }
-            .min { $0.start < $1.start }?
-            .appointment
-    }
-
-    private static func parseDate(_ value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)
-    }
-
     static func formattedDuration(_ duration: TimeInterval) -> String {
         let total = max(0, Int(duration))
         return String(format: "%02d:%02d", total / 60, total % 60)
@@ -401,12 +355,6 @@ struct MinimalMainView: View {
     private static func formattedTime(_ value: String) -> String {
         guard let date = parseDate(value) else { return "Time unavailable" }
         return date.formatted(date: .omitted, time: .shortened)
-    }
-
-    static func timingLabel(_ appointment: Appointment, now: Date) -> String {
-        guard let start = parseDate(appointment.startAt) else { return "UPCOMING" }
-        if let end = parseDate(appointment.endAt), end < now { return "RUNNING OVER" }
-        return start <= now ? "IN PROGRESS" : "NEXT UP"
     }
 
     private func statusRow(ok: Bool, okText: String, offText: String) -> some View {

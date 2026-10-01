@@ -172,7 +172,124 @@ struct MinimalMainViewTests {
         )
     }
 
-    @Test func showsAlreadyStartedForASessionThisAppIsNotRecording() {
+    @Test func advancesPastASessionEndedBeforeItsScheduledEnd() throws {
+        // Regression: ending a session early left the appointment selected
+        // until its scheduled end — a dead "Session started" card instead of
+        // the next appointment's Start Session.
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T15:20:00Z"))
+        let endedEarly = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z",
+            endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1"
+        )
+        let upcoming = makeAppointment(
+            id: "later",
+            startAt: "2026-09-03T16:00:00Z",
+            endAt: "2026-09-03T16:50:00Z"
+        )
+
+        let selected = MinimalMainView.nextAppointment(
+            in: [endedEarly, upcoming], now: now, activeSessionId: nil
+        )
+
+        #expect(selected?.id == upcoming.id)
+    }
+
+    @Test func showsNothingWhenTheLastSessionEndedEarly() throws {
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T15:20:00Z"))
+        let endedEarly = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z",
+            endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1"
+        )
+
+        #expect(MinimalMainView.nextAppointment(in: [endedEarly], now: now) == nil)
+    }
+
+    @Test func skipsAStartedSessionWhileAnotherIsRecording() throws {
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T15:20:00Z"))
+        let earlier = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z",
+            endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1"
+        )
+        let recording = makeAppointment(
+            id: "recording",
+            startAt: "2026-09-03T15:15:00Z",
+            endAt: "2026-09-03T16:05:00Z",
+            sessionId: "session-2"
+        )
+
+        let selected = MinimalMainView.nextAppointment(
+            in: [earlier, recording], now: now, activeSessionId: "session-2"
+        )
+
+        #expect(selected?.id == recording.id)
+    }
+
+    @Test func pinsTheAppointmentBeingStarted() throws {
+        // Starting refreshes the list (linking session_id) before
+        // activeSessionId is set. Without the pin, the card would skip to the
+        // next patient mid-start and offer Start Session on the wrong person.
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T14:58:00Z"))
+        let starting = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z",
+            endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1"
+        )
+        let upcoming = makeAppointment(
+            id: "later",
+            startAt: "2026-09-03T16:00:00Z",
+            endAt: "2026-09-03T16:50:00Z"
+        )
+
+        let selected = MinimalMainView.nextAppointment(
+            in: [starting, upcoming],
+            now: now,
+            activeSessionId: nil,
+            startingAppointmentId: starting.id
+        )
+
+        #expect(selected?.id == starting.id)
+    }
+
+    @Test func keepsTheRecordingCardWhileAnotherSessionIsStarting() throws {
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T15:40:00Z"))
+        let starting = makeAppointment(
+            id: "starting",
+            startAt: "2026-09-03T15:45:00Z",
+            endAt: "2026-09-03T16:35:00Z"
+        )
+        let recording = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z",
+            endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1"
+        )
+
+        let selected = MinimalMainView.nextAppointment(
+            in: [starting, recording],
+            now: now,
+            activeSessionId: "session-1",
+            startingAppointmentId: starting.id
+        )
+
+        #expect(selected?.id == recording.id)
+    }
+
+    @Test func offersStartingWhileTheSessionIsBeingCreated() {
+        let appointment = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z",
+            endAt: "2026-09-03T15:50:00Z"
+        )
+
+        #expect(
+            MinimalMainView.action(
+                for: appointment, activeSessionId: nil, startingAppointmentId: appointment.id
+            ) == .starting
+        )
+    }
+
+    @Test func offersStopOnceTheStartingSessionIsRecording() {
         let appointment = makeAppointment(
             startAt: "2026-09-03T15:00:00Z",
             endAt: "2026-09-03T15:50:00Z",
@@ -180,10 +297,9 @@ struct MinimalMainViewTests {
         )
 
         #expect(
-            MinimalMainView.action(for: appointment, activeSessionId: nil) == .alreadyStarted
-        )
-        #expect(
-            MinimalMainView.action(for: appointment, activeSessionId: "session-2") == .alreadyStarted
+            MinimalMainView.action(
+                for: appointment, activeSessionId: "session-1", startingAppointmentId: appointment.id
+            ) == .stopRecording
         )
     }
 
