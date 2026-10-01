@@ -202,7 +202,8 @@ struct MinimalMainView: View {
                 LevelMeter(label: "Mic", level: micLevel)
                 LevelMeter(label: "Sys", level: systemLevel)
             }
-            .frame(height: 30)
+            // Room for the label plus a bar tall enough to read at a glance.
+            .frame(height: 44)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(captureStateLabel), \(Self.spokenDuration(recordingDuration))")
