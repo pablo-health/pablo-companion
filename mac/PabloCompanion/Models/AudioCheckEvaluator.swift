@@ -11,12 +11,19 @@ struct AudioCheckEvaluator: Equatable {
         case yourTurn
     }
 
-    /// Mic speech needed to count as "heard you" — enough to rule out a click.
-    static let speechNeeded: TimeInterval = 0.4
+    /// Speaking needed to count as "heard you": longer than a cough, a click
+    /// or a door, comfortably shorter than "Hello, Pablo".
+    static let speechNeeded: TimeInterval = 1
+    /// How far above the room's background speaking has to rise. Steady noise
+    /// — a fan, an air conditioner — sits at the background and never counts.
+    static let aboveBackgroundDecibels: Float = 10
 
     private(set) var heardComputer = false
     private(set) var heardYou = false
     private var speech: TimeInterval = 0
+    /// Quietest the mic has been during the therapist's turn. Silence before
+    /// they start, or the pauses between words, pull it down to the room.
+    private var backgroundDecibels: Float?
     private var lastSampleAt: Date?
 
     var passed: Bool {
@@ -37,7 +44,12 @@ struct AudioCheckEvaluator: Equatable {
                 heardComputer = true
             }
         case .yourTurn:
-            if ClientAudioMonitor.decibels(micRMS) >= ClientAudioMonitor.Threshold.speechDecibels {
+            let level = ClientAudioMonitor.decibels(micRMS)
+            let background = min(backgroundDecibels ?? level, level)
+            backgroundDecibels = background
+            let speaking = level >= ClientAudioMonitor.Threshold.speechDecibels
+                && level >= background + Self.aboveBackgroundDecibels
+            if speaking {
                 speech += gap
                 if speech >= Self.speechNeeded { heardYou = true }
             }
