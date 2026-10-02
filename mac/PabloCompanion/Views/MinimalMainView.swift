@@ -76,8 +76,23 @@ struct MinimalMainView: View {
     /// Card selection. A recording in flight wins over every other state —
     /// including a failed refresh — because this window holds the only End
     /// Session button, and hiding it strands a live recording.
-    @ViewBuilder
     private func appointmentSection(now: Date) -> some View {
+        VStack(spacing: 10) {
+            if let elsewhere = Self.inProgressElsewhere(
+                in: appointments,
+                now: now,
+                activeSessionId: activeSessionId,
+                startingAppointmentId: startingAppointmentId
+            ) {
+                InProgressElsewhereNote(title: elsewhere.title)
+                    .padding(.horizontal, Layout.pageInset)
+            }
+            appointmentCard(now: now)
+        }
+    }
+
+    @ViewBuilder
+    private func appointmentCard(now: Date) -> some View {
         if let appointment = Self.nextAppointment(
             in: appointments,
             now: now,

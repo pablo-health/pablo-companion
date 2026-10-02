@@ -64,6 +64,31 @@ extension MinimalMainView {
             .appointment
     }
 
+    /// An appointment whose session is being recorded somewhere other than this
+    /// Mac — another device, or a recording this app lost track of.
+    ///
+    /// Shown as a note, never as the card: a session left open elsewhere must
+    /// not stand between the therapist and the next Start Session. Only while
+    /// the appointment's slot is still current, so a session someone forgot to
+    /// end doesn't linger all day. Needs `session_status` from the backend;
+    /// without it, nothing is reported.
+    static func inProgressElsewhere(
+        in appointments: [Appointment],
+        now: Date,
+        activeSessionId: String? = nil,
+        startingAppointmentId: String? = nil
+    ) -> Appointment? {
+        appointments.first { appointment in
+            guard appointment.sessionStatus == .inProgress,
+                  let sessionId = appointment.sessionId,
+                  sessionId != activeSessionId,
+                  appointment.id != startingAppointmentId,
+                  let end = parseDate(appointment.endAt)
+            else { return false }
+            return end >= now
+        }
+    }
+
     static func parseDate(_ value: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

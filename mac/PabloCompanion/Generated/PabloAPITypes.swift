@@ -78,6 +78,8 @@ struct Appointment: Codable, Sendable, Hashable, Identifiable {
     let sessionId: String?
     let createdAt: String
     let updatedAt: String?
+    /// Raw `session_status`; read via `sessionStatus` (Models/Appointment+SessionStatus.swift).
+    var sessionStatusRaw: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -96,6 +98,7 @@ struct Appointment: Codable, Sendable, Hashable, Identifiable {
         case sessionId = "session_id"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case sessionStatusRaw = "session_status"
     }
 }
 
