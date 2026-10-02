@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Binding var selectedMicID: String?
     @State private var backendURLError: String?
     @State private var authServerURLError: String?
+    @State private var showAudioCheck = false
     @Binding var debugEnableMic: Bool
     @Binding var debugEnableSystem: Bool
     let userEmail: String
@@ -91,6 +92,14 @@ struct SettingsView: View {
                 + "Enable this app in System Settings > Privacy & Security > Screen & System Audio Recording.")
                 .font(.caption)
                 .foregroundStyle(systemAudioPermitted ? Color.secondary : Color.pabloHoney)
+
+            Button("Check audio") { showAudioCheck = true }
+                .disabled(recordingState != .idle)
+                .accessibilityLabel("Run the audio check: make sure Pablo can hear you and your client")
+                .help(recordingState == .idle ? "Takes less than a minute" : "Available when not recording")
+                .sheet(isPresented: $showAudioCheck) {
+                    AudioCheckView(micDeviceID: selectedMicID) { showAudioCheck = false }
+                }
         }
     }
 
