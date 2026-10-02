@@ -303,12 +303,101 @@ struct MinimalMainViewTests {
         )
     }
 
+    // MARK: - Recording on another device (session_status)
+
+    @Test func reportsASessionRecordingOnAnotherDevice() throws {
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T15:20:00Z"))
+        let elsewhere = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z", endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1", sessionStatus: "in_progress"
+        )
+        let upcoming = makeAppointment(
+            id: "later", startAt: "2026-09-03T16:00:00Z", endAt: "2026-09-03T16:50:00Z"
+        )
+
+        #expect(MinimalMainView.inProgressElsewhere(in: [elsewhere, upcoming], now: now)?.id == elsewhere.id)
+        // A note, not the card: the next Start Session stays reachable.
+        #expect(MinimalMainView.nextAppointment(in: [elsewhere, upcoming], now: now)?.id == upcoming.id)
+    }
+
+    @Test func theSessionRecordingHereIsNotElsewhere() throws {
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T15:20:00Z"))
+        let recording = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z", endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1", sessionStatus: "in_progress"
+        )
+
+        #expect(MinimalMainView.inProgressElsewhere(in: [recording], now: now, activeSessionId: "session-1") == nil)
+        #expect(
+            MinimalMainView.inProgressElsewhere(in: [recording], now: now, startingAppointmentId: recording.id) == nil
+        )
+    }
+
+    @Test func anEndedSessionIsNotElsewhere() throws {
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T15:20:00Z"))
+        let ended = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z", endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1", sessionStatus: "recording_complete"
+        )
+
+        #expect(MinimalMainView.inProgressElsewhere(in: [ended], now: now) == nil)
+    }
+
+    @Test func aForgottenSessionStopsBeingReportedAfterItsSlot() throws {
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T17:00:00Z"))
+        let forgotten = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z", endAt: "2026-09-03T15:50:00Z",
+            sessionId: "session-1", sessionStatus: "in_progress"
+        )
+
+        #expect(MinimalMainView.inProgressElsewhere(in: [forgotten], now: now) == nil)
+    }
+
+    @Test func withoutSessionStatusNothingIsReportedElsewhere() throws {
+        // Older backends: fall back to the session_id rule, report nothing.
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-09-03T15:20:00Z"))
+        let started = makeAppointment(
+            startAt: "2026-09-03T15:00:00Z", endAt: "2026-09-03T15:50:00Z", sessionId: "session-1"
+        )
+
+        #expect(MinimalMainView.inProgressElsewhere(in: [started], now: now) == nil)
+        #expect(MinimalMainView.nextAppointment(in: [started], now: now) == nil)
+    }
+
+    // MARK: - Decoding session_status
+
+    @Test func decodesSessionStatusWhenPresent() throws {
+        let appointment = try Self.decode(sessionStatusJSON: #","session_status":"pending_review""#)
+        #expect(appointment.sessionStatus == .pendingReview)
+    }
+
+    @Test func decodesWithoutSessionStatusFromAnOlderBackend() throws {
+        let appointment = try Self.decode(sessionStatusJSON: "")
+        #expect(appointment.sessionStatus == nil)
+    }
+
+    @Test func anUnknownSessionStatusDoesNotFailTheList() throws {
+        let appointment = try Self.decode(sessionStatusJSON: #","session_status":"some_future_status""#)
+        #expect(appointment.sessionStatusRaw == "some_future_status")
+        #expect(appointment.sessionStatus == nil)
+    }
+
+    private static func decode(sessionStatusJSON: String) throws -> Appointment {
+        let json = """
+        {"id":"a","patient_id":"p","title":"t","start_at":"2026-09-03T15:00:00Z",
+         "end_at":"2026-09-03T15:50:00Z","duration_minutes":50,"status":"confirmed",
+         "session_id":"s","created_at":"2026-09-03T14:00:00Z"\(sessionStatusJSON)}
+        """
+        return try JSONDecoder().decode(Appointment.self, from: Data(json.utf8))
+    }
+
     private func makeAppointment(
         id: String = "appointment",
         startAt: String,
         endAt: String,
         status: String = "scheduled",
-        sessionId: String? = nil
+        sessionId: String? = nil,
+        sessionStatus: String? = nil
     ) -> Appointment {
         Appointment(
             id: id,
@@ -326,7 +415,8 @@ struct MinimalMainViewTests {
             ehrAppointmentUrl: nil,
             sessionId: sessionId,
             createdAt: "2026-09-03T14:00:00Z",
-            updatedAt: nil
+            updatedAt: nil,
+            sessionStatusRaw: sessionStatus
         )
     }
 }
