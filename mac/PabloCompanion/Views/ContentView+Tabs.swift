@@ -17,6 +17,7 @@ extension ContentView {
             micLevel: recordingVM.micLevel,
             systemLevel: recordingVM.systemLevel,
             systemAudioActive: recordingVM.systemAudioActive,
+            clientAudioStatus: recordingVM.clientAudioStatus,
             pendingUploadCount: transcriptionVM.pendingUploadCount,
             transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },

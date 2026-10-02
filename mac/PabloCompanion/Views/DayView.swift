@@ -14,6 +14,7 @@ struct DayView: View {
     var micLevel: Float = 0
     var systemLevel: Float = 0
     var systemAudioActive = false
+    var clientAudioStatus: ClientAudioMonitor.Status = .listening
     var pendingUploadCount = 0
     var transcriptionStateForSession: ((String) -> TranscriptionState?)?
     var hasRecordingForSession: ((String) -> Bool)?
@@ -148,11 +149,7 @@ struct DayView: View {
             }
             .frame(height: 32)
 
-            StatusIndicator(
-                isActive: systemAudioActive,
-                activeLabel: "System Audio",
-                inactiveLabel: "No System Audio"
-            )
+            ClientAudioIndicator(systemAudioActive: systemAudioActive, status: clientAudioStatus)
 
             Spacer()
             stopButton

@@ -32,6 +32,9 @@ struct MinimalMainView: View {
     let micLevel: Float
     let systemLevel: Float
     let systemAudioActive: Bool
+    let clientAudioStatus: ClientAudioMonitor.Status
+    let showsClientAudioWarning: Bool
+    let onDismissClientAudioWarning: () -> Void
     let onStartAppointment: (Appointment) -> Void
     let onPauseRecording: () -> Void
     let onResumeRecording: () -> Void
@@ -209,12 +212,11 @@ struct MinimalMainView: View {
     private func recordingPanel(title: String?) -> some View {
         VStack(spacing: 12) {
             captureStatusRow
-            StatusIndicator(
-                isActive: systemAudioActive,
-                activeLabel: "System audio",
-                inactiveLabel: "No system audio"
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            ClientAudioIndicator(systemAudioActive: systemAudioActive, status: clientAudioStatus)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if showsClientAudioWarning {
+                ClientAudioWarningBanner(onDismiss: onDismissClientAudioWarning)
+            }
             recordingButtons(title: title)
         }
     }

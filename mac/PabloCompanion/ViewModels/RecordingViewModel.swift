@@ -43,6 +43,19 @@ final class RecordingViewModel {
         logSubsystem: AppConstants.appBundleID
     )
     var systemAudioActive = false
+    /// Whether the client's side of the call is actually arriving — see
+    /// `ClientAudioMonitor`. Published only when it changes; the monitor
+    /// itself sees every level update.
+    var clientAudioStatus: ClientAudioMonitor.Status = .listening
+    /// Set when the therapist closes the warning; cleared whenever the status
+    /// changes, so a client lost again later warns again.
+    private(set) var clientAudioWarningDismissed = false
+    @ObservationIgnored private var clientAudioMonitor = ClientAudioMonitor()
+
+    var showsClientAudioWarning: Bool {
+        clientAudioStatus == .noClientAudio && !clientAudioWarningDismissed
+    }
+
     var recordingStalled = false
     var persistentError: String?
     var bluetoothRoutingConflict = false
@@ -87,6 +100,7 @@ final class RecordingViewModel {
     func startRecording() async {
         persistentError = nil
         recordingStalled = false
+        resetClientAudio()
         await service.startRecording(
             encryptionEnabled: encryptionEnabled,
             debugEnableMic: debugEnableMic,
@@ -99,12 +113,15 @@ final class RecordingViewModel {
     }
 
     func resumeRecording() {
+        // A pause can be long; judge the resumed stretch on its own.
+        resetClientAudio()
         service.resumeRecording()
     }
 
     func stopRecording() async {
         await service.stopRecording()
         resetLevels()
+        resetClientAudio()
         recordingStalled = false
     }
 
@@ -298,6 +315,7 @@ final class RecordingViewModel {
             self.systemLevel = levels.systemLevel
             self.peakMicLevel = levels.peakMicLevel
             self.peakSystemLevel = levels.peakSystemLevel
+            self.trackClientAudio(mic: levels.micLevel, system: levels.systemLevel)
         }
         service.onSystemAudioActiveChange = { [weak self] active in
             self?.systemAudioActive = active
@@ -351,6 +369,25 @@ final class RecordingViewModel {
     }
 
     // MARK: - Private Helpers
+
+    private func trackClientAudio(mic: Float, system: Float) {
+        guard recordingState == .recording else { return }
+        clientAudioMonitor.record(micRMS: mic, systemRMS: system, at: Date())
+        if clientAudioMonitor.status != clientAudioStatus {
+            clientAudioStatus = clientAudioMonitor.status
+            clientAudioWarningDismissed = false
+        }
+    }
+
+    func dismissClientAudioWarning() {
+        clientAudioWarningDismissed = true
+    }
+
+    private func resetClientAudio() {
+        clientAudioMonitor.reset()
+        clientAudioStatus = .listening
+        clientAudioWarningDismissed = false
+    }
 
     private func resetLevels() {
         micLevel = 0
