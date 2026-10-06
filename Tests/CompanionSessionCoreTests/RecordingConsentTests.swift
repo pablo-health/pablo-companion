@@ -48,7 +48,7 @@ struct RecordingConsentDecisionTests {
         #expect(RecordingConsent.clear.handedOff(webAlreadyAsked: false) == .clear)
     }
 
-    // The gate decision across where the session is × what is on file.
+    /// The gate decision across where the session is × what is on file.
     @Test(
         "Where the session is × what is on file",
         arguments: [
@@ -208,10 +208,20 @@ struct ConsentRequestBodyTests {
 
     @Test("A blank place, or one given in person, is not sent")
     func noPlace() {
-        let blank = AiConsentAnswer(decision: "declined", modality: .telehealth, consentedBy: .guardian, clientStatedLocation: "  ")
+        let blank = AiConsentAnswer(
+            decision: "declined",
+            modality: .telehealth,
+            consentedBy: .guardian,
+            clientStatedLocation: "  "
+        )
         #expect(blank.body["client_stated_location"] == nil)
         #expect(blank.body["consented_by"] == "guardian")
-        let inPerson = AiConsentAnswer(decision: "consented", modality: .inPerson, consentedBy: .client, clientStatedLocation: "Office")
+        let inPerson = AiConsentAnswer(
+            decision: "consented",
+            modality: .inPerson,
+            consentedBy: .client,
+            clientStatedLocation: "Office"
+        )
         #expect(inPerson.body["client_stated_location"] == nil)
     }
 
@@ -337,7 +347,12 @@ struct RecordingConsentClientTests {
 
         let check = try await makeClient().check(appointmentId: "appt-1")
 
-        #expect(check == RecordingConsentCheck(consent: .clear, asksClients: false, audioRetentionDays: 30, patientId: nil))
+        #expect(check == RecordingConsentCheck(
+            consent: .clear,
+            asksClients: false,
+            audioRetentionDays: 30,
+            patientId: nil
+        ))
         #expect(recorder.captured.count == 1)
         let request = try #require(recorder.captured.first)
         #expect(request.url?.path == "/api/users/me/practice/ai-notes-consent")
@@ -404,7 +419,10 @@ struct RecordingConsentClientTests {
         let recorder = ConsentStubProtocol.install()
         defer { ConsentStubProtocol.reset() }
         recorder.enqueue(status: 200, json: Self.settingOn)
-        recorder.enqueue(status: 200, json: #"{"id": "appt-1", "patient_id": "pat-9", "video_link": "https://video.example/r"}"#)
+        recorder.enqueue(
+            status: 200,
+            json: #"{"id": "appt-1", "patient_id": "pat-9", "video_link": "https://video.example/r"}"#
+        )
         recorder.enqueue(status: 200, json: Self.noAnswer)
 
         let check = try await makeClient().check(appointmentId: "appt-1")
