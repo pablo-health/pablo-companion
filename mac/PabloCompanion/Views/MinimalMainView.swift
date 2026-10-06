@@ -35,6 +35,12 @@ struct MinimalMainView: View {
     let clientAudioStatus: ClientAudioMonitor.Status
     let showsClientAudioWarning: Bool
     let onDismissClientAudioWarning: () -> Void
+    /// A stalled or stopped capture in the open session; see `RecordingTrouble`.
+    var recordingTrouble: RecordingTrouble?
+    var uploadBacklog = UploadBacklog()
+    var isUploadingNow = false
+    var onRestartRecording: () -> Void = {}
+    var onUploadNow: () -> Void = {}
     let onStartAppointment: (Appointment) -> Void
     let onPauseRecording: () -> Void
     let onResumeRecording: () -> Void
@@ -56,6 +62,11 @@ struct MinimalMainView: View {
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 appointmentSection(now: context.date)
                     .padding(.top, Layout.sectionSpacing)
+            }
+            if uploadBacklog.waiting > 0 {
+                UploadBacklogNote(backlog: uploadBacklog, isUploading: isUploadingNow, onUploadNow: onUploadNow)
+                    .padding(.horizontal, Layout.pageInset)
+                    .padding(.top, 10)
             }
             Spacer(minLength: Layout.sectionSpacing)
             Button(action: onOpenDashboard) {
@@ -227,6 +238,9 @@ struct MinimalMainView: View {
     private func recordingPanel(title: String?) -> some View {
         VStack(spacing: 12) {
             captureStatusRow
+            if let recordingTrouble {
+                RecordingTroubleNote(trouble: recordingTrouble, onRestart: onRestartRecording)
+            }
             ClientAudioIndicator(systemAudioActive: systemAudioActive, status: clientAudioStatus)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if showsClientAudioWarning {
@@ -239,7 +253,7 @@ struct MinimalMainView: View {
     private var captureStatusRow: some View {
         HStack(spacing: 10) {
             Circle()
-                .fill(recordingState == .paused ? Color.pabloHoney : Color.pabloSage)
+                .fill(captureDotColor)
                 .frame(width: 10, height: 10)
                 .accessibilityHidden(true)
             Text(captureStateLabel)
@@ -261,12 +275,35 @@ struct MinimalMainView: View {
     }
 
     private var captureStateLabel: String {
-        recordingState == .paused ? "Paused" : "Recording"
+        Self.captureStateLabel(state: recordingState)
+    }
+
+    /// Read from the capture's real state, so the card never says "Recording"
+    /// once capture has stopped, failed, or not yet started.
+    static func captureStateLabel(state: RecordingUIState) -> String {
+        switch state {
+        case .recording: "Recording"
+        case .paused: "Paused"
+        case .idle: "Not recording"
+        }
+    }
+
+    private var captureDotColor: Color {
+        if recordingTrouble != nil || recordingState == .idle { return Color.pabloError }
+        return recordingState == .paused ? Color.pabloHoney : Color.pabloSage
+    }
+
+    private var captureStopped: Bool {
+        recordingState == .idle
     }
 
     private func recordingButtons(title: String?) -> some View {
         HStack(spacing: 10) {
-            pauseResumeButton
+            // Pause means nothing once capture has stopped; the note above
+            // offers the restart instead.
+            if !captureStopped {
+                pauseResumeButton
+            }
             Button(role: .destructive, action: onEndSession) {
                 Label("End Session", systemImage: "stop.fill")
                     .frame(maxWidth: .infinity)

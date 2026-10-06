@@ -249,6 +249,11 @@ struct ContentView: View {
             clientAudioStatus: recordingVM.clientAudioStatus,
             showsClientAudioWarning: recordingVM.showsClientAudioWarning,
             onDismissClientAudioWarning: { recordingVM.dismissClientAudioWarning() },
+            recordingTrouble: recordingVM.trouble,
+            uploadBacklog: transcriptionVM.uploadBacklog,
+            isUploadingNow: transcriptionVM.isUploadingNow,
+            onRestartRecording: { Task { await recordingVM.retryCapture() } },
+            onUploadNow: { Task { await forceRetryAllPendingUploads() } },
             onStartAppointment: { requestStart($0) },
             onPauseRecording: { recordingVM.pauseRecording() },
             onResumeRecording: { recordingVM.resumeRecording() },
@@ -379,8 +384,7 @@ struct ContentView: View {
         Task {
             guard await sessionVM.startSession(session.id) != nil else { return }
             activeSessionId = session.id
-            recordingVM.activeSessionId = session.id
-            await recordingVM.startRecording()
+            if await !recordingVM.startRecording(forSession: session.id) { activeSessionId = nil }
             VideoLaunchService.launch(session: session)
         }
     }
@@ -393,8 +397,7 @@ struct ContentView: View {
             else { return }
             guard await sessionVM.startSession(session.id) != nil else { return }
             activeSessionId = session.id
-            recordingVM.activeSessionId = session.id
-            await recordingVM.startRecording()
+            if await !recordingVM.startRecording(forSession: session.id) { activeSessionId = nil }
         }
     }
 

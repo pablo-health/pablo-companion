@@ -57,6 +57,9 @@ final class RecordingViewModel {
     }
 
     var recordingStalled = false
+    /// Set when the selected mic disappears mid-session and capture stops;
+    /// cleared by the next start or retry. See `trouble`.
+    var micDisconnected = false
     var persistentError: String?
     var bluetoothRoutingConflict = false
     var bluetoothRecommendation: String?
@@ -100,12 +103,27 @@ final class RecordingViewModel {
     func startRecording() async {
         persistentError = nil
         recordingStalled = false
+        micDisconnected = false
         resetClientAudio()
         await service.startRecording(
             encryptionEnabled: encryptionEnabled,
             debugEnableMic: debugEnableMic,
             debugEnableSystem: debugEnableSystem
         )
+    }
+
+    /// Opens `sessionId` and starts capture for it. If capture doesn't start,
+    /// the session is let go again, so nothing shows a recording that isn't
+    /// happening; the failure itself is already in `errorMessage`.
+    @discardableResult
+    func startRecording(forSession sessionId: String) async -> Bool {
+        activeSessionId = sessionId
+        await startRecording()
+        guard recordingState == .recording else {
+            activeSessionId = nil
+            return false
+        }
+        return true
     }
 
     func pauseRecording() {
@@ -127,6 +145,7 @@ final class RecordingViewModel {
 
     func retryCapture() async {
         recordingStalled = false
+        micDisconnected = false
         persistentError = nil
         await service.retryCapture()
     }
@@ -385,7 +404,8 @@ final class RecordingViewModel {
             self?.systemAudioPermitted = permitted
         }
         service.onMicDisconnectedDuringRecording = { [weak self] in
-            self?.showErrorAlert("Recording stopped: microphone was disconnected")
+            self?.micDisconnected = true
+            self?.showErrorAlert(Self.micDisconnectedMessage)
         }
         service.onDeviceChanged = { [weak self] in
             guard let self, self.playingRecordingID != nil else { return }
