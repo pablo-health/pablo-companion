@@ -31,6 +31,9 @@ import Foundation
 ///                           otherwise gate at "transcribing". NOTE: dev calls
 ///                           AssemblyAI for real — the old "whisper→mock" note was stale.
 ///   RECORD_POLL_SECONDS     SOAP poll deadline when expecting SOAP (default 300)
+///   RECORD_ALLOW_TRANSCRIPTION_OFF  "1" to pass when the upload answers 501
+///                           (transcription off). Only for a stack with no ASR;
+///                           on dev and prod a 501 fails the gate.
 enum RecordScenario {
     static func run(env: [String: String]) async {
         let baseURL = env["PRACTICE_BASE_URL"] ?? "https://app.pablo.health"
@@ -83,7 +86,8 @@ enum RecordScenario {
                 systemFixture: systemFixture,
                 recordSeconds: Double(env["RECORD_SECONDS"] ?? "") ?? 20,
                 expectSoap: env["RECORD_EXPECT_SOAP"] == "1",
-                pollSeconds: Double(env["RECORD_POLL_SECONDS"] ?? "") ?? 300
+                pollSeconds: Double(env["RECORD_POLL_SECONDS"] ?? "") ?? 300,
+                allowTranscriptionOff: SoapGate.allowsTranscriptionOff(env: env)
             ).run()
         } catch {
             PracticeHarness.fail("record scenario failed: \(error.localizedDescription)")
@@ -104,17 +108,10 @@ private struct Driver {
     let recordSeconds: Double
     let expectSoap: Bool
     let pollSeconds: Double
-
-    static let soapSections = ["subjective", "objective", "assessment", "plan"]
-
-    private struct Check {
-        let name: String
-        let ok: Bool
-        let detail: String
-    }
+    let allowTranscriptionOff: Bool
 
     func run() async throws {
-        var checks: [Check] = []
+        var checks: [GateCheck] = []
         let installID = UUID().uuidString.lowercased()
         let client = DeviceBoundClient(baseURL: baseURL, installID: installID)
         RecordScenario.log("install_id for this run: \(installID)")
@@ -122,7 +119,7 @@ private struct Driver {
         // ── 1. Enrollment ────────────────────────────────────────────────
         let enrollment = try await client.enroll(idToken: idToken, refreshToken: refreshToken)
         let token = enrollment.idToken
-        checks.append(Check(
+        checks.append(GateCheck(
             name: "enrollment accepted at /native/exchange",
             ok: enrollment.exchangeStatus == 200,
             detail: "status \(enrollment.exchangeStatus), key_storage=\(enrollment.keyStorage)"
@@ -146,7 +143,7 @@ private struct Driver {
         else {
             throw DeviceBoundError("schedule failed: \(scheduled.status) \(scheduled.bodyPrefix)")
         }
-        checks.append(Check(name: "session scheduled", ok: true, detail: "id \(sessionID)"))
+        checks.append(GateCheck(name: "session scheduled", ok: true, detail: "id \(sessionID)"))
 
         // Move to in_progress only — the upload self-heal must drive the
         // recording_complete transition (that's the path under test).
@@ -154,45 +151,19 @@ private struct Driver {
             "PATCH", path: "/api/sessions/\(sessionID)/status", idToken: token,
             jsonBody: ["status": "in_progress"]
         )
-        checks.append(Check(
+        checks.append(GateCheck(
             name: "session in_progress",
             ok: inProgress.status == 200,
             detail: "status \(inProgress.status)"
         ))
 
         // ── 3. Record through the real capture graph from file fixtures ───
-        // During capture the client makes no other backend calls, so on a long
-        // session the server-side idle session would tombstone before the
-        // stop-time upload (init would 401 "Idle session timeout"). Heartbeat
-        // POST /api/auth/session/touch on the same 240s cadence the shipping app
-        // uses (SessionViewModel.keepSessionAliveWhileRecording); touch failures
-        // are ignored so a lost heartbeat never interferes with the capture.
-        let keepAlive = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 240 * 1_000_000_000)
-                if Task.isCancelled { break }
-                _ = try? await client.request("POST", path: "/api/auth/session/touch", idToken: token)
-            }
-        }
-        let recording: RecordingOutcome
-        do {
-            recording = try await recordFromFixtures()
-        } catch {
-            keepAlive.cancel()
-            throw error
-        }
-        keepAlive.cancel()
-        checks.append(Check(name: "capture completed", ok: recording.ok, detail: recording.detail))
-        checks.append(Check(
-            name: "per-channel audio liveness",
-            ok: recording.micRMS > 1 && recording.systemRMS > 1,
-            detail: String(format: "mic RMS %.0f, system RMS %.0f", recording.micRMS, recording.systemRMS)
-        ))
-        checks.append(Check(
-            name: "no dropped samples",
-            ok: recording.overflow == 0,
-            detail: "overflow samples \(recording.overflow)"
-        ))
+        let recording = try await FixtureCapture(
+            micFixture: micFixture, systemFixture: systemFixture, seconds: recordSeconds
+        ).record(touch: {
+            _ = try? await client.request("POST", path: "/api/auth/session/touch", idToken: token)
+        })
+        checks += recording.checks(seconds: recordSeconds)
 
         // ── 4. Upload via the real client wire path (with self-heal) ──────
         let uploadClient = AudioUploadClient(
@@ -232,7 +203,7 @@ private struct Driver {
             // that rate, so the harness stamps 48 kHz explicitly.
             sampleRate: 48000
         )
-        checks.append(Check(
+        checks.append(GateCheck(
             name: "queued before upload (durability anchor)",
             ok: store.get(sessionId: sessionID) != nil,
             detail: "1 entry"
@@ -268,12 +239,12 @@ private struct Driver {
                 throw error
             }
 
-            checks.append(Check(
+            checks.append(GateCheck(
                 name: "upload accepted + transcribing",
                 ok: drained == 1 && uploadStatus.value == "transcribing",
                 detail: "status \(uploadStatus.value ?? "none")"
             ))
-            checks.append(Check(
+            checks.append(GateCheck(
                 name: "queue drained after success",
                 ok: store.get(sessionId: sessionID) == nil,
                 detail: "0 entries"
@@ -283,225 +254,28 @@ private struct Driver {
             let systemGone = recording.systemURL.map {
                 !FileManager.default.fileExists(atPath: $0.path)
             } ?? true
-            checks.append(Check(
+            checks.append(GateCheck(
                 name: "local audio deleted after confirmed upload",
                 ok: micGone && systemGone,
                 detail: micGone && systemGone ? "sidecars removed" : "sidecars still on disk"
             ))
         } catch let error as SessionUploadError where error.statusCode == 501 {
-            // Server-side transcription disabled on this env — the record path is
-            // proven up to the upload; there is nothing further to gate.
-            RecordScenario.log("upload-audio 501: transcription disabled on \(baseURL)")
-            checks.append(Check(
-                name: "upload path reached (transcription disabled, 501)",
-                ok: true,
-                detail: "status 501"
-            ))
-            try summarize(checks)
+            RecordScenario.log("upload-audio 501: transcription is off on \(baseURL)")
+            checks.append(SoapGate.transcriptionOffCheck(allowed: allowTranscriptionOff))
+            try GateSummary.report(checks, title: "record gate summary", passed: "RECORD GATE PASSED ✓")
             return
         }
 
-        // ── 5. Poll for the SOAP (prod/assemblyai only) ───────────────────
+        // ── 5. Poll for the SOAP ──────────────────────────────────────────
         if expectSoap {
-            try await checks.append(pollForSoap(client: client, idToken: token, sessionID: sessionID))
+            try await checks.append(
+                SoapGate(client: client, idToken: token, pollSeconds: pollSeconds).poll(sessionID: sessionID)
+            )
         } else {
             RecordScenario.log("RECORD_EXPECT_SOAP != 1 — gating at 'transcribing'; set it to poll for the real SOAP")
         }
 
-        try summarize(checks)
-    }
-
-    // MARK: - Recording
-
-    private struct RecordingOutcome {
-        let ok: Bool
-        let detail: String
-        let micURL: URL
-        let systemURL: URL?
-        let micRMS: Double
-        let systemRMS: Double
-        let overflow: Int
-    }
-
-    /// Drives `CompositeCaptureSession` with the exact `RecordingService` config,
-    /// injecting the mic + system fixtures through `FilePlayerCaptureSource`.
-    private func recordFromFixtures() async throws -> RecordingOutcome {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("record-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-
-        guard let micFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false
-        ), let systemFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 2, interleaved: false
-        ) else {
-            throw DeviceBoundError("could not build capture formats")
-        }
-
-        let config = CaptureConfiguration(
-            sampleRate: 48000,
-            bitDepth: 16,
-            channels: 2,
-            outputDirectory: tempDir,
-            enableMicCapture: true,
-            enableSystemCapture: true,
-            mixingStrategy: .separated,
-            exportRawPCM: true,
-            sidecarFormat: .aacADTS
-        )
-
-        let session = CompositeCaptureSession(
-            configuration: config,
-            micSource: FilePlayerCaptureSource(fileURL: micFixture, format: micFormat, loop: true),
-            systemSource: FilePlayerCaptureSource(fileURL: systemFixture, format: systemFormat, loop: true)
-        )
-
-        try session.configure(config)
-        try await session.startCapture()
-        try await Task.sleep(nanoseconds: UInt64(recordSeconds * 1_000_000_000))
-        let result = try await session.stopCapture()
-
-        let diag = session.diagnostics
-        let micURL = result.rawPCMFileURLs.indices.contains(0) ? result.rawPCMFileURLs[0] : nil
-        let systemURL = result.rawPCMFileURLs.indices.contains(1) ? result.rawPCMFileURLs[1] : nil
-        guard let micURL else { throw DeviceBoundError("no mic PCM sidecar produced") }
-
-        return RecordingOutcome(
-            ok: diag.mixCycles >= 1 && diag.bytesWritten > 0,
-            detail: "mixCycles \(diag.mixCycles), bytes \(diag.bytesWritten)",
-            micURL: micURL,
-            systemURL: systemURL,
-            micRMS: Self.pcmRMS(micURL),
-            systemRMS: systemURL.map(Self.pcmRMS) ?? 0,
-            overflow: diag.micOverflowSamples + diag.systemOverflowSamples
-        )
-    }
-
-    /// RMS of a raw signed-16-bit-LE PCM sidecar — a cheap "is this speech, not
-    /// silence" liveness check on each captured channel.
-    private static func pcmRMS(_ url: URL) -> Double {
-        guard let data = try? Data(contentsOf: url), data.count >= 2 else { return 0 }
-        let sampleCount = data.count / 2
-        var sumSquares = 0.0
-        data.withUnsafeBytes { raw in
-            let samples = raw.bindMemory(to: Int16.self)
-            for i in 0 ..< sampleCount {
-                let value = Double(Int16(littleEndian: samples[i]))
-                sumSquares += value * value
-            }
-        }
-        return (sumSquares / Double(sampleCount)).squareRoot()
-    }
-
-    // MARK: - SOAP poll
-
-    private func pollForSoap(client: DeviceBoundClient, idToken: String, sessionID: String) async throws -> Check {
-        let deadline = Date().addingTimeInterval(pollSeconds)
-        var lastStatus = "transcribing"
-        while Date() < deadline {
-            let poll = try await client.request("GET", path: "/api/sessions/\(sessionID)", idToken: idToken)
-            guard poll.status == 200 else {
-                throw DeviceBoundError("poll failed: \(poll.status) \(poll.bodyPrefix)")
-            }
-            lastStatus = (poll.json?["status"] as? String) ?? lastStatus
-            if lastStatus == "failed" {
-                return Check(name: "SOAP generated", ok: false, detail: "session status 'failed'")
-            }
-            if lastStatus == "pending_review" {
-                let note = poll.json?["note"] as? [String: Any]
-                dumpNote(note)
-                return evaluateSoap(note)
-            }
-            try await Task.sleep(nanoseconds: 5_000_000_000)
-        }
-        return Check(name: "SOAP generated", ok: false, detail: "deadline hit (last status '\(lastStatus)')")
-    }
-
-    /// Logs the generated SOAP note so a run can be eyeballed against the fixture
-    /// audio. The session is always one the harness itself created in the pinned
-    /// test tenant from synthetic `say` audio — never a real patient's note.
-    private func dumpNote(_ note: [String: Any]?) {
-        guard let note else {
-            RecordScenario.log("generated note: nil")
-            return
-        }
-        let content = note["content"] ?? [:]
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: content, options: [.prettyPrinted, .sortedKeys]
-        ), let text = String(data: data, encoding: .utf8) else { return }
-        RecordScenario.log("""
-        ───── generated SOAP (note_type=\(note["note_type"] ?? "?")) ─────
-        \(text)
-        ──────────────────────────────────────
-        """)
-    }
-
-    /// Ports `sectionHasContent` from `asr-integration.spec.ts`: the embedded note
-    /// is a 4-section SOAP with at least one section populated.
-    private func evaluateSoap(_ note: [String: Any]?) -> Check {
-        guard let note else { return Check(name: "SOAP generated", ok: false, detail: "no note on session") }
-        guard (note["note_type"] as? String) == "soap" else {
-            return Check(name: "SOAP generated", ok: false, detail: "note_type \(note["note_type"] ?? "nil")")
-        }
-        let content = note["content"] as? [String: Any] ?? [:]
-        let present = Self.soapSections.filter { content[$0] != nil }
-        let populated = Self.soapSections.filter { sectionHasContent(content[$0] as? [String: Any]) }
-        return Check(
-            name: "4-section SOAP with content",
-            ok: present.count == Self.soapSections.count && !populated.isEmpty,
-            detail: "\(present.count)/4 sections present, \(populated.count) populated"
-        )
-    }
-
-    private func sectionHasContent(_ section: [String: Any]?) -> Bool {
-        guard let section else { return false }
-        for value in section.values {
-            if let array = value as? [Any], array.contains(where: sentenceHasText) {
-                return true
-            }
-            if sentenceHasText(value) {
-                return true
-            }
-        }
-        return false
-    }
-
-    /// Mirrors `sentenceHasText` from `asr-integration.spec.ts`: a value counts
-    /// as content when it is an object carrying a non-empty `text` string. SOAP
-    /// section values are `{text: …}` sentence objects (or arrays of them), not
-    /// bare strings — the distinction the first prod run surfaced.
-    private func sentenceHasText(_ value: Any) -> Bool {
-        guard let object = value as? [String: Any], let text = object["text"] as? String else { return false }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        // A sentence only counts as *audio-derived* content when it is anchored to
-        // a transcript segment. The SOAP LLM emits well-formed placeholder
-        // sentences ("No transcript provided.") with confidence 0 and no source
-        // segments when transcription came back empty — the earlier prod run
-        // passed the gate on exactly that. Require a real transcript anchor.
-        let hasSource = !((object["source_segment_ids"] as? [Any])?.isEmpty ?? true)
-        let confidence = (object["confidence_score"] as? NSNumber)?.doubleValue ?? 0
-        return hasSource || confidence > 0
-    }
-
-    // MARK: - Summary
-
-    private func summarize(_ checks: [Check]) throws {
-        let pad = checks.map(\.name.count).max() ?? 0
-        let lines = checks
-            .map {
-                "  [\($0.ok ? "PASS" : "FAIL")] \($0.name.padding(toLength: pad, withPad: " ", startingAt: 0))  \($0.detail)"
-            }
-            .joined(separator: "\n")
-        RecordScenario.log("""
-        ───── record gate summary ─────
-        \(lines)
-        ───────────────────────────────
-        """)
-        let failed = checks.filter { !$0.ok }.map(\.name)
-        if !failed.isEmpty {
-            throw DeviceBoundError("Gate FAILED: \(failed.joined(separator: ", "))")
-        }
-        RecordScenario.log("RECORD GATE PASSED ✓")
+        try GateSummary.report(checks, title: "record gate summary", passed: "RECORD GATE PASSED ✓")
     }
 }
 
