@@ -1,3 +1,4 @@
+import CompanionSessionCore
 import Foundation
 import os
 import PracticeClientCore
@@ -151,6 +152,10 @@ final class SessionViewModel {
         /// error alert — the caller shows the declined message where the
         /// clinician confirmed the start. `on` is `YYYY-MM-DD` or empty.
         case declined(on: String)
+        /// The server refused: a telehealth client nobody has asked, and the
+        /// start did not say the clinician is asking on the recording. Not an
+        /// error alert either — the caller offers "Ask now" or "Don't record".
+        case consentNeeded
         /// Any other failure; `errorMessage` / `showError` are set.
         case failed
     }
@@ -161,11 +166,18 @@ final class SessionViewModel {
     }
 
     /// Creates a therapy session from a calendar appointment.
-    func startSessionFromAppointment(appointmentId: String) async -> AppointmentStartOutcome {
+    /// `askingConsentOnRecording`: see `APIClient.startSessionFromAppointment`.
+    func startSessionFromAppointment(
+        appointmentId: String,
+        askingConsentOnRecording: Bool = false
+    ) async -> AppointmentStartOutcome {
         errorMessage = nil
 
         do {
-            let session = try await apiClient.startSessionFromAppointment(appointmentId: appointmentId)
+            let session = try await apiClient.startSessionFromAppointment(
+                appointmentId: appointmentId,
+                askingConsentOnRecording: askingConsentOnRecording
+            )
             logger.info("Created session from appointment")
             // Refresh appointments to pick up the linked session_id
             await loadTodayAppointments()
@@ -173,6 +185,9 @@ final class SessionViewModel {
         } catch let PabloError.clientDeclinedAiNotes(declinedOn) {
             logger.info("Session start refused: client declined AI-assisted notes")
             return .declined(on: declinedOn)
+        } catch PabloError.clientAiConsentNeeded {
+            logger.info("Session start refused: telehealth client not yet asked about AI-assisted notes")
+            return .consentNeeded
         } catch {
             if case let APIError.serverError(statusCode, _) = error, statusCode == 403 {
                 subscriptionBlocked = true
@@ -291,8 +306,12 @@ final class SessionViewModel {
         let appointmentId: String
         let patientName: String?
         /// The web start already asked about AI-assisted notes; see
-        /// ``RecordingConsent/handedOff(webAlreadyAsked:)``.
+        /// ``RecordingConsent/handedOff(webAlreadyAsked:webAskingOnRecording:)``.
         let webAlreadyAskedConsent: Bool
+        /// The web start chose "Ask now" for a telehealth client; same.
+        let webAskingOnRecording: Bool
+        /// Where the visit is; `nil` when the server did not say.
+        let modality: AiConsentModality?
     }
 
     /// Redeems a launch intent against the backend checkpoint. Never throws —
@@ -306,7 +325,9 @@ final class SessionViewModel {
                 LaunchContext(
                     appointmentId: redemption.appointmentId,
                     patientName: redemption.patientName,
-                    webAlreadyAskedConsent: redemption.aiConsentPrompted
+                    webAlreadyAskedConsent: redemption.aiConsentPrompted,
+                    webAskingOnRecording: redemption.askConsentOnRecording,
+                    modality: redemption.modality
                 )
             )
         } catch let PabloError.apiClient(statusCode, _, _) where statusCode == 410 {
@@ -338,6 +359,24 @@ final class SessionViewModel {
             showError = true
             logger.error("Failed to start session: \(error.localizedDescription)")
             return nil
+        }
+    }
+
+    /// Returns a started session to "scheduled", the state of a session whose
+    /// note is written by hand (the web starts one with `recording: false`).
+    /// Called after a client declines AI-assisted notes on the recording and
+    /// the recording is discarded, so the session never waits for audio.
+    func returnToHandWritten(_ sessionId: String) async -> Bool {
+        do {
+            let session = try await apiClient.updateSessionStatus(sessionId: sessionId, status: .scheduled)
+            updateLocal(session)
+            logger.info("Session returned to a hand-written note")
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+            logger.error("Failed to return session to a hand-written note: \(error.localizedDescription)")
+            return false
         }
     }
 

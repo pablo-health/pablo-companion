@@ -59,54 +59,6 @@ enum SessionMode: String, Codable, Sendable {
 
 // SoapEntryPhase is defined in Models/SoapEntry.swift (has additional cases used by UI)
 
-// MARK: - Appointment
-
-struct Appointment: Codable, Sendable, Hashable, Identifiable {
-    let id: String
-    let patientId: String
-    let title: String
-    let startAt: String
-    let endAt: String
-    let durationMinutes: Int
-    let status: String
-    let sessionType: String?
-    let videoLink: String?
-    let videoPlatform: String?
-    let notes: String?
-    let icalSource: String?
-    let ehrAppointmentUrl: String?
-    let sessionId: String?
-    let createdAt: String
-    let updatedAt: String?
-    /// Raw `session_status`; read via `sessionStatus` (Models/Appointment+SessionStatus.swift).
-    var sessionStatusRaw: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case patientId = "patient_id"
-        case title
-        case startAt = "start_at"
-        case endAt = "end_at"
-        case durationMinutes = "duration_minutes"
-        case status
-        case sessionType = "session_type"
-        case videoLink = "video_link"
-        case videoPlatform = "video_platform"
-        case notes
-        case icalSource = "ical_source"
-        case ehrAppointmentUrl = "ehr_appointment_url"
-        case sessionId = "session_id"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-        case sessionStatusRaw = "session_status"
-    }
-}
-
-struct AppointmentListResponse: Codable, Sendable {
-    let data: [Appointment]
-    let total: UInt32
-}
-
 // MARK: - Structs
 
 struct PatientSummary: Codable, Sendable, Hashable, Identifiable {

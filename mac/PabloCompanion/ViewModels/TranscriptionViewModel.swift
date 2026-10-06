@@ -86,6 +86,12 @@ final class TranscriptionViewModel {
         }
     }
 
+    /// The upload queue, for discarding a session the client declined on the
+    /// recording (`RecordingViewModel.discardDeclinedSession`).
+    var pendingAudioStore: PendingAudioUploadStore {
+        audioStore
+    }
+
     // Exponential backoff for audio-upload retries — parity with Windows
     // (TranscriptionViewModel.cs:30-32).
     private let audioBaseBackoffSeconds: Double = 300

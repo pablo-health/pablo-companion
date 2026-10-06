@@ -16,7 +16,9 @@ import FoundationNetworking
 /// Configuration (env):
 ///   PRACTICE_SCENARIO      "practice" (default), "dpop" (device binding, in
 ///                          DPoPScenario.swift), or "record" (recording →
-///                          upload → SOAP, in RecordScenario.swift) — macOS only
+///                          upload → SOAP, in RecordScenario.swift) — macOS only,
+///                          or "consent" (AI-notes consent gate, in
+///                          ConsentScenario.swift)
 ///   PRACTICE_BASE_URL      backend base URL (default https://app.pablo.health)
 ///   PRACTICE_AUDIO         path to raw s16le 16 kHz mono PCM fixture (required)
 ///   PRACTICE_TOPIC         topic id (default: first from /api/practice/topics)
@@ -45,6 +47,11 @@ struct PracticeHarness {
             #else
             fail("The dpop scenario needs CompanionAuthCore (macOS only).")
             #endif
+        }
+
+        if env["PRACTICE_SCENARIO"] == "consent" {
+            await ConsentScenario.run(env: env)
+            return
         }
 
         if env["PRACTICE_SCENARIO"] == "record" {

@@ -48,6 +48,70 @@ struct RecordingConsentDecisionTests {
         #expect(RecordingConsent.clear.handedOff(webAlreadyAsked: false) == .clear)
     }
 
+    // The gate decision across where the session is × what is on file.
+    @Test(
+        "Where the session is × what is on file",
+        arguments: [
+            (false, nil, RecordingConsent.notAsked),
+            (true, nil, .askOnRecording),
+            (false, "consented", .clear),
+            (true, "consented", .clear),
+            (false, "declined", .declined(on: "2026-09-01")),
+            (true, "declined", .declined(on: "2026-09-01")),
+        ] as [(Bool, String?, RecordingConsent)]
+    )
+    func gate(telehealth: Bool, onFile: String?, expected: RecordingConsent) {
+        let current = onFile.map { AiConsentEntry(decision: $0, effectiveOn: "2026-09-01") }
+        #expect(RecordingConsent.evaluate(asksClients: true, current: current, telehealth: telehealth) == expected)
+    }
+
+    @Test("Setting off is clear for telehealth too")
+    func settingOffTelehealth() {
+        #expect(RecordingConsent.evaluate(asksClients: false, current: nil, telehealth: true) == .clear)
+    }
+
+    @Test("A web 'record anyway' never clears a telehealth start with nothing on file")
+    func webRecordAnywayTelehealth() {
+        #expect(RecordingConsent.askOnRecording.handedOff(webAlreadyAsked: true) == .askOnRecording)
+    }
+
+    @Test("A web 'Ask now' starts asking on the recording without offering it again")
+    func webAskNow() {
+        #expect(RecordingConsent.askOnRecording.handedOff(webAlreadyAsked: false, webAskingOnRecording: true)
+            == .askingOnRecording)
+        #expect(RecordingConsent.askingOnRecording.startsAskingOnRecording)
+        // Answered since the web asked: nothing to ask on the recording.
+        #expect(RecordingConsent.clear.handedOff(webAlreadyAsked: false, webAskingOnRecording: true) == .clear)
+        #expect(RecordingConsent.declined(on: "2026-09-01")
+            .handedOff(webAlreadyAsked: false, webAskingOnRecording: true) == .declined(on: "2026-09-01"))
+        #expect(!RecordingConsent.clear.startsAskingOnRecording)
+        #expect(!RecordingConsent.askOnRecording.startsAskingOnRecording)
+    }
+
+    @Test("The server's consent-needed refusal is recognized")
+    func consentNeededParsed() {
+        let body = Data("""
+        {"error": {"code": "CLIENT_AI_CONSENT_NEEDED",
+                   "message": "Ask this client about AI-assisted notes when recording starts."}}
+        """.utf8)
+        #expect(RecordingConsent.isConsentNeeded(statusCode: 403, body: body))
+        #expect(!RecordingConsent.isConsentNeeded(statusCode: 409, body: body))
+        let declined = Data(#"{"error": {"code": "CLIENT_DECLINED_AI_NOTES", "message": "x"}}"#.utf8)
+        #expect(!RecordingConsent.isConsentNeeded(statusCode: 403, body: declined))
+        #expect(RecordingConsent.declinedOn(statusCode: 403, body: body) == nil)
+    }
+
+    @Test("Telehealth is a video service, a video link, or a telehealth place")
+    func telehealth() {
+        #expect(Telehealth.isTelehealth(provider: "doxy_me", videoLink: nil, placeOfService: nil))
+        #expect(Telehealth.isTelehealth(provider: nil, videoLink: "https://video.example/room", placeOfService: nil))
+        #expect(Telehealth.isTelehealth(provider: nil, videoLink: nil, placeOfService: "10"))
+        #expect(Telehealth.isTelehealth(provider: nil, videoLink: nil, placeOfService: "02"))
+        #expect(!Telehealth.isTelehealth(provider: nil, videoLink: nil, placeOfService: "11"))
+        #expect(!Telehealth.isTelehealth(provider: nil, videoLink: nil, placeOfService: nil))
+        #expect(!Telehealth.isTelehealth(provider: "", videoLink: "", placeOfService: nil))
+    }
+
     @Test("The server's declined refusal is recognized, with its date")
     func refusalParsed() {
         // The body the server sends for a refused start (403, standard envelope).
@@ -92,12 +156,82 @@ struct ConsentScriptTests {
         #expect(ConsentScript.retention(days: 1) == "1 day")
     }
 
-    @Test("The script names the practice's retention window")
+    @Test("The script names the practice's retention window, read once recording has started")
     func lines() {
-        let lines = ConsentScript.lines(retentionDays: 365)
+        // Word for word the web app's script (AiNotesConsentScript.consentScript).
+        #expect(ConsentScript.lines(retentionDays: 365) == [
+            "I've started recording our session.",
+            "The recording is turned into a written transcript, and an AI tool uses it to draft my notes. "
+                + "I read and correct every note myself.",
+            "The audio is kept for up to 1 year.",
+            "You can say no, now or at any time.",
+            "Is that all right with you?",
+        ])
+        #expect(ConsentScript.lines(retentionDays: 90)[2] == "The audio is kept for up to 90 days.")
+    }
+
+    @Test("At 0 days the script says the audio is deleted once the note is signed")
+    func deletedOnSigning() {
+        let lines = ConsentScript.lines(retentionDays: 0)
         #expect(lines.count == 5)
-        #expect(lines.contains("The audio is kept for up to 1 year."))
-        #expect(lines.last == "Is that all right with you?")
+        #expect(lines[2] == "The audio is deleted once your note is signed.")
+        #expect(!lines.joined().contains("0 days"))
+    }
+}
+
+@Suite("Consent request bodies")
+struct ConsentRequestBodyTests {
+    @Test("'Agreed today' in the room says in person and who answered")
+    func agreedInPerson() {
+        #expect(AiConsentAnswer.agreedInPerson(by: .parent).body == [
+            "decision": "consented",
+            "modality": "in_person",
+            "consented_by": "parent",
+        ])
+    }
+
+    @Test("A telehealth answer carries where the client said they were, trimmed")
+    func telehealthWithPlace() {
+        let answer = AiConsentAnswer(
+            decision: "consented",
+            modality: .telehealth,
+            consentedBy: .client,
+            clientStatedLocation: "  At home  "
+        )
+        #expect(answer.body == [
+            "decision": "consented",
+            "modality": "telehealth",
+            "consented_by": "client",
+            "client_stated_location": "At home",
+        ])
+    }
+
+    @Test("A blank place, or one given in person, is not sent")
+    func noPlace() {
+        let blank = AiConsentAnswer(decision: "declined", modality: .telehealth, consentedBy: .guardian, clientStatedLocation: "  ")
+        #expect(blank.body["client_stated_location"] == nil)
+        #expect(blank.body["consented_by"] == "guardian")
+        let inPerson = AiConsentAnswer(decision: "consented", modality: .inPerson, consentedBy: .client, clientStatedLocation: "Office")
+        #expect(inPerson.body["client_stated_location"] == nil)
+    }
+
+    @Test("A place longer than the server keeps is cut to fit")
+    func longPlace() {
+        let answer = AiConsentAnswer(
+            decision: "consented",
+            modality: .telehealth,
+            consentedBy: .client,
+            clientStatedLocation: String(repeating: "a", count: 300)
+        )
+        #expect(answer.body["client_stated_location"]?.count == AiConsentAnswer.locationMaxLength)
+    }
+
+    @Test("A start asking on the recording says so; any other start sends no body")
+    func startSessionBody() throws {
+        #expect(RecordingConsentClient.startSessionBody(askingConsentOnRecording: false) == nil)
+        let data = try #require(RecordingConsentClient.startSessionBody(askingConsentOnRecording: true))
+        let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Bool])
+        #expect(body == ["asking_consent_on_recording": true])
     }
 }
 
@@ -265,6 +399,58 @@ struct RecordingConsentClientTests {
         #expect(recorder.captured.count == 2)
     }
 
+    @Test("A hand-off reads telehealth from the appointment when the redeem did not say")
+    func telehealthFromAppointment() async throws {
+        let recorder = ConsentStubProtocol.install()
+        defer { ConsentStubProtocol.reset() }
+        recorder.enqueue(status: 200, json: Self.settingOn)
+        recorder.enqueue(status: 200, json: #"{"id": "appt-1", "patient_id": "pat-9", "video_link": "https://video.example/r"}"#)
+        recorder.enqueue(status: 200, json: Self.noAnswer)
+
+        let check = try await makeClient().check(appointmentId: "appt-1")
+
+        #expect(check.consent == .askOnRecording)
+    }
+
+    @Test("The caller's telehealth answer wins over the appointment's")
+    func telehealthFromCaller() async throws {
+        let recorder = ConsentStubProtocol.install()
+        defer { ConsentStubProtocol.reset() }
+        recorder.enqueue(status: 200, json: Self.settingOn)
+        recorder.enqueue(status: 200, json: Self.noAnswer)
+
+        let check = try await makeClient().check(appointmentId: "appt-1", patientId: "pat-9", modality: .telehealth)
+
+        #expect(check.consent == .askOnRecording)
+        #expect(recorder.captured.count == 2)
+    }
+
+    @Test("A telehealth answer posts how it was given, with no date")
+    func recordTelehealthAnswer() async throws {
+        let recorder = ConsentStubProtocol.install()
+        defer { ConsentStubProtocol.reset() }
+        recorder.enqueue(status: 201, json: Self.noAnswer)
+
+        let answer = AiConsentAnswer(
+            decision: "consented",
+            modality: .telehealth,
+            consentedBy: .guardian,
+            clientStatedLocation: "At home"
+        )
+        try await makeClient().record(answer, patientId: "pat-9")
+
+        let request = try #require(recorder.captured.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/api/patients/pat-9/ai-consent")
+        let body = try #require(JSONSerialization.jsonObject(with: request.capturedBody) as? [String: String])
+        #expect(body == [
+            "decision": "consented",
+            "modality": "telehealth",
+            "consented_by": "guardian",
+            "client_stated_location": "At home",
+        ])
+    }
+
     @Test("Agreed today posts a consent with no date")
     func recordAgreedToday() async throws {
         let recorder = ConsentStubProtocol.install()
@@ -275,14 +461,14 @@ struct RecordingConsentClientTests {
          "history": []}
         """)
 
-        try await makeClient().recordAgreedToday(patientId: "pat-9")
+        try await makeClient().record(.agreedInPerson(by: .client), patientId: "pat-9")
 
         let request = try #require(recorder.captured.first)
         #expect(request.httpMethod == "POST")
         #expect(request.url?.path == "/api/patients/pat-9/ai-consent")
         #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
         let body = try #require(JSONSerialization.jsonObject(with: request.capturedBody) as? [String: String])
-        #expect(body == ["decision": "consented"])
+        #expect(body == ["decision": "consented", "modality": "in_person", "consented_by": "client"])
     }
 
     @Test("A failed request surfaces its status and code")
@@ -292,7 +478,7 @@ struct RecordingConsentClientTests {
         recorder.enqueue(status: 401, json: #"{"error": {"code": "IDLE_TIMEOUT", "message": "x"}}"#)
 
         await #expect(throws: ConsentRequestError(statusCode: 401, code: "IDLE_TIMEOUT")) {
-            try await makeClient().recordAgreedToday(patientId: "pat-9")
+            try await makeClient().record(.agreedInPerson(by: .client), patientId: "pat-9")
         }
     }
 }

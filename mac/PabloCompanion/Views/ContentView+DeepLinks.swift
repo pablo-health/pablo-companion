@@ -75,7 +75,9 @@ extension ContentView {
             await consentVM.check(
                 appointmentId: context.appointmentId,
                 patientId: nil,
+                modality: context.modality,
                 webAlreadyAsked: context.webAlreadyAskedConsent,
+                webAskingOnRecording: context.webAskingOnRecording,
                 service: sessionVM.consentService
             )
         case .expired:
@@ -86,13 +88,15 @@ extension ContentView {
     }
 
     /// Arms recording for a confirmed handoff. Called ONLY from the confirmation
-    /// view's explicit "Start Recording" tap — this is the consent gate.
+    /// view's explicit "Start Recording" (or "Ask now", or a saved "agreed
+    /// today") tap — this is the consent gate.
     func confirmPendingLaunch() {
         guard let launch = pendingLaunch else { return }
+        let ask = pendingOnRecordingAsk
         pendingLaunch = nil
         consentVM.reset()
         selectedTab = 0
-        startSession(fromAppointmentId: launch.appointmentId)
+        startSession(fromAppointmentId: launch.appointmentId, askingOnRecording: ask)
     }
 }
 
@@ -134,6 +138,7 @@ extension ContentView {
         // its in-flight state; purge it on sign-out alongside everything else.
         pendingLaunch = nil
         consentVM.reset()
+        askVM.dismiss()
         launchError = nil
     }
 }

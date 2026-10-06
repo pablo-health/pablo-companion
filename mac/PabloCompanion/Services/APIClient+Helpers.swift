@@ -28,6 +28,9 @@ extension APIClient {
             if let declinedOn = RecordingConsent.declinedOn(statusCode: statusCode, body: data) {
                 throw PabloError.clientDeclinedAiNotes(declinedOn: declinedOn)
             }
+            if RecordingConsent.isConsentNeeded(statusCode: statusCode, body: data) {
+                throw PabloError.clientAiConsentNeeded
+            }
             throw PabloError.forbidden
         case 404:
             throw PabloError.notFound(resource: message)

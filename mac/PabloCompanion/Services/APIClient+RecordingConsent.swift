@@ -5,8 +5,14 @@ import Foundation
 /// tested with a fake instead of the network.
 @MainActor
 protocol RecordingConsentService: AnyObject {
-    func checkRecordingConsent(appointmentId: String, patientId: String?) async throws -> RecordingConsentCheck
-    func recordAgreedToday(patientId: String) async throws
+    /// `modality`: where the session is, when the caller knows; `nil` reads
+    /// it from the appointment.
+    func checkRecordingConsent(
+        appointmentId: String,
+        patientId: String?,
+        modality: AiConsentModality?
+    ) async throws -> RecordingConsentCheck
+    func recordConsent(_ answer: AiConsentAnswer, patientId: String) async throws
 }
 
 // MARK: - Recording consent (shared CompanionSessionCore wire path)
@@ -22,18 +28,26 @@ extension APIClient: RecordingConsentService {
         )
     }
 
-    func checkRecordingConsent(appointmentId: String, patientId: String?) async throws -> RecordingConsentCheck {
+    func checkRecordingConsent(
+        appointmentId: String,
+        patientId: String?,
+        modality: AiConsentModality?
+    ) async throws -> RecordingConsentCheck {
         do {
-            return try await recordingConsentClient.check(appointmentId: appointmentId, patientId: patientId)
+            return try await recordingConsentClient.check(
+                appointmentId: appointmentId,
+                patientId: patientId,
+                modality: modality
+            )
         } catch let error as ConsentRequestError {
             throw mapConsentError(error)
         }
     }
 
-    func recordAgreedToday(patientId: String) async throws {
+    func recordConsent(_ answer: AiConsentAnswer, patientId: String) async throws {
         do {
-            try await recordingConsentClient.recordAgreedToday(patientId: patientId)
-            logger.info("Recorded client consent for today")
+            try await recordingConsentClient.record(answer, patientId: patientId)
+            logger.info("Recorded client consent answer")
         } catch let error as ConsentRequestError {
             throw mapConsentError(error)
         }

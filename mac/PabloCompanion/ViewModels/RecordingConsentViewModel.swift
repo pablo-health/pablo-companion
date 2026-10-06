@@ -4,14 +4,17 @@ import os
 
 /// The client's answer about AI-assisted notes, read before the microphone arms.
 ///
-/// When the practice asks its clients, a client who declined stops the start,
-/// and a client nobody has asked yet gets three choices: record a verbal OK for
-/// today and start, record anyway, or cancel. With the setting off this is
-/// always ``RecordingConsent/clear`` and no prompt appears.
+/// When the practice asks its clients, a client who declined stops the start.
+/// A client nobody has asked yet gets, in person, three choices: record a
+/// verbal OK for today and start, record anyway, or cancel. Over telehealth
+/// they get two: ask once recording starts ("Ask now"), or don't record. With
+/// the setting off this is always ``RecordingConsent/clear`` and no prompt
+/// appears.
 ///
 /// A failed read does not block the start: the server refuses a declined
-/// client's recording on its own, and ``showRefusal(declinedOn:)`` turns that
-/// refusal into the same declined message.
+/// client's recording, and a telehealth client nobody has asked, on its own.
+/// ``showRefusal(declinedOn:)`` and ``showConsentNeeded()`` turn those
+/// refusals into the same prompts.
 @MainActor
 @Observable
 final class RecordingConsentViewModel {
@@ -26,6 +29,8 @@ final class RecordingConsentViewModel {
     private(set) var isSaving = false
     /// Shown under the choices when "agreed today" could not be saved.
     private(set) var saveError: String?
+    /// Who answers "agreed today": the client, or a parent or guardian.
+    var giver: AiConsentGiver = .client
 
     /// Bumped on every check and reset, so a slow read for a start the
     /// clinician already cancelled cannot overwrite a newer one.
@@ -56,17 +61,19 @@ final class RecordingConsentViewModel {
     }
 
     /// Reads the setting and the client's answer. Never throws: a failure is
-    /// logged and treated as clear, because the server still refuses a
-    /// declined client.
+    /// logged and treated as clear, because the server still refuses what the
+    /// answer does not allow.
     ///
-    /// `webAlreadyAsked`: a hand-off whose web start already asked "No consent
-    /// on file" and was told to record anyway. A missing answer then reads as
-    /// clear; a decline is still read and still stops.
+    /// `modality`: where the session is, when the caller knows.
+    /// `webAlreadyAsked` / `webAskingOnRecording`: what the web start already
+    /// chose; see ``RecordingConsent/handedOff(webAlreadyAsked:webAskingOnRecording:)``.
     @discardableResult
     func check(
         appointmentId: String,
         patientId: String?,
+        modality: AiConsentModality? = nil,
         webAlreadyAsked: Bool = false,
+        webAskingOnRecording: Bool = false,
         service: RecordingConsentService
     ) async -> RecordingConsent {
         generation += 1
@@ -74,16 +81,18 @@ final class RecordingConsentViewModel {
         phase = .checking
         saveError = nil
         do {
-            let read = try await service.checkRecordingConsent(appointmentId: appointmentId, patientId: patientId)
-            guard current == generation else { return .clear }
-            let check = RecordingConsentCheck(
-                consent: read.consent.handedOff(webAlreadyAsked: webAlreadyAsked),
-                asksClients: read.asksClients,
-                audioRetentionDays: read.audioRetentionDays,
-                patientId: read.patientId
+            let read = try await service.checkRecordingConsent(
+                appointmentId: appointmentId,
+                patientId: patientId,
+                modality: modality
             )
-            phase = .ready(check)
-            return check.consent
+            guard current == generation else { return .clear }
+            let consent = read.consent.handedOff(
+                webAlreadyAsked: webAlreadyAsked,
+                webAskingOnRecording: webAskingOnRecording
+            )
+            phase = .ready(replacing(read, with: consent))
+            return consent
         } catch {
             guard current == generation else { return .clear }
             logger.error("Consent check failed: \(error.localizedDescription)")
@@ -95,32 +104,36 @@ final class RecordingConsentViewModel {
     /// The server refused the start because the client declined. Shows the
     /// declined message in place of a generic error.
     func showRefusal(declinedOn: String) {
-        generation += 1
-        let previous: RecordingConsentCheck? = if case let .ready(check) = phase { check } else { nil }
-        phase = .ready(RecordingConsentCheck(
-            consent: .declined(on: declinedOn),
-            asksClients: true,
-            audioRetentionDays: previous?.audioRetentionDays ?? 0,
-            patientId: previous?.patientId
-        ))
-        saveError = nil
+        showServerAnswer(.declined(on: declinedOn))
     }
 
-    /// Records that the client agreed today. Returns true when saved, and the
-    /// prompt then reads as clear; false leaves ``saveError`` set.
+    /// The server refused a telehealth start because nobody has asked the
+    /// client (an older read, or the answer was removed after it). Offers
+    /// "Ask now" or "Don't record" in place of a generic error.
+    func showConsentNeeded() {
+        showServerAnswer(.askOnRecording)
+    }
+
+    /// "Ask now": the start tells the server the clinician is asking once
+    /// recording starts, and the script follows once recording is running.
+    func askNow() {
+        guard case let .ready(check) = phase, check.consent == .askOnRecording else { return }
+        phase = .ready(replacing(check, with: .askingOnRecording))
+    }
+
+    /// Records that the client (or the chosen ``giver``) agreed today, in
+    /// person. Returns true when saved, and the prompt then reads as clear;
+    /// false leaves ``saveError`` set.
     func recordAgreedToday(service: RecordingConsentService) async -> Bool {
         guard case let .ready(check) = phase, let patientId = check.patientId else { return false }
         isSaving = true
         saveError = nil
         defer { isSaving = false }
         do {
-            try await service.recordAgreedToday(patientId: patientId)
-            phase = .ready(RecordingConsentCheck(
-                consent: .clear,
-                asksClients: check.asksClients,
-                audioRetentionDays: check.audioRetentionDays,
-                patientId: patientId
-            ))
+            // Only an in-person start reaches "agreed today" (telehealth asks
+            // on the recording), so that is how it was given.
+            try await service.recordConsent(.agreedInPerson(by: giver), patientId: patientId)
+            phase = .ready(replacing(check, with: .clear))
             return true
         } catch {
             logger.error("Recording consent failed: \(error.localizedDescription)")
@@ -134,5 +147,29 @@ final class RecordingConsentViewModel {
         phase = .idle
         isSaving = false
         saveError = nil
+        giver = .client
+    }
+
+    private func showServerAnswer(_ consent: RecordingConsent) {
+        generation += 1
+        let previous: RecordingConsentCheck? = if case let .ready(check) = phase { check } else { nil }
+        // With no earlier read the retention window is unknown, so no script
+        // is offered rather than one that names the wrong window.
+        phase = .ready(RecordingConsentCheck(
+            consent: consent,
+            asksClients: previous != nil,
+            audioRetentionDays: previous?.audioRetentionDays ?? 0,
+            patientId: previous?.patientId
+        ))
+        saveError = nil
+    }
+
+    private func replacing(_ check: RecordingConsentCheck, with consent: RecordingConsent) -> RecordingConsentCheck {
+        RecordingConsentCheck(
+            consent: consent,
+            asksClients: check.asksClients,
+            audioRetentionDays: check.audioRetentionDays,
+            patientId: check.patientId
+        )
     }
 }
