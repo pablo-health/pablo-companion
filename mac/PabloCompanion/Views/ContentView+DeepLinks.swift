@@ -75,6 +75,7 @@ extension ContentView {
             await consentVM.check(
                 appointmentId: context.appointmentId,
                 patientId: nil,
+                webAlreadyAsked: context.webAlreadyAskedConsent,
                 service: sessionVM.consentService
             )
         case .expired:

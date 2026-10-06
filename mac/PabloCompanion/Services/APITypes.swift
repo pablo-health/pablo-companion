@@ -14,12 +14,25 @@ struct LaunchRedemption: Codable, Sendable {
     let patientName: String?
     let videoUrl: String?
     let sessionId: String?
+    /// The web start already asked "No consent on file" and the clinician chose
+    /// to record anyway. False from a server that predates the field.
+    let aiConsentPrompted: Bool
 
     enum CodingKeys: String, CodingKey {
         case appointmentId = "appointment_id"
         case patientName = "patient_name"
         case videoUrl = "video_url"
         case sessionId = "session_id"
+        case aiConsentPrompted = "ai_consent_prompted"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        appointmentId = try container.decode(String.self, forKey: .appointmentId)
+        patientName = try container.decodeIfPresent(String.self, forKey: .patientName)
+        videoUrl = try container.decodeIfPresent(String.self, forKey: .videoUrl)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        aiConsentPrompted = try container.decodeIfPresent(Bool.self, forKey: .aiConsentPrompted) ?? false
     }
 }
 

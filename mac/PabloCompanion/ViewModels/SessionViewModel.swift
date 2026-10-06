@@ -290,6 +290,9 @@ final class SessionViewModel {
     struct LaunchContext: Equatable {
         let appointmentId: String
         let patientName: String?
+        /// The web start already asked about AI-assisted notes; see
+        /// ``RecordingConsent/handedOff(webAlreadyAsked:)``.
+        let webAlreadyAskedConsent: Bool
     }
 
     /// Redeems a launch intent against the backend checkpoint. Never throws —
@@ -302,7 +305,8 @@ final class SessionViewModel {
             return .confirm(
                 LaunchContext(
                     appointmentId: redemption.appointmentId,
-                    patientName: redemption.patientName
+                    patientName: redemption.patientName,
+                    webAlreadyAskedConsent: redemption.aiConsentPrompted
                 )
             )
         } catch let PabloError.apiClient(statusCode, _, _) where statusCode == 410 {

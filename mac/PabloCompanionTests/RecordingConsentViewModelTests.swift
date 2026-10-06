@@ -105,6 +105,45 @@ struct RecordingConsentViewModelTests {
         #expect(vm.consent == .clear)
     }
 
+    @Test("A hand-off the web already asked about arms without asking again")
+    func webAlreadyAsked() async {
+        let service = FakeConsentService()
+        service.check = check(.notAsked)
+        let vm = RecordingConsentViewModel()
+
+        let consent = await vm.check(appointmentId: "appt-1", patientId: nil, webAlreadyAsked: true, service: service)
+
+        #expect(consent == .clear)
+        #expect(vm.consent == .clear)
+        // Still read, and the script is still one click away.
+        #expect(service.checkedAppointments == ["appt-1"])
+        #expect(vm.scriptRetentionDays == 365)
+    }
+
+    @Test("A hand-off without the web's answer still asks")
+    func webDidNotAsk() async {
+        let service = FakeConsentService()
+        service.check = check(.notAsked)
+        let vm = RecordingConsentViewModel()
+
+        let consent = await vm.check(appointmentId: "appt-1", patientId: nil, service: service)
+
+        #expect(consent == .notAsked)
+        #expect(vm.consent == .notAsked)
+    }
+
+    @Test("A declined client is still refused when the web already asked")
+    func webAlreadyAskedDeclined() async {
+        let service = FakeConsentService()
+        service.check = check(.declined(on: "2026-09-01"))
+        let vm = RecordingConsentViewModel()
+
+        let consent = await vm.check(appointmentId: "appt-1", patientId: nil, webAlreadyAsked: true, service: service)
+
+        #expect(consent == .declined(on: "2026-09-01"))
+        #expect(vm.consent == .declined(on: "2026-09-01"))
+    }
+
     @Test("A failed read does not block: it reads as clear and the server still gates")
     func readFailure() async {
         let service = FakeConsentService()
@@ -174,5 +213,25 @@ struct DeclinedRefusalMappingTests {
         #expect(RecordingConsentCopy.declined(on: "2026-09-01", locale: enUS)
             == "This client declined AI-assisted notes on Sep 1, 2026.")
         #expect(RecordingConsentCopy.declined(on: "") == "This client declined AI-assisted notes.")
+    }
+}
+
+@Suite("Launch redemption carries the web's answer")
+struct LaunchRedemptionDecodingTests {
+    @Test("The web's 'Record anyway' comes through the redeem response")
+    func prompted() throws {
+        let body = Data(#"""
+        {"appointment_id": "appt-1", "patient_name": null, "video_url": null,
+         "session_id": null, "ai_consent_prompted": true}
+        """#.utf8)
+        let redemption = try JSONDecoder().decode(LaunchRedemption.self, from: body)
+        #expect(redemption.aiConsentPrompted)
+    }
+
+    @Test("A server without the field reads as not asked")
+    func olderServer() throws {
+        let body = Data(#"{"appointment_id": "appt-1", "video_url": null, "session_id": null}"#.utf8)
+        let redemption = try JSONDecoder().decode(LaunchRedemption.self, from: body)
+        #expect(!redemption.aiConsentPrompted)
     }
 }

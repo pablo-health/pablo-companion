@@ -58,10 +58,15 @@ final class RecordingConsentViewModel {
     /// Reads the setting and the client's answer. Never throws: a failure is
     /// logged and treated as clear, because the server still refuses a
     /// declined client.
+    ///
+    /// `webAlreadyAsked`: a hand-off whose web start already asked "No consent
+    /// on file" and was told to record anyway. A missing answer then reads as
+    /// clear; a decline is still read and still stops.
     @discardableResult
     func check(
         appointmentId: String,
         patientId: String?,
+        webAlreadyAsked: Bool = false,
         service: RecordingConsentService
     ) async -> RecordingConsent {
         generation += 1
@@ -69,8 +74,14 @@ final class RecordingConsentViewModel {
         phase = .checking
         saveError = nil
         do {
-            let check = try await service.checkRecordingConsent(appointmentId: appointmentId, patientId: patientId)
+            let read = try await service.checkRecordingConsent(appointmentId: appointmentId, patientId: patientId)
             guard current == generation else { return .clear }
+            let check = RecordingConsentCheck(
+                consent: read.consent.handedOff(webAlreadyAsked: webAlreadyAsked),
+                asksClients: read.asksClients,
+                audioRetentionDays: read.audioRetentionDays,
+                patientId: read.patientId
+            )
             phase = .ready(check)
             return check.consent
         } catch {
