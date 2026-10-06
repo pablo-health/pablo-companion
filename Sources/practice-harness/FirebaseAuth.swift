@@ -63,7 +63,15 @@ struct FirebaseAuth {
         // RESPONSE: Cloud function deadline exceeded". It's warm on the next
         // try. Retry the whole MFA sign-in (fresh pending credential + fresh
         // TOTP each attempt) rather than fail the run on a cold start.
+        //
+        // The same account is shared with other test runs, and Identity
+        // Platform accepts each TOTP code once. Every client waits for the
+        // start of a fresh 30 s window before computing its code, so two
+        // sign-ins in the same half-minute send the same code and the second
+        // gets INVALID_CODE. That one is retried too: `freshCode` waits for
+        // the next window, so the retry sends a different, still valid code.
         var lastError: Error?
+        var usedCodeRetries = 0
         for attempt in 1 ... 4 {
             do {
                 let (id, rt) = try await signInWithMfa(
@@ -76,9 +84,25 @@ struct FirebaseAuth {
                     "mfaSignIn:finalize hit a cold blocking function (attempt \(attempt)/4) — warming, retrying\n".utf8
                 ))
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
+            } catch let error where Self.isCodeAlreadyUsed(error) && usedCodeRetries < 2 {
+                lastError = error
+                usedCodeRetries += 1
+                FileHandle.standardError.write(Data(
+                    ("mfaSignIn:finalize refused this window's code (another sign-in used it?) — "
+                        + "retrying in the next window (\(usedCodeRetries)/2)\n").utf8
+                ))
             }
         }
-        throw lastError ?? AuthError.shape("MFA sign-in failed after cold-start retries")
+        throw lastError ?? AuthError.shape("MFA sign-in failed after retries")
+    }
+
+    /// True when Identity Platform refused the TOTP code. With a correct
+    /// secret and clock that means the code was already spent in this window
+    /// by a concurrent sign-in to the same account; a wrong secret fails the
+    /// same way on every window, so the bounded retry still surfaces it.
+    private static func isCodeAlreadyUsed(_ error: Error) -> Bool {
+        guard case let AuthError.http(path, status, body) = error else { return false }
+        return path.hasSuffix("mfaSignIn:finalize") && status == 400 && body.contains("INVALID_CODE")
     }
 
     /// True for the transient "blocking function scaled to zero" cold-start
