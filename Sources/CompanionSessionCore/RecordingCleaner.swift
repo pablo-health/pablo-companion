@@ -45,6 +45,20 @@ public enum RecordingCleaner {
         }
     }
 
+    /// Removes every segment of a confirmed session: each segment's mixed file
+    /// and sidecars. A segment queued without its mixed path has it found from
+    /// the sidecar's name, as `removeAudio(micPath:systemPath:mixedPath:)`'s
+    /// callers did for the single-segment case.
+    public static func removeAudio(of segments: [AudioSegment]) {
+        for segment in segments {
+            removeAudio(
+                micPath: segment.micPath,
+                systemPath: segment.systemPath,
+                mixedPath: segment.mixedPath ?? siblingMixedFile(forMicPath: segment.micPath)
+            )
+        }
+    }
+
     /// The client declined AI-assisted notes on the recording. Deletes every
     /// file the session captured and every record that could lead an upload
     /// back to it: the session → recording map entry and any queued upload.
