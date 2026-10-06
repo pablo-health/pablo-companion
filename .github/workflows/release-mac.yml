@@ -249,7 +249,7 @@ jobs:
             --key $RUNNER_TEMP/asc.p8 \
             --key-id ${{ secrets.APPLE_NOTARY_KEY_ID }} \
             --issuer ${{ secrets.APPLE_NOTARY_ISSUER_ID }} \
-            --wait --timeout 30m
+            --wait --timeout 2h
           xcrun stapler staple $RUNNER_TEMP/$DMG_NAME
           # Publish the same notarized bytes under a stable name so browsers can
           # use GitHub's /releases/latest/download/Pablo.dmg redirect directly.
