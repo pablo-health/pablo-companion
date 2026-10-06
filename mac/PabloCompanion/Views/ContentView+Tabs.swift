@@ -22,7 +22,7 @@ extension ContentView {
             transcriptionStateForSession: { transcriptionStateForSession($0) },
             hasRecordingForSession: { hasRecordingForSession($0) },
             playingSessionId: recordingVM.playingSessionId,
-            onStartSession: { startSession(fromAppointmentId: $0.id) },
+            onStartSession: { requestStart($0) },
             onQuickStart: { handleQuickStart($0, noteType: $1) },
             onStopRecording: { stopActiveSession() },
             recordingStalled: recordingVM.recordingStalled,

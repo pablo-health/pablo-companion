@@ -71,6 +71,12 @@ extension ContentView {
                 appointmentId: context.appointmentId,
                 patientName: context.patientName
             )
+            // The sheet is up with Start Recording held until the answer is in.
+            await consentVM.check(
+                appointmentId: context.appointmentId,
+                patientId: nil,
+                service: sessionVM.consentService
+            )
         case .expired:
             launchError = "This link has expired — start again from the dashboard."
         case let .failed(message):
@@ -83,6 +89,7 @@ extension ContentView {
     func confirmPendingLaunch() {
         guard let launch = pendingLaunch else { return }
         pendingLaunch = nil
+        consentVM.reset()
         selectedTab = 0
         startSession(fromAppointmentId: launch.appointmentId)
     }
@@ -125,6 +132,7 @@ extension ContentView {
         // A redeemed-but-unconfirmed handoff carries the patient name (PHI) in
         // its in-flight state; purge it on sign-out alongside everything else.
         pendingLaunch = nil
+        consentVM.reset()
         launchError = nil
     }
 }

@@ -1,3 +1,4 @@
+import CompanionSessionCore
 import Foundation
 import PracticeClientCore
 
@@ -24,6 +25,9 @@ extension APIClient {
             onAuthRejected?(envelope?.code == Self.idleTimeoutCode)
             throw PabloError.unauthenticated
         case 403:
+            if let declinedOn = RecordingConsent.declinedOn(statusCode: statusCode, body: data) {
+                throw PabloError.clientDeclinedAiNotes(declinedOn: declinedOn)
+            }
             throw PabloError.forbidden
         case 404:
             throw PabloError.notFound(resource: message)
