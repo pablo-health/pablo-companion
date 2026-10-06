@@ -128,21 +128,31 @@ struct KeychainManager: Sendable {
 
     /// Returns the existing encryption key for the user, or generates a new 32-byte AES-256 key.
     /// On first call after upgrade, migrates the legacy device-wide key to the user's account.
+    ///
+    /// Returns nil when no key can be read or stored. A key that was generated
+    /// but did not persist is not returned: audio sealed with it could never be
+    /// opened again.
     static func getOrCreateEncryptionKey(forUser email: String) -> Data? {
+        getOrCreateEncryptionKey(forUser: email, in: backend)
+    }
+
+    /// `getOrCreateEncryptionKey(forUser:)` against a given store, so a test can
+    /// hand in one that refuses writes without swapping the shared backend.
+    static func getOrCreateEncryptionKey(forUser email: String, in store: KeychainStoring) -> Data? {
         keyCreationLock.lock()
         defer { keyCreationLock.unlock() }
 
         let account = encryptionKeyAccount(forUser: email)
 
         // 1. Check for existing per-user key
-        if let existing = readKeyData(account: account) {
+        if let existing = store.data(forKey: account) {
             return existing
         }
 
         // 2. Migrate legacy device-wide key if present
-        if let legacy = readKeyData(account: legacyDeviceKeyAccount) {
-            if storeKeyData(legacy, account: account) {
-                deleteEncryptionKey(account: legacyDeviceKeyAccount)
+        if let legacy = store.data(forKey: legacyDeviceKeyAccount) {
+            if storeKeyData(legacy, account: account, in: store) {
+                store.removeItem(forKey: legacyDeviceKeyAccount)
                 logger.info("Migrated legacy device key to per-user key")
             }
             return legacy
@@ -159,7 +169,10 @@ struct KeychainManager: Sendable {
             return nil
         }
 
-        guard storeKeyData(keyData, account: account) else { return nil }
+        guard storeKeyData(keyData, account: account, in: store) else {
+            logger.error("Failed to store new encryption key")
+            return nil
+        }
         logger.info("Generated and stored new per-user encryption key")
         return keyData
     }
@@ -170,10 +183,11 @@ struct KeychainManager: Sendable {
         backend.data(forKey: account)
     }
 
-    @discardableResult
-    private static func storeKeyData(_ data: Data, account: String) -> Bool {
-        backend.setData(data, forKey: account)
-        return true
+    /// Stores the key and reads it back. `KeychainStoring.setData` doesn't
+    /// report failure, so the read-back is the only proof the key persisted.
+    private static func storeKeyData(_ data: Data, account: String, in store: KeychainStoring) -> Bool {
+        store.setData(data, forKey: account)
+        return store.data(forKey: account) == data
     }
 
     private static func deleteEncryptionKey(forUser email: String) {

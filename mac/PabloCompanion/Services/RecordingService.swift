@@ -119,27 +119,37 @@ final class RecordingService {
     /// The signed-in user's email, used to scope the encryption key.
     var userEmail: String?
 
+    /// Builds the encryptor for a capture. Injectable so a test can stand in a
+    /// Keychain that can't produce a key.
+    var makeEncryptor: (String?) -> RecordingEncryptor? = { RecordingEncryptor(userEmail: $0) }
+
+    /// True while a capture session exists, from a successful start until stop.
+    var hasCaptureSession: Bool {
+        session != nil
+    }
+
     func startRecording(encryptionEnabled: Bool, debugEnableMic: Bool, debugEnableSystem: Bool) async {
         lastRecordingConfig = RecordingConfig(
             encryptionEnabled: encryptionEnabled,
             debugEnableMic: debugEnableMic,
             debugEnableSystem: debugEnableSystem
         )
+
+        // Fail closed: with no key, no capture. The config above is kept so a
+        // retry can start once the key is available.
+        guard case let .ready(encryptor) = captureEncryption(requested: encryptionEnabled) else {
+            refuseUnencryptedCapture()
+            return
+        }
+
         lastOutputDeviceUID = defaultOutputDeviceUID()
         logger.info("Starting recording – system audio: \(self.systemAudioAvailableAtStart)")
 
-        let encryptor: RecordingEncryptor? = encryptionEnabled ? RecordingEncryptor(userEmail: userEmail) : nil
-        let config = CaptureConfiguration(
-            sampleRate: 48000,
-            bitDepth: 16,
-            channels: 2,
+        let config = captureConfiguration(
             encryptor: encryptor,
-            outputDirectory: recordingsDirectory,
             micDeviceID: selectedMicID,
-            enableMicCapture: debugEnableMic,
-            enableSystemCapture: debugEnableSystem,
-            mixingStrategy: .separated,
-            exportRawPCM: true
+            enableMic: debugEnableMic,
+            enableSystem: debugEnableSystem
         )
 
         let captureSession = CompositeCaptureSession(configuration: config)
@@ -251,6 +261,17 @@ final class RecordingService {
         }
         onSystemAudioActiveChange?(false)
         self.session = nil
+    }
+
+    /// Session audio is PHI. When it can't be encrypted the capture does not
+    /// start, rather than writing plaintext to disk that nothing later encrypts
+    /// or cleans up, and the clinician is told why.
+    private func refuseUnencryptedCapture() {
+        logger.error("Refusing to record: no encryption key is available")
+        onError?(Self.encryptionUnavailableMessage)
+        currentRecordingState = .idle
+        onCaptureStateUpdate?(.idle, nil)
+        onSystemAudioActiveChange?(false)
     }
 
     // MARK: - Recovery
@@ -466,25 +487,4 @@ extension RecordingService {
             break
         }
     }
-}
-
-// MARK: - Rate Detection
-
-extension RecordingService {
-    /// Parses the actual output sample rate from the diagnostics mic format string.
-    /// Format is "24000Hz 1ch non-int". Returns 48000 if parsing fails.
-    static func parseOutputRate(from micFormat: String) -> Double {
-        guard let hzRange = micFormat.range(of: "Hz") else { return 48000 }
-        let rateString = micFormat[micFormat.startIndex ..< hzRange.lowerBound]
-        guard let micRate = Double(rateString) else { return 48000 }
-        return min(micRate, 48000)
-    }
-}
-
-// MARK: - Recording Config
-
-struct RecordingConfig {
-    let encryptionEnabled: Bool
-    let debugEnableMic: Bool
-    let debugEnableSystem: Bool
 }
