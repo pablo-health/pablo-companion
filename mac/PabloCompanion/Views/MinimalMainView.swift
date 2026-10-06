@@ -275,24 +275,26 @@ struct MinimalMainView: View {
     }
 
     private var captureStateLabel: String {
-        Self.captureStateLabel(state: recordingState, trouble: recordingTrouble)
+        Self.captureStateLabel(state: recordingState)
     }
 
-    /// The card names what is actually happening: once capture has stopped it
-    /// must not still say "Recording".
-    static func captureStateLabel(state: RecordingUIState, trouble: RecordingTrouble?) -> String {
-        if case .stopped = trouble { return "Not recording" }
-        return state == .paused ? "Paused" : "Recording"
+    /// Read from the capture's real state, so the card never says "Recording"
+    /// once capture has stopped, failed, or not yet started.
+    static func captureStateLabel(state: RecordingUIState) -> String {
+        switch state {
+        case .recording: "Recording"
+        case .paused: "Paused"
+        case .idle: "Not recording"
+        }
     }
 
     private var captureDotColor: Color {
-        if recordingTrouble != nil { return Color.pabloError }
+        if recordingTrouble != nil || recordingState == .idle { return Color.pabloError }
         return recordingState == .paused ? Color.pabloHoney : Color.pabloSage
     }
 
     private var captureStopped: Bool {
-        if case .stopped = recordingTrouble { return true }
-        return false
+        recordingState == .idle
     }
 
     private func recordingButtons(title: String?) -> some View {

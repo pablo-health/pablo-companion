@@ -112,6 +112,20 @@ final class RecordingViewModel {
         )
     }
 
+    /// Opens `sessionId` and starts capture for it. If capture doesn't start,
+    /// the session is let go again, so nothing shows a recording that isn't
+    /// happening; the failure itself is already in `errorMessage`.
+    @discardableResult
+    func startRecording(forSession sessionId: String) async -> Bool {
+        activeSessionId = sessionId
+        await startRecording()
+        guard recordingState == .recording else {
+            activeSessionId = nil
+            return false
+        }
+        return true
+    }
+
     func pauseRecording() {
         service.pauseRecording()
     }

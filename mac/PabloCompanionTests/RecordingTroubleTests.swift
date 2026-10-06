@@ -1,3 +1,4 @@
+import AudioCaptureKit
 import CompanionSessionCore
 import Foundation
 @testable import Pablo
@@ -54,9 +55,29 @@ struct RecordingTroubleTests {
         viewModel.service.onCaptureStateUpdate?(.idle, nil)
         viewModel.service.onMicDisconnectedDuringRecording?()
 
-        let label = MinimalMainView.captureStateLabel(state: viewModel.recordingState, trouble: viewModel.trouble)
+        #expect(MinimalMainView.captureStateLabel(state: viewModel.recordingState) == "Not recording")
+    }
 
-        #expect(label == "Not recording")
+    @Test func aFailedCaptureTakesRecordingOffTheCard() {
+        let viewModel = recordingSession()
+
+        viewModel.service.handleCaptureState(.failed(.encryptionFailed("disk full")))
+
+        #expect(viewModel.recordingState == .idle)
+        #expect(MinimalMainView.captureStateLabel(state: viewModel.recordingState) == "Not recording")
+        #expect(viewModel.trouble != nil)
+    }
+
+    @Test func aStartThatFailsLetsTheSessionGo() async {
+        let viewModel = RecordingViewModel()
+        viewModel.service.makeEncryptor = { _ in nil }
+
+        let started = await viewModel.startRecording(forSession: "session-1")
+
+        #expect(!started)
+        #expect(viewModel.activeSessionId == nil)
+        #expect(viewModel.trouble == nil)
+        #expect(viewModel.showError)
     }
 
     @Test func aCaptureFailureShowsCaptureAsStoppedWithItsReason() {
@@ -97,10 +118,10 @@ struct RecordingTroubleTests {
         #expect(viewModel.trouble == nil)
     }
 
-    @Test func aPausedOrStalledCardStillReadsAsWhatItIs() {
-        #expect(MinimalMainView.captureStateLabel(state: .paused, trouble: nil) == "Paused")
-        #expect(MinimalMainView.captureStateLabel(state: .recording, trouble: .stalled) == "Recording")
-        #expect(MinimalMainView.captureStateLabel(state: .recording, trouble: nil) == "Recording")
+    @Test func theCardLabelFollowsTheCaptureState() {
+        #expect(MinimalMainView.captureStateLabel(state: .recording) == "Recording")
+        #expect(MinimalMainView.captureStateLabel(state: .paused) == "Paused")
+        #expect(MinimalMainView.captureStateLabel(state: .idle) == "Not recording")
     }
 }
 

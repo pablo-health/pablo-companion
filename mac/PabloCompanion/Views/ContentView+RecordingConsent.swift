@@ -51,9 +51,9 @@ extension ContentView {
             ) else { return }
             guard await sessionVM.startSession(session.id) != nil else { return }
             activeSessionId = session.id
-            recordingVM.activeSessionId = session.id
-            await recordingVM.startRecording()
-            if let askingOnRecording {
+            let recording = await recordingVM.startRecording(forSession: session.id)
+            if !recording { activeSessionId = nil }
+            if recording, let askingOnRecording {
                 askVM.begin(
                     sessionId: session.id,
                     patientId: askingOnRecording.patientId,
