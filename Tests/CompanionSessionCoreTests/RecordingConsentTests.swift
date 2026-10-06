@@ -28,6 +28,26 @@ struct RecordingConsentDecisionTests {
         #expect(RecordingConsent.evaluate(asksClients: true, current: declined) == .declined(on: "2026-09-01"))
     }
 
+    @Test("A hand-off the web already asked about does not ask again")
+    func handedOffAfterWebAsked() {
+        #expect(RecordingConsent.notAsked.handedOff(webAlreadyAsked: true) == .clear)
+        #expect(RecordingConsent.clear.handedOff(webAlreadyAsked: true) == .clear)
+    }
+
+    @Test("A decline still stops a hand-off the web already asked about")
+    func handedOffDeclined() {
+        #expect(RecordingConsent.declined(on: "2026-09-01").handedOff(webAlreadyAsked: true)
+            == .declined(on: "2026-09-01"))
+    }
+
+    @Test("Without the web's answer, a hand-off still asks")
+    func handedOffWithoutWebAnswer() {
+        #expect(RecordingConsent.notAsked.handedOff(webAlreadyAsked: false) == .notAsked)
+        #expect(RecordingConsent.declined(on: "2026-09-01").handedOff(webAlreadyAsked: false)
+            == .declined(on: "2026-09-01"))
+        #expect(RecordingConsent.clear.handedOff(webAlreadyAsked: false) == .clear)
+    }
+
     @Test("The server's declined refusal is recognized, with its date")
     func refusalParsed() {
         // The body the server sends for a refused start (403, standard envelope).

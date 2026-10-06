@@ -26,6 +26,15 @@ public enum RecordingConsent: Equatable, Sendable {
         return current.decision == AiConsentEntry.declined ? .declined(on: current.effectiveOn) : .clear
     }
 
+    /// The answer for a start handed off from the web app. When the web app
+    /// already asked "No consent on file" and the clinician chose to record
+    /// anyway, asking again would be the same question twice, so a missing
+    /// answer reads as clear. A decline still stops: it may have been recorded
+    /// after the web app asked.
+    public func handedOff(webAlreadyAsked: Bool) -> RecordingConsent {
+        webAlreadyAsked && self == .notAsked ? .clear : self
+    }
+
     /// Reads a refused session start. Returns the day the client declined when
     /// the response is the server's `403 CLIENT_DECLINED_AI_NOTES`, an empty
     /// string when the refusal carries no date, and `nil` for anything else.
