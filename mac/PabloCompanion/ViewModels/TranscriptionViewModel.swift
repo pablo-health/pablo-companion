@@ -52,6 +52,12 @@ final class TranscriptionViewModel {
     /// Number of transcripts waiting to be uploaded.
     var pendingUploadCount = 0
 
+    /// Sessions whose audio the server hasn't accepted yet, for the main window.
+    private(set) var uploadBacklog = UploadBacklog()
+
+    /// True while "Upload Now" is draining the queue.
+    private(set) var isUploadingNow = false
+
     var errorMessage: String?
     var showError = false
 
@@ -180,6 +186,7 @@ final class TranscriptionViewModel {
         guard await apiClient.verifySessionAlive() else {
             states[recording.id] = .failed(message: "Session expired — sign in to resume the upload")
             logger.warning("Skipping audio upload: server session is no longer active")
+            refreshPendingCounts()
             return
         }
 
@@ -195,7 +202,7 @@ final class TranscriptionViewModel {
         } else {
             states[recording.id] = .failed(message: "Audio upload failed — will retry later")
         }
-        pendingUploadCount = audioStore.loadAll().count
+        refreshPendingCounts()
     }
 
     /// The tested drain: backoff ladder, retry cap, and cleanup after a
@@ -277,16 +284,26 @@ final class TranscriptionViewModel {
         if confirmed > 0 {
             logger.info("Confirmed \(confirmed) note(s); deleted local audio")
         }
-        pendingUploadCount = audioStore.loadAll().count
+        refreshPendingCounts()
     }
 
     /// Retry everything now, ignoring backoff and the retry cap. Bound to the
-    /// Settings "Retry now" entry, where waiting out a ladder the user just
-    /// overrode would be wrong.
+    /// Settings "Retry now" entry and the main window's "Upload Now", where
+    /// waiting out a ladder the user just overrode would be wrong.
     func forceRetryPendingAudioUploads() async {
+        guard !isUploadingNow else { return }
+        isUploadingNow = true
+        defer { isUploadingNow = false }
         let drained = await coordinator.forceDrain()
         logger.info("Force-drained \(drained) pending audio upload(s)")
-        pendingUploadCount = audioStore.loadAll().count
+        refreshPendingCounts()
+    }
+
+    /// Re-reads the queue into `pendingUploadCount` and `uploadBacklog`.
+    func refreshPendingCounts() {
+        let entries = audioStore.loadAll()
+        pendingUploadCount = entries.count
+        uploadBacklog = UploadBacklog(entries: entries)
     }
 
     /// Enqueue an audio upload for a session whose recording lives on disk
