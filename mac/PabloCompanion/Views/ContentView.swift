@@ -38,6 +38,9 @@ struct ContentView: View {
     /// before the confirmation arms anything (ContentView+RecordingConsent).
     @State var consentVM = RecordingConsentViewModel()
 
+    /// Asking a telehealth client once recording has started.
+    @State var askVM = AskOnRecordingViewModel()
+
     /// Non-PHI message shown when a launch intent can't be redeemed.
     @State var launchError: String?
 
@@ -95,6 +98,9 @@ struct ContentView: View {
         .handoffAlerts(recordingVM: recordingVM, sessionVM: sessionVM)
         .sheet(item: $pendingLaunch) { launch in
             confirmationSheet(for: launch)
+        }
+        .sheet(item: $askVM.ask) { _ in
+            askOnRecordingSheet()
         }
         .sheet(isPresented: launchErrorBinding) {
             LaunchIntentErrorView(
@@ -368,20 +374,6 @@ struct ContentView: View {
     }
 
     // MARK: - Session orchestration
-
-    func startSession(fromAppointmentId appointmentId: String) {
-        guard startingAppointmentId == nil else { return }
-        startingAppointmentId = appointmentId
-        Task {
-            defer { startingAppointmentId = nil }
-            guard let session = await createSession(fromAppointmentId: appointmentId) else { return }
-            guard await sessionVM.startSession(session.id) != nil else { return }
-            activeSessionId = session.id
-            recordingVM.activeSessionId = session.id
-            await recordingVM.startRecording()
-            VideoLaunchService.launch(session: session)
-        }
-    }
 
     private func startSession(_ session: Session) {
         Task {

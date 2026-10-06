@@ -195,20 +195,6 @@ final class APIClient {
         return listResponse.data
     }
 
-    /// Creates a therapy session linked to a calendar appointment.
-    func startSessionFromAppointment(appointmentId: String) async throws -> Session {
-        let request = try await buildRequest(
-            "POST",
-            path: "/api/appointments/\(appointmentId)/start-session"
-        )
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try mapHTTPErrors(data: data, response: response)
-
-        let session: Session = try handleResponse(data, response)
-        logger.info("Started session from appointment")
-        return session
-    }
-
     // MARK: - Launch intent
 
     /// Redeems a launch intent issued by the web dashboard. The companion

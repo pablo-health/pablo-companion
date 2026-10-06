@@ -9,7 +9,7 @@ import PracticeClientCore
 /// Context returned by `POST /api/launch/redeem` after a launch intent is
 /// successfully consumed. `patient_name` is PHI — only surfaced inside the
 /// app's confirmation UI, never logged.
-struct LaunchRedemption: Codable, Sendable {
+struct LaunchRedemption: Decodable, Sendable {
     let appointmentId: String
     let patientName: String?
     let videoUrl: String?
@@ -17,6 +17,13 @@ struct LaunchRedemption: Codable, Sendable {
     /// The web start already asked "No consent on file" and the clinician chose
     /// to record anyway. False from a server that predates the field.
     let aiConsentPrompted: Bool
+    /// For a telehealth visit with no answer on file, the web start offered
+    /// "Ask now" and the clinician took it. False from an older server.
+    let askConsentOnRecording: Bool
+    /// Where the visit is, from the server's `telehealth`. `nil` from a server
+    /// that predates the field; the consent check then reads it from the
+    /// appointment.
+    let modality: AiConsentModality?
 
     enum CodingKeys: String, CodingKey {
         case appointmentId = "appointment_id"
@@ -24,6 +31,8 @@ struct LaunchRedemption: Codable, Sendable {
         case videoUrl = "video_url"
         case sessionId = "session_id"
         case aiConsentPrompted = "ai_consent_prompted"
+        case askConsentOnRecording = "ask_consent_on_recording"
+        case telehealth
     }
 
     init(from decoder: Decoder) throws {
@@ -33,6 +42,9 @@ struct LaunchRedemption: Codable, Sendable {
         videoUrl = try container.decodeIfPresent(String.self, forKey: .videoUrl)
         sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
         aiConsentPrompted = try container.decodeIfPresent(Bool.self, forKey: .aiConsentPrompted) ?? false
+        askConsentOnRecording = try container.decodeIfPresent(Bool.self, forKey: .askConsentOnRecording) ?? false
+        modality = try container.decodeIfPresent(Bool.self, forKey: .telehealth)
+            .map { $0 ? .telehealth : .inPerson }
     }
 }
 

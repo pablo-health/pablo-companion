@@ -5,7 +5,7 @@ import FoundationNetworking
 #endif
 
 /// Reads a client's answer about AI-assisted notes before a recording arms,
-/// and records a verbal "agreed today".
+/// and records the client's answer.
 ///
 /// Three existing endpoints, called with the clinician's own credentials:
 /// - `GET /api/users/me/practice/ai-notes-consent` — whether the practice asks,
@@ -39,7 +39,16 @@ public struct RecordingConsentClient: Sendable {
     /// The consent picture for one appointment. Pass `patientId` when it is
     /// already known (an appointment from today's list) to skip the
     /// appointment lookup.
-    public func check(appointmentId: String, patientId: String? = nil) async throws -> RecordingConsentCheck {
+    ///
+    /// `modality` is where the session is, when the caller knows (today's
+    /// list, or a redeem from a server that says). `nil` reads it from the
+    /// appointment, which is looked up anyway when the client is not known;
+    /// with the client known and `nil` here, the session reads as in person.
+    public func check(
+        appointmentId: String,
+        patientId: String? = nil,
+        modality: AiConsentModality? = nil
+    ) async throws -> RecordingConsentCheck {
         let setting: Setting = try await send("GET", path: "/api/users/me/practice/ai-notes-consent")
         guard setting.askClientsAboutAiNotes else {
             return RecordingConsentCheck(
@@ -51,9 +60,17 @@ public struct RecordingConsentClient: Sendable {
         }
 
         var clientId = patientId ?? ""
+        var isTelehealth = modality == .telehealth
         if clientId.isEmpty {
             let appointment: AppointmentClient = try await send("GET", path: "/api/appointments/\(appointmentId)")
             clientId = appointment.patientId ?? ""
+            if modality == nil {
+                isTelehealth = Telehealth.isTelehealth(
+                    provider: appointment.provider,
+                    videoLink: appointment.videoLink,
+                    placeOfService: appointment.placeOfService
+                )
+            }
         }
         guard !clientId.isEmpty else {
             // No client matched to the appointment yet. The server refuses to
@@ -68,19 +85,26 @@ public struct RecordingConsentClient: Sendable {
 
         let record: Record = try await send("GET", path: "/api/patients/\(clientId)/ai-consent")
         return RecordingConsentCheck(
-            consent: RecordingConsent.evaluate(asksClients: true, current: record.current),
+            consent: RecordingConsent.evaluate(asksClients: true, current: record.current, telehealth: isTelehealth),
             asksClients: true,
             audioRetentionDays: setting.audioRetentionDays,
             patientId: clientId
         )
     }
 
-    /// Records that the client agreed today. No date is sent: the server dates
-    /// it on the clinician's own calendar day, so an evening entry is not
-    /// dated tomorrow.
-    public func recordAgreedToday(patientId: String) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["decision": AiConsentEntry.consented])
+    /// Records the client's answer, with how it was given.
+    public func record(_ answer: AiConsentAnswer, patientId: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: answer.body, options: [.sortedKeys])
         let _: Record = try await send("POST", path: "/api/patients/\(patientId)/ai-consent", body: body)
+    }
+
+    /// The body for `POST /api/appointments/{id}/start-session`. `nil` (no
+    /// body, the server's defaults) unless the clinician is asking about
+    /// AI-assisted notes once recording starts, which is what lets a
+    /// telehealth session with no answer on file start at all.
+    public static func startSessionBody(askingConsentOnRecording: Bool) -> Data? {
+        guard askingConsentOnRecording else { return nil }
+        return try? JSONSerialization.data(withJSONObject: ["asking_consent_on_recording": true])
     }
 
     // MARK: - Wire
@@ -97,9 +121,15 @@ public struct RecordingConsentClient: Sendable {
 
     private struct AppointmentClient: Decodable {
         let patientId: String?
+        let provider: String?
+        let videoLink: String?
+        let placeOfService: String?
 
         enum CodingKeys: String, CodingKey {
             case patientId = "patient_id"
+            case provider
+            case videoLink = "video_link"
+            case placeOfService = "place_of_service"
         }
     }
 

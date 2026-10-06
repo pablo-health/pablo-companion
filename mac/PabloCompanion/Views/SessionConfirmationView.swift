@@ -8,9 +8,10 @@ import SwiftUI
 ///
 /// It also carries the client's answer about AI-assisted notes, when the
 /// practice asks: a client who declined gets the declined message and no way
-/// to arm; a client nobody has asked yet gets "Client agreed today", "Record
-/// anyway" and "Cancel". A direct start from the companion's own window lands
-/// here only in those two cases.
+/// to arm. A client nobody has asked yet gets, in person, "Client agreed
+/// today", "Record anyway" and "Cancel"; over telehealth, only "Ask now" and
+/// "Don't record" — there is no recording before asking. A direct start from
+/// the companion's own window lands here only in those cases.
 ///
 /// Presented as a sheet over whatever window is frontmost, matching how other
 /// session surfaces (practice, transcript viewer) are presented today.
@@ -35,12 +36,19 @@ struct SessionConfirmationView: View {
     /// the read-aloud script. `nil` hides it.
     var scriptRetentionDays: Int?
 
+    /// Who answers "agreed today".
+    var giver: Binding<AiConsentGiver> = .constant(.client)
+
     /// Invoked when the therapist taps "Start Recording" or "Record anyway".
-    /// Only here (and after "Client agreed today" is saved) does the mic arm.
+    /// Only here (and after "Client agreed today" is saved, or "Ask now") does
+    /// the mic arm.
     let onStartRecording: () -> Void
 
     /// "Client agreed today": record the answer, then arm.
     var onAgreedToday: () -> Void = {}
+
+    /// "Ask now": arm, telling the server the clinician asks on the recording.
+    var onAskNow: () -> Void = {}
 
     /// Opens the client's chart, where a declined answer can be changed.
     var onOpenChart: (() -> Void)?
@@ -58,10 +66,12 @@ struct SessionConfirmationView: View {
     var body: some View {
         Group {
             switch consent {
-            case .clear:
+            case .clear, .askingOnRecording:
                 startContent
             case .notAsked:
                 notAskedContent
+            case .askOnRecording:
+                askOnRecordingContent
             case let .declined(on):
                 declinedContent(on: on)
             }
@@ -112,23 +122,53 @@ struct SessionConfirmationView: View {
                 message: RecordingConsentCopy.notAskedMessage
             )
             script
+            ConsentGiverPicker(giver: giver)
+                .disabled(isSavingConsent)
             if let consentError {
                 ErrorMessageLabel(message: consentError)
             }
             VStack(spacing: 10) {
+                let agreed = RecordingConsentCopy.agreedToday(by: giver.wrappedValue)
                 Button(action: onAgreedToday) {
-                    Text(isSavingConsent ? "Saving…" : "Client agreed today")
+                    Text(isSavingConsent ? "Saving…" : agreed)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
                 .disabled(isSavingConsent)
-                .accessibilityLabel("Client agreed today, start recording")
+                .accessibilityLabel("\(agreed), start recording")
 
                 wideButton("Record anyway", action: onStartRecording)
                     .disabled(isSavingConsent)
                 wideButton("Cancel", role: .cancel, action: onCancel)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(RecordingConsentCopy.notAskedTitle)
+    }
+
+    /// Telehealth with nothing on file: ask once recording starts, or don't
+    /// record. The server refuses any other start, so nothing else is offered.
+    private var askOnRecordingContent: some View {
+        VStack(spacing: 20) {
+            header(
+                icon: "questionmark.bubble",
+                title: RecordingConsentCopy.notAskedTitle,
+                message: RecordingConsentCopy.askOnRecordingMessage
+            )
+            script
+            VStack(spacing: 10) {
+                Button(action: onAskNow) {
+                    Text(RecordingConsentCopy.askNow)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityLabel("\(RecordingConsentCopy.askNow), start recording")
+
+                wideButton(RecordingConsentCopy.dontRecord, role: .cancel, action: onCancel)
             }
         }
         .accessibilityElement(children: .contain)
@@ -218,6 +258,16 @@ struct SessionConfirmationView: View {
     )
 }
 
+#Preview("Telehealth, not asked") {
+    SessionConfirmationView(
+        patientName: "Sam",
+        consent: .askOnRecording,
+        scriptRetentionDays: 0,
+        onStartRecording: {},
+        onCancel: {}
+    )
+}
+
 #Preview("Declined") {
     SessionConfirmationView(
         patientName: "Sam",
@@ -226,32 +276,4 @@ struct SessionConfirmationView: View {
         onOpenChart: {},
         onCancel: {}
     )
-}
-
-/// Shown when a launch intent could not be redeemed (expired, already used, or
-/// an error). Carries no PHI — only an opaque, non-identifying message.
-struct LaunchIntentErrorView: View {
-    let message: String
-    let onDismiss: () -> Void
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "link.badge.plus")
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
-            Text(message)
-                .font(.headline)
-                .multilineTextAlignment(.center)
-
-            Button("OK", action: onDismiss)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut(.defaultAction)
-        }
-        .padding(28)
-        .frame(width: 340)
-        .background(Color.pabloCream)
-    }
 }

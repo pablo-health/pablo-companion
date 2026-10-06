@@ -17,6 +17,10 @@ enum PabloError: LocalizedError, Sendable {
     /// notes (`403 CLIENT_DECLINED_AI_NOTES`). `declinedOn` is `YYYY-MM-DD`, or
     /// empty when the server sent no date.
     case clientDeclinedAiNotes(declinedOn: String)
+    /// A telehealth session start refused because nobody has asked the client
+    /// about AI-assisted notes and the start did not say the clinician is
+    /// asking once recording starts (`403 CLIENT_AI_CONSENT_NEEDED`).
+    case clientAiConsentNeeded
 
     var errorDescription: String? {
         switch self {
@@ -42,6 +46,8 @@ enum PabloError: LocalizedError, Sendable {
             return "Update required: \(message)"
         case let .clientDeclinedAiNotes(declinedOn):
             return RecordingConsentCopy.declined(on: declinedOn)
+        case .clientAiConsentNeeded:
+            return RecordingConsentCopy.askOnRecordingMessage
         }
     }
 }
