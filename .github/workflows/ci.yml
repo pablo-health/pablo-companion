@@ -72,6 +72,17 @@ jobs:
       - name: SwiftFormat
         run: swiftformat --lint --config mac/.swiftformat mac/PabloCompanion/
 
+      # The shared session wire path (record → queue → upload) and its tests.
+      # Formatting is enforced as for the app. SwiftLint fails on errors here
+      # and reports warnings without failing: the package has ~90 warnings the
+      # app's --strict would turn red, so ratchet to --strict as they are
+      # cleared. practice-harness is compiled in swift-test, not linted yet.
+      - name: SwiftLint (shared package)
+        run: swiftlint lint --config mac/.swiftlint.yml Sources/CompanionSessionCore Tests
+
+      - name: SwiftFormat (shared package)
+        run: swiftformat --lint --config mac/.swiftformat Sources/CompanionSessionCore Tests
+
   swift-test:
     name: Swift Build & Test
     needs: [changes, swift-lint]
@@ -118,6 +129,12 @@ jobs:
         env:
           MIN_COVERAGE: "85"
         run: ./scripts/coverage-gate.sh
+
+      - name: Build the practice harness
+        # `swift test` builds only what the tests depend on, so the headless
+        # harness the nightly record and consent runs drive was never compiled
+        # on a PR: a break surfaced only in the next night's run.
+        run: swift build --product practice-harness
 
   dependency-review:
     name: Dependency Review

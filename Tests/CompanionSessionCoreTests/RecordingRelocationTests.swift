@@ -6,7 +6,10 @@ import Testing
 @Suite("RecordingRelocation")
 struct RecordingRelocationTests {
     private let old = URL(fileURLWithPath: "/Users/t/Documents/PabloCompanion-Recordings", isDirectory: true)
-    private let new = URL(fileURLWithPath: "/Users/t/Library/Application Support/PabloCompanion/Recordings", isDirectory: true)
+    private let new = URL(
+        fileURLWithPath: "/Users/t/Library/Application Support/PabloCompanion/Recordings",
+        isDirectory: true
+    )
 
     @Test func aPathInsideTheOldDirectoryMoves() {
         let rewritten = RecordingRelocation.rewrite(old.path + "/recording_x_mic.pcm", from: old, to: new)

@@ -143,7 +143,7 @@ public struct RecordingConsentClient: Sendable {
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.setValue("Bearer \(try await token())", forHTTPHeaderField: "Authorization")
+        try await request.setValue("Bearer \(token())", forHTTPHeaderField: "Authorization")
         request.setValue("pablo-companion-macos/1.0", forHTTPHeaderField: "X-Client-Type")
         if let body {
             request.httpBody = body
