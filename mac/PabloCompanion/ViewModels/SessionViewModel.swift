@@ -144,9 +144,24 @@ final class SessionViewModel {
         isLoading = false
     }
 
+    /// How starting a session from an appointment ended.
+    enum AppointmentStartOutcome: Equatable {
+        case started(Session)
+        /// The server refused: the client declined AI-assisted notes. Not an
+        /// error alert — the caller shows the declined message where the
+        /// clinician confirmed the start. `on` is `YYYY-MM-DD` or empty.
+        case declined(on: String)
+        /// Any other failure; `errorMessage` / `showError` are set.
+        case failed
+    }
+
+    /// The consent calls go through the same authenticated client.
+    var consentService: RecordingConsentService {
+        apiClient
+    }
+
     /// Creates a therapy session from a calendar appointment.
-    /// Returns the created session, or nil on failure.
-    func startSessionFromAppointment(appointmentId: String) async -> Session? {
+    func startSessionFromAppointment(appointmentId: String) async -> AppointmentStartOutcome {
         errorMessage = nil
 
         do {
@@ -154,7 +169,10 @@ final class SessionViewModel {
             logger.info("Created session from appointment")
             // Refresh appointments to pick up the linked session_id
             await loadTodayAppointments()
-            return session
+            return .started(session)
+        } catch let PabloError.clientDeclinedAiNotes(declinedOn) {
+            logger.info("Session start refused: client declined AI-assisted notes")
+            return .declined(on: declinedOn)
         } catch {
             if case let APIError.serverError(statusCode, _) = error, statusCode == 403 {
                 subscriptionBlocked = true
@@ -162,7 +180,7 @@ final class SessionViewModel {
             errorMessage = error.localizedDescription
             showError = true
             logger.error("Failed to start session from appointment: \(error.localizedDescription)")
-            return nil
+            return .failed
         }
     }
 

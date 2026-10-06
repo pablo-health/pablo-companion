@@ -34,6 +34,10 @@ struct ContentView: View {
     /// this is merely set — only the confirmation tap arms it.
     @State var pendingLaunch: PendingLaunch?
 
+    /// The client's answer about AI-assisted notes for the start in hand. Read
+    /// before the confirmation arms anything (ContentView+RecordingConsent).
+    @State var consentVM = RecordingConsentViewModel()
+
     /// Non-PHI message shown when a launch intent can't be redeemed.
     @State var launchError: String?
 
@@ -90,11 +94,7 @@ struct ContentView: View {
         .task { await configureAndLoad() }
         .handoffAlerts(recordingVM: recordingVM, sessionVM: sessionVM)
         .sheet(item: $pendingLaunch) { launch in
-            SessionConfirmationView(
-                patientName: launch.patientName,
-                onStartRecording: { confirmPendingLaunch() },
-                onCancel: { pendingLaunch = nil }
-            )
+            confirmationSheet(for: launch)
         }
         .sheet(isPresented: launchErrorBinding) {
             LaunchIntentErrorView(
@@ -243,7 +243,7 @@ struct ContentView: View {
             clientAudioStatus: recordingVM.clientAudioStatus,
             showsClientAudioWarning: recordingVM.showsClientAudioWarning,
             onDismissClientAudioWarning: { recordingVM.dismissClientAudioWarning() },
-            onStartAppointment: { startSession(fromAppointmentId: $0.id) },
+            onStartAppointment: { requestStart($0) },
             onPauseRecording: { recordingVM.pauseRecording() },
             onResumeRecording: { recordingVM.resumeRecording() },
             onEndSession: { stopActiveSession() },
@@ -374,9 +374,7 @@ struct ContentView: View {
         startingAppointmentId = appointmentId
         Task {
             defer { startingAppointmentId = nil }
-            guard let session = await sessionVM.startSessionFromAppointment(
-                appointmentId: appointmentId
-            ) else { return }
+            guard let session = await createSession(fromAppointmentId: appointmentId) else { return }
             guard await sessionVM.startSession(session.id) != nil else { return }
             activeSessionId = session.id
             recordingVM.activeSessionId = session.id

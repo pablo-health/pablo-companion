@@ -13,6 +13,10 @@ enum PabloError: LocalizedError, Sendable {
     case notFound(resource: String)
     case conflictState(message: String)
     case updateRequired(message: String)
+    /// A recorded session start refused because the client declined AI-assisted
+    /// notes (`403 CLIENT_DECLINED_AI_NOTES`). `declinedOn` is `YYYY-MM-DD`, or
+    /// empty when the server sent no date.
+    case clientDeclinedAiNotes(declinedOn: String)
 
     var errorDescription: String? {
         switch self {
@@ -36,6 +40,8 @@ enum PabloError: LocalizedError, Sendable {
             return "Conflict: \(message)"
         case .updateRequired(let message):
             return "Update required: \(message)"
+        case let .clientDeclinedAiNotes(declinedOn):
+            return RecordingConsentCopy.declined(on: declinedOn)
         }
     }
 }
