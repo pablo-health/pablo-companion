@@ -25,6 +25,8 @@ enum RecordingConsentCopy {
     static let askingPrompt = "Recording has started. Read this aloud so the answer is on the recording."
     static let locationLabel = "Where the client said they were"
     static let recordOnChart = "Record the client's answer on their chart."
+    /// After a decline on the recording: capture stopped and the audio deleted.
+    static let recordingDeleted = "Recording stopped and deleted. Write this note yourself."
 
     /// "Client agreed today", "Parent agreed today".
     static func agreedToday(by giver: AiConsentGiver) -> String {

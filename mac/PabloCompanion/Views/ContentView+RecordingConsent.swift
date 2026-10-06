@@ -150,13 +150,38 @@ extension ContentView {
         confirmPendingLaunch()
     }
 
-    /// Saves the answer given on the recording, over telehealth, and closes the
-    /// panel; a failed save stays on it with its message.
+    /// Saves the answer given on the recording, over telehealth. An agreement
+    /// closes the panel. A decline first stops and deletes the recording, so
+    /// nothing of it is uploaded whether or not the answer saves, and the
+    /// panel then says so. A failed save stays on the panel with its message.
     private func answerOnRecording(_ decision: String) {
         Task {
+            if decision == AiConsentEntry.declined, !askVM.recordingDeleted, let ask = askVM.ask {
+                if await discardDeclinedRecording(sessionId: ask.sessionId) {
+                    askVM.markRecordingDeleted()
+                }
+            }
             guard await askVM.record(decision: decision, service: sessionVM.consentService) else { return }
-            askVM.dismiss()
+            if decision != AiConsentEntry.declined { askVM.dismiss() }
         }
+    }
+
+    /// The client declined on the recording: stop capture, delete every
+    /// segment and anything that could upload it, and return the session to
+    /// a hand-written note, as a session the web starts without recording.
+    /// Returns false, deleting nothing, when that session is no longer the one
+    /// recording.
+    private func discardDeclinedRecording(sessionId: String) async -> Bool {
+        guard activeSessionId == sessionId else { return false }
+        // Still the active session while capture stops, so the last segment
+        // is filed under it (and never taken for a standalone recording).
+        await recordingVM.stopRecording()
+        recordingVM.discardDeclinedSession(sessionId, uploadStore: transcriptionVM.pendingAudioStore)
+        recordingVM.activeSessionId = nil
+        activeSessionId = nil
+        _ = await sessionVM.returnToHandWritten(sessionId)
+        await sessionVM.loadTodayAppointments()
+        return true
     }
 
     /// The client's chart in the web app, where a declined answer can be changed.

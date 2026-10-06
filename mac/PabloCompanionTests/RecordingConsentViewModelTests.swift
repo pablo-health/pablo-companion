@@ -489,11 +489,14 @@ struct AskOnRecordingViewModelTests {
         vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90)
         vm.giver = .parent
         vm.location = "Car"
+        vm.markRecordingDeleted()
+        #expect(vm.recordingDeleted)
 
         vm.begin(sessionId: "s2", patientId: "pat-2", retentionDays: 90)
 
         #expect(vm.giver == .client)
         #expect(vm.location.isEmpty)
+        #expect(!vm.recordingDeleted)
         #expect(vm.ask?.sessionId == "s2")
     }
 }

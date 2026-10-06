@@ -281,6 +281,32 @@ final class RecordingViewModel {
         sessionSegments.removeValue(forKey: sessionId)
     }
 
+    /// The client declined AI-assisted notes on the recording: deletes every
+    /// segment the session captured and forgets it, here and on disk, and drops
+    /// any queued upload. Call after capture has stopped.
+    func discardDeclinedSession(_ sessionId: String, uploadStore: PendingAudioUploadStore) {
+        var segments = sessionSegments[sessionId] ?? []
+        if let mapped = recordingForSession(sessionId), !segments.contains(where: { $0.id == mapped.id }) {
+            segments.append(mapped)
+        }
+        RecordingCleaner.discardDeclined(
+            sessionId: sessionId,
+            audio: segments.map {
+                SessionAudioPaths(
+                    mixedPath: $0.fileURL.path,
+                    micPath: $0.micPCMFileURL?.path,
+                    systemPath: $0.systemPCMFileURL?.path
+                )
+            },
+            recordingStore: recordingStore,
+            uploadStore: uploadStore
+        )
+        let discarded = Set(segments.map(\.id))
+        recordings.removeAll { discarded.contains($0.id) }
+        sessionRecordingMap.removeValue(forKey: sessionId)
+        sessionSegments.removeValue(forKey: sessionId)
+    }
+
     /// The session ID whose recording is currently playing, if any.
     var playingSessionId: String? {
         guard let playingRecordingID else { return nil }

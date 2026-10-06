@@ -18,6 +18,8 @@ import FoundationNetworking
 ///   - a start that says it is asking on the recording is accepted;
 ///   - the client's answer is saved as given over telehealth, with who
 ///     answered and where they said they were, and then reads as clear;
+///   - a decline on the recording is saved, the session returns to a
+///     hand-written note, and a later recorded start is refused;
 ///   - the in-person visit reads as "not asked" and a plain start is accepted.
 ///
 /// Environment:
@@ -103,6 +105,33 @@ private struct Driver {
         let after = try await consent.check(appointmentId: remote.appointmentId)
         check("after agreeing, the client reads as clear", after.consent == .clear, "\(after.consent)")
 
+        // ── Telehealth, declined on the recording ──────────────────────────
+        // The app stops and deletes the recording, saves the decline, and
+        // returns the session to a hand-written note (scheduled, the state the
+        // web starts one in with `recording: false`).
+        let declining = try await seedVisit(videoLink: "https://video.example/room2", inHours: 2)
+        let declinedStart = try await start(declining.appointmentId, asking: true)
+        let declinedSession = declinedStart.json?["id"] as? String ?? ""
+        let running = try await send("PATCH", "/api/sessions/\(declinedSession)/status", ["status": "in_progress"])
+        try await consent.record(
+            AiConsentAnswer(decision: AiConsentEntry.declined, modality: .telehealth, consentedBy: .client),
+            patientId: declining.patientId
+        )
+        let handWritten = try await send("PATCH", "/api/sessions/\(declinedSession)/status", ["status": "scheduled"])
+        check(
+            "a decline returns the session to a hand-written note",
+            running.status == 200 && handWritten.status == 200 && handWritten.json?["status"] as? String == "scheduled",
+            "in_progress HTTP \(running.status), then scheduled HTTP \(handWritten.status) "
+                + "status=\(handWritten.json?["status"] ?? "nil")"
+        )
+        let later = try await seedVisit(videoLink: "https://video.example/room3", inHours: 3, patientId: declining.patientId)
+        let laterStart = try await start(later.appointmentId, asking: true)
+        check(
+            "after a decline, a later recorded start is refused",
+            RecordingConsent.declinedOn(statusCode: laterStart.status, body: laterStart.body) != nil,
+            "HTTP \(laterStart.status) \(laterStart.text)"
+        )
+
         // ── In person, nothing on file (unchanged) ─────────────────────────
         let office = try await seedVisit(videoLink: nil, inHours: 1)
         let inPerson = try await consent.check(appointmentId: office.appointmentId)
@@ -135,13 +164,19 @@ private struct Driver {
 
     /// A client and a 50-minute visit starting `inHours` (plus five minutes)
     /// from now, so visits seeded in one run do not overlap.
-    private func seedVisit(videoLink: String?, inHours: Double) async throws -> Visit {
-        let noise = String(UUID().uuidString.prefix(8)).lowercased()
-        let patient = try await send("POST", "/api/patients", [
-            "first_name": "Consent", "last_name": "Harness-\(noise)", "status": "active",
-        ])
-        guard let patientId = patient.json?["id"] as? String else {
-            throw Failure(description: "patient create: HTTP \(patient.status) \(patient.text)")
+    private func seedVisit(videoLink: String?, inHours: Double, patientId existing: String? = nil) async throws -> Visit {
+        let patientId: String
+        if let existing {
+            patientId = existing
+        } else {
+            let noise = String(UUID().uuidString.prefix(8)).lowercased()
+            let patient = try await send("POST", "/api/patients", [
+                "first_name": "Consent", "last_name": "Harness-\(noise)", "status": "active",
+            ])
+            guard let created = patient.json?["id"] as? String else {
+                throw Failure(description: "patient create: HTTP \(patient.status) \(patient.text)")
+            }
+            patientId = created
         }
         let start = Date().addingTimeInterval(inHours * 3600 + 5 * 60)
         let iso = ISO8601DateFormatter()

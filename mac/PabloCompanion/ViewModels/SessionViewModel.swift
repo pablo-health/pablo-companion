@@ -362,6 +362,24 @@ final class SessionViewModel {
         }
     }
 
+    /// Returns a started session to "scheduled", the state of a session whose
+    /// note is written by hand (the web starts one with `recording: false`).
+    /// Called after a client declines AI-assisted notes on the recording and
+    /// the recording is discarded, so the session never waits for audio.
+    func returnToHandWritten(_ sessionId: String) async -> Bool {
+        do {
+            let session = try await apiClient.updateSessionStatus(sessionId: sessionId, status: .scheduled)
+            updateLocal(session)
+            logger.info("Session returned to a hand-written note")
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+            logger.error("Failed to return session to a hand-written note: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     /// Transitions a session to "recording_complete" — called when recording stops.
     func endSession(_ sessionId: String) async -> Session? {
         do {

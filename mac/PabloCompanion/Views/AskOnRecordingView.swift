@@ -18,19 +18,12 @@ struct AskOnRecordingView: View {
             Text(RecordingConsentCopy.askingTitle)
                 .font(.title3.weight(.semibold))
 
-            if let retentionDays = viewModel.ask?.retentionDays {
-                Text(RecordingConsentCopy.askingPrompt)
+            if viewModel.recordingDeleted {
+                Text(RecordingConsentCopy.recordingDeleted)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                ConsentScriptLines(retentionDays: retentionDays)
-            }
-
-            if viewModel.ask?.patientId != nil {
-                answerControls
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(RecordingConsentCopy.recordOnChart)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                askContent
             }
 
             if let saveError = viewModel.saveError {
@@ -44,6 +37,24 @@ struct AskOnRecordingView: View {
         .background(Color.pabloCream)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(RecordingConsentCopy.askingTitle)
+    }
+
+    @ViewBuilder
+    private var askContent: some View {
+        if let retentionDays = viewModel.ask?.retentionDays {
+            Text(RecordingConsentCopy.askingPrompt)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            ConsentScriptLines(retentionDays: retentionDays)
+        }
+
+        if viewModel.ask?.patientId != nil {
+            answerControls
+        } else {
+            Text(RecordingConsentCopy.recordOnChart)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var answerControls: some View {
@@ -68,7 +79,14 @@ struct AskOnRecordingView: View {
 
     private var buttons: some View {
         VStack(spacing: 10) {
-            if viewModel.ask?.patientId != nil {
+            if viewModel.recordingDeleted {
+                // Only a decline that could not be saved is left to do.
+                if viewModel.saveError != nil {
+                    let declined = RecordingConsentCopy.answered(AiConsentEntry.declined, by: viewModel.giver)
+                    wideButton(declined) { onAnswer(AiConsentEntry.declined) }
+                        .disabled(viewModel.isSaving)
+                }
+            } else if viewModel.ask?.patientId != nil {
                 let agreed = RecordingConsentCopy.answered(AiConsentEntry.consented, by: viewModel.giver)
                 Button { onAnswer(AiConsentEntry.consented) } label: {
                     Text(viewModel.isSaving ? "Saving…" : agreed)

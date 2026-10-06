@@ -27,6 +27,9 @@ final class AskOnRecordingViewModel {
     var location = ""
     private(set) var isSaving = false
     private(set) var saveError: String?
+    /// The client declined and the recording was stopped and deleted; the
+    /// panel says so in place of the script.
+    private(set) var recordingDeleted = false
 
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "AskOnRecording")
 
@@ -36,6 +39,11 @@ final class AskOnRecordingViewModel {
         location = ""
         isSaving = false
         saveError = nil
+        recordingDeleted = false
+    }
+
+    func markRecordingDeleted() {
+        recordingDeleted = true
     }
 
     /// The answer as it is sent: over telehealth, by ``giver``, with the place
@@ -70,5 +78,6 @@ final class AskOnRecordingViewModel {
         ask = nil
         location = ""
         saveError = nil
+        recordingDeleted = false
     }
 }

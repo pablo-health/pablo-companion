@@ -45,6 +45,34 @@ public enum RecordingCleaner {
         }
     }
 
+    /// The client declined AI-assisted notes on the recording. Deletes every
+    /// file the session captured and every record that could lead an upload
+    /// back to it: the session → recording map entry and any queued upload.
+    /// Nothing of the session is left for the upload queue or the launch-time
+    /// sweep to send.
+    public static func discardDeclined(
+        sessionId: String,
+        audio: [SessionAudioPaths],
+        recordingStore: SessionRecordingStore,
+        uploadStore: PendingAudioUploadStore
+    ) {
+        uploadStore.remove(sessionId: sessionId)
+        recordingStore.remove(sessionId: sessionId)
+        for files in audio {
+            for path in [files.mixedPath, files.micPath, files.systemPath].compactMap(\.self) {
+                do {
+                    try FileManager.default.removeItem(atPath: path)
+                } catch CocoaError.fileNoSuchFile {
+                    // Already gone — the desired end state.
+                } catch {
+                    #if canImport(os)
+                    logger.error("Could not delete declined audio: \(error.localizedDescription)")
+                    #endif
+                }
+            }
+        }
+    }
+
     /// The mixed file captured alongside `micPath`, located by the capture's
     /// naming convention: `<base>_mic.<ext>` sits beside `<base>.<ext>`, with an
     /// optional `.enc` before the extension on both. Returns nil when no such
@@ -67,5 +95,19 @@ public enum RecordingCleaner {
 
     private static func stripEncryptedMarker(_ stem: String) -> String {
         stem.hasSuffix(".enc") ? String(stem.dropLast(4)) : stem
+    }
+}
+
+/// The files one recorded segment left on disk: the mixed file and its mic and
+/// system sidecars, when captured.
+public struct SessionAudioPaths: Equatable, Sendable {
+    public let mixedPath: String
+    public let micPath: String?
+    public let systemPath: String?
+
+    public init(mixedPath: String, micPath: String?, systemPath: String?) {
+        self.mixedPath = mixedPath
+        self.micPath = micPath
+        self.systemPath = systemPath
     }
 }

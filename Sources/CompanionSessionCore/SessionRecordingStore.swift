@@ -179,6 +179,13 @@ public struct SessionRecordingStore: Sendable {
         write(map)
     }
 
+    /// Forget a session's recording, so nothing on launch adopts it again.
+    public func remove(sessionId: String) {
+        var map = loadAll()
+        guard map.removeValue(forKey: sessionId) != nil else { return }
+        write(map)
+    }
+
     /// Persist the full map (encrypted with per-user AES-256-GCM key).
     public func write(_ map: [String: RecordingEntry]) {
         guard let encryptor = makeEncryptor(userEmail) else {
