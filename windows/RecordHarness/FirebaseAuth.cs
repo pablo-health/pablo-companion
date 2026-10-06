@@ -57,9 +57,38 @@ public sealed class FirebaseAuth(string apiKey, HttpClient? http = null)
         if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || string.IsNullOrEmpty(totpSecret))
             throw new HarnessException("TOTP fallback requires FB_EMAIL, FB_PASSWORD, FB_TOTP_SECRET");
 
-        var (idToken, newRefresh) = await SignInWithMfaAsync(email, password, totpSecret, cancellationToken);
-        return new MintResult(idToken, newRefresh, "totp-mfa");
+        // The account is shared with other test runs, and Identity Platform accepts
+        // each TOTP code once. Every client waits for the start of a fresh 30 s window
+        // before computing its code, so two sign-ins in the same half-minute send the
+        // same code and the second gets INVALID_CODE. Retry that in the next window:
+        // FreshCodeAsync waits for it, so each retry sends a different, valid code.
+        for (var usedCodeRetries = 0; ; usedCodeRetries++)
+        {
+            try
+            {
+                var (idToken, newRefresh) = await SignInWithMfaAsync(email, password, totpSecret, cancellationToken);
+                return new MintResult(idToken, newRefresh, "totp-mfa");
+            }
+            catch (HarnessException ex) when (IsCodeAlreadyUsed(ex) && usedCodeRetries < MaxUsedCodeRetries)
+            {
+                Harness.Log(
+                    "mfaSignIn:finalize refused this window's code (another sign-in used it?) — "
+                    + $"retrying in the next window ({usedCodeRetries + 1}/{MaxUsedCodeRetries})");
+            }
+        }
     }
+
+    private const int MaxUsedCodeRetries = 2;
+
+    /// <summary>
+    /// True when Identity Platform refused the TOTP code. With a correct secret and
+    /// clock that means a concurrent sign-in to the same account already spent it; a
+    /// wrong secret fails the same way on every window, so the bounded retry still
+    /// surfaces it.
+    /// </summary>
+    internal static bool IsCodeAlreadyUsed(HarnessException ex) =>
+        ex.Message.StartsWith("v2/accounts/mfaSignIn:finalize failed: 400", StringComparison.Ordinal)
+        && ex.Message.Contains("INVALID_CODE", StringComparison.Ordinal);
 
     // --- Refresh-token exchange (securetoken) ---
 
