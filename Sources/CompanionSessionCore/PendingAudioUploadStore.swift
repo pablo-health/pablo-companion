@@ -14,7 +14,7 @@ import os
 ///
 /// Each pending entry is written as AES-256-GCM encrypted JSON to
 /// `~/Library/Application Support/PabloCompanion/PendingAudioUploads/`.
-/// Keyed by `sessionId` (re-adding the same session overwrites).
+/// Keyed by `sessionId`; one entry holds every segment of the session.
 public struct PendingAudioUploadStore: Sendable {
     // MARK: - Types
 
@@ -63,9 +63,21 @@ public struct PendingAudioUploadStore: Sendable {
         /// every tick "due" once an entry was old enough.
         public var lastAttemptAt: Date?
 
+        /// Segments recorded after the first, in recording order. The fields
+        /// above describe the first segment, so an entry written before a
+        /// session could have more than one still decodes unchanged. Empty for
+        /// a single-segment session.
+        public var laterSegments: [AudioSegment]
+
+        /// Every segment of the session, in recording order.
+        public var segments: [AudioSegment] {
+            [AudioSegment(micPath: micPath, systemPath: systemPath, mixedPath: mixedPath, sampleRate: sampleRate)]
+                + laterSegments
+        }
+
         enum CodingKeys: String, CodingKey {
             case sessionId, micPath, systemPath, mixedPath, isEncrypted, createdAt, retryCount, sampleRate, state
-            case lastAttemptAt
+            case lastAttemptAt, laterSegments
         }
 
         public init(from decoder: Decoder) throws {
@@ -80,6 +92,7 @@ public struct PendingAudioUploadStore: Sendable {
             sampleRate = try c.decodeIfPresent(Double.self, forKey: .sampleRate)
             state = try c.decodeIfPresent(State.self, forKey: .state) ?? .pendingUpload
             lastAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
+            laterSegments = try c.decodeIfPresent([AudioSegment].self, forKey: .laterSegments) ?? []
         }
 
         init(
@@ -87,8 +100,10 @@ public struct PendingAudioUploadStore: Sendable {
             mixedPath: String? = nil,
             isEncrypted: Bool, createdAt: Date, retryCount: Int,
             sampleRate: Double?, state: State,
-            lastAttemptAt: Date? = nil
+            lastAttemptAt: Date? = nil,
+            laterSegments: [AudioSegment] = []
         ) {
+            self.laterSegments = laterSegments
             self.sessionId = sessionId
             self.micPath = micPath
             self.systemPath = systemPath
@@ -154,7 +169,13 @@ public struct PendingAudioUploadStore: Sendable {
 
     // MARK: - Public API
 
-    /// Enqueue an audio upload. Overwrites any existing entry for the same session.
+    /// Enqueue one segment of a session's audio.
+    ///
+    /// One entry per session, holding every segment in the order added.
+    /// Re-adding a segment already queued (same mic path) updates it in place;
+    /// a new mic path is appended as the session's next segment. Before this, a
+    /// second segment replaced the first, so a session whose capture restarted
+    /// mid-way uploaded only its last stretch.
     public func add(
         sessionId: String,
         micPath: String,
@@ -164,6 +185,25 @@ public struct PendingAudioUploadStore: Sendable {
         sampleRate: Double?
     ) {
         let existing = get(sessionId: sessionId)
+        if let existing, existing.micPath != micPath {
+            var later = existing.laterSegments
+            let previous = later.first { $0.micPath == micPath }
+            let segment = AudioSegment(
+                micPath: micPath,
+                systemPath: systemPath,
+                mixedPath: mixedPath ?? previous?.mixedPath,
+                sampleRate: sampleRate
+            )
+            if let index = later.firstIndex(where: { $0.micPath == micPath }) {
+                later[index] = segment
+            } else {
+                later.append(segment)
+            }
+            var updated = existing
+            updated.laterSegments = later
+            save(updated)
+            return
+        }
         let pending = PendingAudioUpload(
             sessionId: sessionId,
             micPath: micPath,
@@ -174,7 +214,8 @@ public struct PendingAudioUploadStore: Sendable {
             retryCount: existing?.retryCount ?? 0,
             sampleRate: sampleRate,
             state: existing?.state ?? .pendingUpload,
-            lastAttemptAt: existing?.lastAttemptAt
+            lastAttemptAt: existing?.lastAttemptAt,
+            laterSegments: existing?.laterSegments ?? []
         )
         save(pending)
     }
@@ -186,7 +227,16 @@ public struct PendingAudioUploadStore: Sendable {
             let mic = RecordingRelocation.rewrite(entry.micPath, from: old, to: new)
             let system = RecordingRelocation.rewrite(entry.systemPath, from: old, to: new)
             let mixed = RecordingRelocation.rewrite(entry.mixedPath, from: old, to: new)
-            guard mic != entry.micPath || system != entry.systemPath || mixed != entry.mixedPath else { continue }
+            let later = entry.laterSegments.map { segment in
+                AudioSegment(
+                    micPath: RecordingRelocation.rewrite(segment.micPath, from: old, to: new),
+                    systemPath: RecordingRelocation.rewrite(segment.systemPath, from: old, to: new),
+                    mixedPath: RecordingRelocation.rewrite(segment.mixedPath, from: old, to: new),
+                    sampleRate: segment.sampleRate
+                )
+            }
+            guard mic != entry.micPath || system != entry.systemPath || mixed != entry.mixedPath
+                || later != entry.laterSegments else { continue }
             save(PendingAudioUpload(
                 sessionId: entry.sessionId,
                 micPath: mic,
@@ -196,7 +246,8 @@ public struct PendingAudioUploadStore: Sendable {
                 createdAt: entry.createdAt,
                 retryCount: entry.retryCount,
                 sampleRate: entry.sampleRate,
-                state: entry.state
+                state: entry.state,
+                laterSegments: later
             ))
         }
     }

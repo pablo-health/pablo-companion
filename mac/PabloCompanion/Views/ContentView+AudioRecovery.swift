@@ -57,11 +57,13 @@ extension ContentView {
     }
 
     /// Persists every recorded segment of a session into the pending audio
-    /// upload queue. Must run while the user is still signed in — the store's
-    /// encryption is scoped to the signed-in user, so entries queued after a
-    /// sign-out would be dropped. Idempotent per session (re-adding preserves
-    /// `createdAt` / `retryCount`), so the stop flow can pre-queue defensively
-    /// before its network calls and the upload path re-queues harmlessly.
+    /// upload queue, in recording order — the queue holds them all under the
+    /// session and uploads them joined. Must run while the user is still signed
+    /// in — the store's encryption is scoped to the signed-in user, so entries
+    /// queued after a sign-out would be dropped. Idempotent per segment
+    /// (re-adding preserves `createdAt` / `retryCount`), so the stop flow can
+    /// pre-queue defensively before its network calls and the upload path
+    /// re-queues harmlessly.
     func queueSessionAudioForUpload(_ sessionId: String) {
         for segment in recordingVM.allRecordingsForSession(sessionId) {
             guard let micURL = segment.micPCMFileURL else { continue }
@@ -70,7 +72,8 @@ extension ContentView {
                 micPath: micURL.path,
                 systemPath: segment.systemPCMFileURL?.path,
                 mixedPath: segment.fileURL.path,
-                isEncrypted: segment.isEncrypted
+                isEncrypted: segment.isEncrypted,
+                sampleRate: segment.sampleRate
             )
         }
     }
@@ -85,7 +88,9 @@ extension ContentView {
             let recordingToSession = Dictionary(
                 uniqueKeysWithValues: recordingVM.sessionRecordingMap.map { ($1, $0) }
             )
-            for orphan in orphans {
+            // Oldest first: the scanner lists newest first, and a session's
+            // segments are joined in the order they are queued.
+            for orphan in orphans.sorted(by: { $0.createdAt < $1.createdAt }) {
                 guard let sessionId = recordingToSession[orphan.id] else { continue }
                 guard let micURL = orphan.micPCMFileURL else { continue }
                 transcriptionVM.enqueuePendingAudioUpload(

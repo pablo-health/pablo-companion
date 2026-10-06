@@ -2,15 +2,6 @@ import CompanionSessionCore
 import Foundation
 import os
 
-// MARK: - DecryptedPCMPaths
-
-/// Resolved paths after decrypting encrypted PCM sidecars for upload.
-private struct DecryptedPCMPaths {
-    let micPath: String
-    let systemPath: String?
-    let tempFiles: [URL]
-}
-
 // MARK: - TranscriptionState
 
 enum TranscriptionState: Sendable {
@@ -140,20 +131,15 @@ final class TranscriptionViewModel {
             logger.info("Skipping cloud transcription: no session ID")
             return
         }
-        Task { await uploadAudioToBackend(recording, sessionId: sessionId) }
+        Task { await uploadAudioToBackend([recording], sessionId: sessionId) }
     }
 
-    /// Uploads audio files for a set of recordings to the backend for server-side transcription.
+    /// Uploads every segment of a session's recording, in order, as one upload.
     func uploadAudioSegments(_ recordings: [LocalRecording], sessionId: String) async {
         guard autoTranscribe else { return }
         let viable = recordings.filter { $0.micPCMFileURL != nil }
         guard !viable.isEmpty else { return }
-
-        // For cloud upload, use the last recording's audio files (multi-segment will be
-        // concatenated on the backend in a future iteration).
-        if let recording = viable.last {
-            await uploadAudioToBackend(recording, sessionId: sessionId)
-        }
+        await uploadAudioToBackend(viable, sessionId: sessionId)
     }
 
     /// Uploads the therapist (mic) and client (system) audio to the backend.
@@ -163,34 +149,40 @@ final class TranscriptionViewModel {
     /// a recovery anchor on disk that `retryPendingAudioUploads` can drain
     /// on the next launch. Mirrors Windows
     /// `TranscriptionViewModel.UploadAudioAsync` (cs:70-115).
-    private func uploadAudioToBackend(_ recording: LocalRecording, sessionId: String) async {
-        guard let micURL = recording.micPCMFileURL else {
-            states[recording.id] = .failed(message: "No mic audio file available")
-            return
+    ///
+    /// - Parameter segments: the session's recordings in recording order. The
+    ///   queue holds them all under the one session, and the drain joins them
+    ///   into one file per channel (`SessionAudioStager`).
+    private func uploadAudioToBackend(_ segments: [LocalRecording], sessionId: String) async {
+        let ids = segments.map(\.id)
+        // Enqueue BEFORE any network call. Idempotent — re-adding a queued
+        // segment preserves `createdAt` and `retryCount`.
+        for recording in segments {
+            guard let micURL = recording.micPCMFileURL else {
+                states[recording.id] = .failed(message: "No mic audio file available")
+                return
+            }
+            audioStore.add(
+                sessionId: sessionId,
+                micPath: micURL.path,
+                systemPath: recording.systemPCMFileURL?.path,
+                isEncrypted: recording.isEncrypted,
+                sampleRate: recording.sampleRate
+            )
         }
-
-        // Enqueue BEFORE any network call. Idempotent — re-adding the same
-        // sessionId preserves `createdAt` and `retryCount`.
-        audioStore.add(
-            sessionId: sessionId,
-            micPath: micURL.path,
-            systemPath: recording.systemPCMFileURL?.path,
-            isEncrypted: recording.isEncrypted,
-            sampleRate: recording.sampleRate
-        )
 
         // Cheap read-only liveness probe before moving the audio. If the
         // server-side session has already idled out, the upload can only 401 —
         // surface the re-auth flow now (verifySessionAlive fires it) and leave
         // the entry queued. It drains via the retry loop after sign-in.
         guard await apiClient.verifySessionAlive() else {
-            states[recording.id] = .failed(message: "Session expired — sign in to resume the upload")
+            setStates(ids, .failed(message: "Session expired — sign in to resume the upload"))
             logger.warning("Skipping audio upload: server session is no longer active")
             refreshPendingCounts()
             return
         }
 
-        states[recording.id] = .running
+        setStates(ids, .running)
         logger.info("Uploading audio to backend for server-side transcription")
 
         // Same drain the retry loop uses, so the live path cannot diverge from
@@ -198,11 +190,17 @@ final class TranscriptionViewModel {
         let succeeded = await coordinator.forceDrain(only: sessionId) == 1
 
         if succeeded {
-            states[recording.id] = .done(transcript: "")
+            setStates(ids, .done(transcript: ""))
         } else {
-            states[recording.id] = .failed(message: "Audio upload failed — will retry later")
+            setStates(ids, .failed(message: "Audio upload failed — will retry later"))
         }
         refreshPendingCounts()
+    }
+
+    private func setStates(_ ids: [UUID], _ state: TranscriptionState) {
+        for id in ids {
+            states[id] = state
+        }
     }
 
     /// The tested drain: backoff ladder, retry cap, and cleanup after a
@@ -220,12 +218,7 @@ final class TranscriptionViewModel {
                 try await self.upload(entry)
             },
             cleanup: { entry in
-                RecordingCleaner.removeAudio(
-                    micPath: entry.micPath,
-                    systemPath: entry.systemPath,
-                    mixedPath: entry.mixedPath
-                        ?? RecordingCleaner.siblingMixedFile(forMicPath: entry.micPath)
-                )
+                RecordingCleaner.removeAudio(of: entry.segments)
             },
             checkOutcome: { [apiClient] sessionId in
                 // Local audio is PHI; it is deleted only once the backend has
@@ -251,21 +244,30 @@ final class TranscriptionViewModel {
     /// One upload attempt. Throws on failure so the coordinator can count the
     /// retry; the `INVALID_STATUS` self-heal lives in `AudioUploadClient`.
     private func upload(_ entry: PendingAudioUploadStore.PendingAudioUpload) async throws {
-        let pcm = try decryptPCMIfNeeded(
-            micPath: entry.micPath,
-            systemPath: entry.systemPath,
-            isEncrypted: entry.isEncrypted
+        let email = userEmail
+        let staged = try SessionAudioStager.stage(
+            entry.segments,
+            fallbackRate: Self.fallbackSampleRate,
+            decrypt: { path in
+                guard entry.isEncrypted else { return (URL(fileURLWithPath: path), false) }
+                let url = try RecordingEncryptor.decryptPCMToTempFile(
+                    at: URL(fileURLWithPath: path),
+                    userEmail: email
+                )
+                return (url, true)
+            }
         )
-        defer { pcm.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
+        defer { staged.tempFiles.forEach { RecordingEncryptor.cleanupTempFile($0) } }
 
         _ = try await apiClient.uploadAudioWithSelfHeal(
             sessionId: entry.sessionId,
-            therapistAudioURL: URL(fileURLWithPath: pcm.micPath),
-            clientAudioURL: pcm.systemPath.map { URL(fileURLWithPath: $0) },
+            therapistAudioURL: staged.micURL,
+            clientAudioURL: staged.systemURL,
             // The capture rate is negotiated at runtime (Bluetooth HFP can drop
             // the mic to 8/16/24 kHz), so stamp the WAV with the rate the
-            // capture actually used, not a hardcoded 48 kHz.
-            sampleRate: Int(entry.sampleRate ?? Self.fallbackSampleRate),
+            // capture actually used, not a hardcoded 48 kHz. A joined session
+            // is at the rate every segment was brought to.
+            sampleRate: Int(staged.sampleRate),
             onProgress: { _ in }
         )
     }
@@ -332,42 +334,6 @@ final class TranscriptionViewModel {
             mixedPath: mixedPath,
             isEncrypted: isEncrypted,
             sampleRate: sampleRate
-        )
-    }
-
-    private func decryptPCMIfNeeded(
-        micPath: String,
-        systemPath: String?,
-        isEncrypted: Bool
-    ) throws -> DecryptedPCMPaths {
-        var tempFiles: [URL] = []
-
-        let resolvedMic: String
-        if isEncrypted {
-            let micURL = URL(fileURLWithPath: micPath)
-            let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: micURL, userEmail: userEmail)
-            tempFiles.append(tempURL)
-            resolvedMic = tempURL.path
-            logger.info("Decrypted mic PCM to temp file")
-        } else {
-            resolvedMic = micPath
-        }
-
-        let resolvedSystem: String?
-        if isEncrypted, let systemPath {
-            let systemURL = URL(fileURLWithPath: systemPath)
-            let tempURL = try RecordingEncryptor.decryptPCMToTempFile(at: systemURL, userEmail: userEmail)
-            tempFiles.append(tempURL)
-            resolvedSystem = tempURL.path
-            logger.info("Decrypted system PCM to temp file")
-        } else {
-            resolvedSystem = systemPath
-        }
-
-        return DecryptedPCMPaths(
-            micPath: resolvedMic,
-            systemPath: resolvedSystem,
-            tempFiles: tempFiles
         )
     }
 }
