@@ -22,22 +22,44 @@ import FoundationNetworking
 ///     hand-written note, and a later recorded start is refused;
 ///   - the in-person visit reads as "not asked" and a plain start is accepted.
 ///
+/// The practice's setting and retention window are put back as they were when
+/// the run ends, pass or fail, so a run against a shared test practice leaves
+/// no trace on the other tests that use it.
+///
 /// Environment:
 ///   PRACTICE_BASE_URL       backend base URL
-///   PRACTICE_BEARER_TOKEN   the clinician's ID token
+///   PRACTICE_BEARER_TOKEN   the clinician's ID token; or, to sign in the way
+///                           the record scenario does, FB_API_KEY with
+///                           FB_REFRESH_TOKEN or FB_EMAIL + FB_PASSWORD +
+///                           FB_TOTP_SECRET
 ///   CONSENT_RETENTION_DAYS  optional; e.g. 0 for "deleted once signed"
 enum ConsentScenario {
     static func run(env: [String: String]) async {
         let baseURL = env["PRACTICE_BASE_URL"] ?? "https://app.pablo.health"
-        guard let token = env["PRACTICE_BEARER_TOKEN"], !token.isEmpty else {
-            PracticeHarness.fail("PRACTICE_BEARER_TOKEN is required for the consent scenario.")
-        }
         let retention = env["CONSENT_RETENTION_DAYS"].flatMap(Int.init)
         do {
+            let token = try await bearerToken(env: env)
             try await Driver(baseURL: baseURL, token: token, retentionDays: retention).run()
         } catch {
             PracticeHarness.fail("consent scenario failed: \(error)")
         }
+    }
+
+    private static func bearerToken(env: [String: String]) async throws -> String {
+        if let preset = env["PRACTICE_BEARER_TOKEN"], !preset.isEmpty {
+            return preset
+        }
+        guard let apiKey = env["FB_API_KEY"], !apiKey.isEmpty else {
+            PracticeHarness.fail("Set PRACTICE_BEARER_TOKEN, or FB_API_KEY to sign in, for the consent scenario.")
+        }
+        let auth = try await FirebaseAuth(apiKey: apiKey).mint(
+            refreshToken: env["FB_REFRESH_TOKEN"],
+            email: env["FB_EMAIL"],
+            password: env["FB_PASSWORD"],
+            totpSecret: env["FB_TOTP_SECRET"]
+        )
+        log("Signed in via \(auth.mode)")
+        return auth.idToken
     }
 
     static func log(_ message: String) {
@@ -55,6 +77,43 @@ private struct Driver {
     }
 
     func run() async throws {
+        let before = try await send("GET", "/api/users/me/practice/ai-notes-consent")
+        guard let askedBefore = before.json?["ask_clients_about_ai_notes"] as? Bool,
+              let retentionBefore = before.json?["audio_retention_days"] as? Int
+        else {
+            throw Failure(description: "reading the practice's setting: HTTP \(before.status) \(before.text)")
+        }
+        do {
+            try await checks()
+        } catch {
+            await restore(asked: askedBefore, retentionDays: retentionBefore)
+            throw error
+        }
+        await restore(asked: askedBefore, retentionDays: retentionBefore)
+    }
+
+    /// Put the practice's setting and retention window back as they were.
+    /// Logged rather than thrown, so a failure here never hides the checks'.
+    private func restore(asked: Bool, retentionDays before: Int) async {
+        do {
+            let setting = try await send(
+                "PUT", "/api/users/me/practice/ai-notes-consent", ["ask_clients_about_ai_notes": asked]
+            )
+            var restored = (200 ... 299).contains(setting.status)
+            if retentionDays != nil {
+                let retention = try await send(
+                    "PUT", "/api/users/me/practice/audio-retention", ["audio_retention_days": before]
+                )
+                restored = restored && (200 ... 299).contains(retention.status)
+            }
+            let outcome = restored ? "Restored" : "FAILED to restore"
+            ConsentScenario.log("\(outcome) the practice's setting (asking: \(asked))")
+        } catch {
+            ConsentScenario.log("FAILED to restore the practice's setting: \(error)")
+        }
+    }
+
+    private func checks() async throws {
         var failures = 0
         func check(_ name: String, _ ok: Bool, _ detail: String) {
             ConsentScenario.log("\(ok ? "PASS" : "FAIL")  \(name) — \(detail)")
