@@ -1,0 +1,132 @@
+name: Capture soak
+
+# A 50-minute recording through the real capture graph, then the real upload,
+# against the development backend: the record harness (PRACTICE_SCENARIO=record)
+# with RECORD_SECONDS=3000. It proves the capture buffers and the upload queue
+# over a session-length run: no dropped samples, both channels live to the end,
+# queued before upload, uploaded, local audio deleted.
+#
+# It stops at "transcribing" (no SOAP poll). The server side of a long visit
+# (transcription and drafting of 50 minutes) is soaked separately.
+#
+# GitHub-hosted macOS: free for a public repository, and it never contends with
+# a self-hosted runner. No hardware key on a hosted VM, so the harness's
+# software device key goes in a throwaway keychain (below).
+#
+# Triggers: schedule and workflow_dispatch ONLY. Never pull_request: this is a
+# public repository, and a fork's pull request must never reach the cloud
+# credentials or the development backend.
+#
+# Credentials: keyless (Workload Identity Federation) to the development
+# project, as a service account that can read only the pinned test user's
+# four sign-in secrets. Read through the Secret Manager REST API with the
+# access token the auth step mints, so the image needs no gcloud.
+
+on:
+  schedule:
+    # Sunday 08:00 UTC: overnight in the US.
+    - cron: '0 8 * * 0'
+  workflow_dispatch:
+    inputs:
+      record_seconds:
+        description: "Capture length in seconds (3000 = 50 min)"
+        required: false
+        default: "3000"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: capture-soak
+  cancel-in-progress: false
+
+env:
+  DEV_PROJECT: pablohealth-dev
+  DEV_BASE: https://dev.pablo.health
+  DEV_WIF: projects/1065989021055/locations/global/workloadIdentityPools/github-actions/providers/github
+  # Read-only on the four e2e sign-in secrets; see the PR that added this file.
+  DEV_SA: companion-e2e@pablohealth-dev.iam.gserviceaccount.com
+
+jobs:
+  capture-soak:
+    name: 50-minute capture and upload (dev)
+    runs-on: macos-latest
+    # Build ~5 min, capture in real time (50 min), upload a few minutes.
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ env.DEV_WIF }}
+          service_account: ${{ env.DEV_SA }}
+          token_format: access_token
+
+      - name: Fetch the pinned test user's sign-in secrets
+        env:
+          TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          fetch() {
+            curl -fsS -H "Authorization: Bearer $TOKEN" \
+              "https://secretmanager.googleapis.com/v1/projects/$DEV_PROJECT/secrets/$1/versions/latest:access" \
+              | python3 -c 'import base64,json,sys; print(base64.b64decode(json.load(sys.stdin)["payload"]["data"]).decode())'
+          }
+          FB_API_KEY=$(fetch e2e-firebase-api-key)
+          FB_EMAIL=$(fetch e2e-dev-pinned-email)
+          FB_PASSWORD=$(fetch e2e-dev-pinned-password)
+          FB_TOTP_SECRET=$(fetch e2e-dev-pinned-totp-secret)
+          for v in "$FB_API_KEY" "$FB_EMAIL" "$FB_PASSWORD" "$FB_TOTP_SECRET"; do
+            echo "::add-mask::$v"
+          done
+          {
+            echo "FB_API_KEY=$FB_API_KEY"
+            echo "FB_EMAIL=$FB_EMAIL"
+            echo "FB_PASSWORD=$FB_PASSWORD"
+            echo "FB_TOTP_SECRET=$FB_TOTP_SECRET"
+          } >> "$GITHUB_ENV"
+
+      - name: Resolve backend base URL
+        id: backend
+        run: |
+          set -euo pipefail
+          API_URL=$(curl -fsS "$DEV_BASE/api/config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["apiUrl"])')
+          test -n "$API_URL"
+          echo "base_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Synthesize two-speaker fixtures (macOS say)
+        id: fixtures
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/record-fixtures"
+          python3 scripts/gen_record_fixture.py "$DIR"
+          echo "mic=$DIR/therapist.wav" >> "$GITHUB_OUTPUT"
+          echo "system=$DIR/client.wav" >> "$GITHUB_OUTPUT"
+
+      - name: Provision a throwaway unlocked keychain for the harness
+        # The harness stores its software device key with SecItemAdd; a hosted
+        # runner has no unlocked default keychain and no Secure Enclave.
+        run: |
+          set -euo pipefail
+          KC="$RUNNER_TEMP/harness.keychain-db"
+          PW="$(uuidgen)"
+          security create-keychain -p "$PW" "$KC"
+          security set-keychain-settings -lut 7200 "$KC"
+          security unlock-keychain -p "$PW" "$KC"
+          # shellcheck disable=SC2046  # one keychain path per word, intentionally split
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d ' "')
+          security default-keychain -d user -s "$KC"
+
+      - name: Run the record harness (50-minute capture, then upload)
+        env:
+          PRACTICE_SCENARIO: record
+          PRACTICE_BASE_URL: ${{ steps.backend.outputs.base_url }}
+          RECORD_MIC_AUDIO: ${{ steps.fixtures.outputs.mic }}
+          RECORD_SYSTEM_AUDIO: ${{ steps.fixtures.outputs.system }}
+          RECORD_SECONDS: ${{ inputs.record_seconds || '3000' }}
+          RECORD_EXPECT_SOAP: "0"
+        run: |
+          swift --version
+          swift run practice-harness
