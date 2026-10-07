@@ -8,7 +8,7 @@ import SwiftUI
 /// preferences / version in a footer. Sized ~480×360 to be glanced at, not
 /// lived in. No tabs, no session/patient lists.
 struct MinimalMainView: View {
-    private enum Layout {
+    enum Layout {
         static let pageInset: CGFloat = 32
         static let sectionSpacing: CGFloat = 16
         static let cardRadius: CGFloat = 12
@@ -41,6 +41,10 @@ struct MinimalMainView: View {
     var isUploadingNow = false
     var onRestartRecording: () -> Void = {}
     var onUploadNow: () -> Void = {}
+    /// Sign-in could not register this Mac; see `DeviceLinkNote`.
+    var deviceLinkFailed = false
+    var isRelinkingDevice = false
+    var onRetryDeviceLink: () -> Void = {}
     let onStartAppointment: (Appointment) -> Void
     let onPauseRecording: () -> Void
     let onResumeRecording: () -> Void
@@ -59,6 +63,7 @@ struct MinimalMainView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 12)
             header
+            deviceLinkNote
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 appointmentSection(now: context.date)
                     .padding(.top, Layout.sectionSpacing)
