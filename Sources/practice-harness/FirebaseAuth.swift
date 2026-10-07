@@ -17,8 +17,16 @@ import FoundationNetworking
 struct FirebaseAuth {
     let apiKey: String
 
-    private let idpBase = "https://identitytoolkit.googleapis.com"
-    private let secureTokenBase = "https://securetoken.googleapis.com"
+    /// `FIREBASE_AUTH_EMULATOR_HOST` (host:port, the variable the Firebase SDKs
+    /// read) points sign-in at the Auth emulator, so the harness can run
+    /// against a local stack. The emulator serves both APIs under its own host.
+    private static let emulatorHost = ProcessInfo.processInfo.environment["FIREBASE_AUTH_EMULATOR_HOST"]
+        .flatMap { $0.isEmpty ? nil : $0 }
+
+    private let idpBase = emulatorHost.map { "http://\($0)/identitytoolkit.googleapis.com" }
+        ?? "https://identitytoolkit.googleapis.com"
+    private let secureTokenBase = emulatorHost.map { "http://\($0)/securetoken.googleapis.com" }
+        ?? "https://securetoken.googleapis.com"
 
     struct MintResult {
         let idToken: String

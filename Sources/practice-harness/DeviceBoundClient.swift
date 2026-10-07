@@ -91,11 +91,14 @@ struct DeviceBoundClient {
     /// Authenticated request carrying the device binding exactly like the app:
     /// `Bearer` + `X-Install-ID` + a fresh `DPoP` proof (or a caller-supplied
     /// proof for replay tests, or no proof at all for the negative test).
+    /// `rawBody` sends bytes a shared client built (the session-start body),
+    /// so the wire matches the app's exactly.
     func request(
         _ method: String,
         path: String,
         idToken: String,
         jsonBody: [String: Any]? = nil,
+        rawBody: Data? = nil,
         presetProof: String? = nil,
         omitProof: Bool = false
     ) async throws -> Response {
@@ -113,6 +116,9 @@ struct DeviceBoundClient {
         if let jsonBody {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: jsonBody)
+        } else if let rawBody {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = rawBody
         }
         return try await send(request)
     }

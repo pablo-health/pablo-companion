@@ -32,6 +32,8 @@ import FoundationNetworking
 ///                           the record scenario does, FB_API_KEY with
 ///                           FB_REFRESH_TOKEN or FB_EMAIL + FB_PASSWORD +
 ///                           FB_TOTP_SECRET
+///   REFRESH_OUT             optional; where to write the refresh token after
+///                           signing in, for the next scenario in a run
 ///   CONSENT_RETENTION_DAYS  optional; e.g. 0 for "deleted once signed"
 enum ConsentScenario {
     static func run(env: [String: String]) async {
@@ -59,6 +61,9 @@ enum ConsentScenario {
             totpSecret: env["FB_TOTP_SECRET"]
         )
         log("Signed in via \(auth.mode)")
+        if let refreshOut = env["REFRESH_OUT"], !refreshOut.isEmpty {
+            try? auth.refreshToken.write(toFile: refreshOut, atomically: true, encoding: .utf8)
+        }
         return auth.idToken
     }
 
@@ -125,14 +130,28 @@ private struct Driver {
             _ = try await send("PUT", "/api/users/me/practice/audio-retention", ["audio_retention_days": retentionDays])
         }
 
+        // The window as the practice holds it, read here rather than through
+        // the client under test, so the script is checked against the setting.
+        let setting = try await send("GET", "/api/users/me/practice/ai-notes-consent")
+        let settingDays = setting.json?["audio_retention_days"] as? Int
+
         let consent = RecordingConsentClient(baseURLString: baseURL, token: { token }, attachBinding: { _ in })
 
         // ── Telehealth, nothing on file ─────────────────────────────────────
         let remote = try await seedVisit(videoLink: "https://video.example/room", inHours: 0)
         let read = try await consent.check(appointmentId: remote.appointmentId)
-        check("telehealth visit offers only asking on the recording", read.consent == .askOnRecording, "\(read.consent)")
-        let script = ConsentScript.lines(retentionDays: read.audioRetentionDays)
-        check("script names the practice's window", true, "retention \(read.audioRetentionDays): \(script[2])")
+        check(
+            "telehealth visit offers only asking on the recording",
+            read.consent == .askOnRecording,
+            "\(read.consent)"
+        )
+        let spoken = ConsentScript.lines(retentionDays: read.audioRetentionDays).joined(separator: " ")
+        let wording = settingDays.map(RetentionWording.expected(days:)) ?? "(no setting read)"
+        check(
+            "script names the practice's window",
+            read.audioRetentionDays == settingDays && spoken.contains(wording),
+            "setting \(settingDays.map(String.init) ?? "nil") days, expected \"\(wording)\""
+        )
 
         let plain = try await start(remote.appointmentId, asking: false)
         check(
@@ -183,7 +202,11 @@ private struct Driver {
             "in_progress HTTP \(running.status), then scheduled HTTP \(handWritten.status) "
                 + "status=\(handWritten.json?["status"] ?? "nil")"
         )
-        let later = try await seedVisit(videoLink: "https://video.example/room3", inHours: 3, patientId: declining.patientId)
+        let later = try await seedVisit(
+            videoLink: "https://video.example/room3",
+            inHours: 3,
+            patientId: declining.patientId
+        )
         let laterStart = try await start(later.appointmentId, asking: true)
         check(
             "after a decline, a later recorded start is refused",
@@ -194,9 +217,17 @@ private struct Driver {
         // ── In person, nothing on file (unchanged) ─────────────────────────
         let office = try await seedVisit(videoLink: nil, inHours: 1)
         let inPerson = try await consent.check(appointmentId: office.appointmentId)
-        check("in-person visit still offers agreed today / record anyway", inPerson.consent == .notAsked, "\(inPerson.consent)")
+        check(
+            "in-person visit still offers agreed today / record anyway",
+            inPerson.consent == .notAsked,
+            "\(inPerson.consent)"
+        )
         let officeStart = try await start(office.appointmentId, asking: false)
-        check("plain in-person start is accepted", (200 ... 299).contains(officeStart.status), "HTTP \(officeStart.status)")
+        check(
+            "plain in-person start is accepted",
+            (200 ... 299).contains(officeStart.status),
+            "HTTP \(officeStart.status)"
+        )
 
         guard failures == 0 else { throw Failure(description: "\(failures) check(s) failed") }
         ConsentScenario.log("ALL CHECKS PASSED")
@@ -223,7 +254,11 @@ private struct Driver {
 
     /// A client and a 50-minute visit starting `inHours` (plus five minutes)
     /// from now, so visits seeded in one run do not overlap.
-    private func seedVisit(videoLink: String?, inHours: Double, patientId existing: String? = nil) async throws -> Visit {
+    private func seedVisit(
+        videoLink: String?,
+        inHours: Double,
+        patientId existing: String? = nil
+    ) async throws -> Visit {
         let patientId: String
         if let existing {
             patientId = existing
@@ -237,22 +272,28 @@ private struct Driver {
             }
             patientId = created
         }
-        let start = Date().addingTimeInterval(inHours * 3600 + 5 * 60)
+        // The test practice is shared with other runs, and the server refuses
+        // an overlapping appointment: a taken slot moves the visit on an hour.
         let iso = ISO8601DateFormatter()
-        var body: [String: Any] = [
-            "patient_id": patientId,
-            "title": "Consent harness",
-            "start_at": iso.string(from: start),
-            "end_at": iso.string(from: start.addingTimeInterval(50 * 60)),
-            "duration_minutes": 50,
-            "session_type": "individual",
-        ]
-        if let videoLink { body["video_link"] = videoLink }
-        let appointment = try await send("POST", "/api/appointments", body)
-        guard let appointmentId = appointment.json?["id"] as? String else {
-            throw Failure(description: "appointment create: HTTP \(appointment.status) \(appointment.text)")
+        for shift in 0 ..< 24 {
+            let start = Date().addingTimeInterval((inHours + Double(shift)) * 3600 + 5 * 60)
+            var body: [String: Any] = [
+                "patient_id": patientId,
+                "title": "Consent harness",
+                "start_at": iso.string(from: start),
+                "end_at": iso.string(from: start.addingTimeInterval(50 * 60)),
+                "duration_minutes": 50,
+                "session_type": "individual",
+            ]
+            if let videoLink { body["video_link"] = videoLink }
+            let appointment = try await send("POST", "/api/appointments", body)
+            if appointment.status == 409 { continue }
+            guard let appointmentId = appointment.json?["id"] as? String else {
+                throw Failure(description: "appointment create: HTTP \(appointment.status) \(appointment.text)")
+            }
+            return Visit(patientId: patientId, appointmentId: appointmentId)
         }
-        return Visit(patientId: patientId, appointmentId: appointmentId)
+        throw Failure(description: "no free slot in the 24 hours after \(inHours)h")
     }
 
     /// `POST /api/appointments/{id}/start-session` with exactly the body the
