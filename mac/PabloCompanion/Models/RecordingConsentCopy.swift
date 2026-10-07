@@ -7,7 +7,7 @@ import Foundation
 /// it says "client".
 enum RecordingConsentCopy {
     static let declinedTitle = "AI-assisted notes declined"
-    static let notAskedTitle = "No consent on file"
+    static let notAskedTitle = "No consent for AI-assisted notes"
     /// Nothing on file, in person or over telehealth: the only way to record is
     /// to ask once recording starts, so the answer is on the recording. The
     /// script is shown then, not before; its first line says recording has
