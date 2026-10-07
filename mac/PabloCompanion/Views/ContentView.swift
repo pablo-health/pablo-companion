@@ -199,6 +199,12 @@ struct ContentView: View {
     private var nativeDashboardShell: some View {
         VStack(spacing: 0) {
             SubscriptionBannerView(viewModel: subscriptionVM)
+            if authVM.deviceLinkFailed {
+                DeviceLinkNote(isRetrying: authVM.isRelinkingDevice) {
+                    Task { await authVM.retryDeviceLink() }
+                }
+                .padding()
+            }
             TabView(selection: $selectedTab) {
                 todayTab
                 sessionsTab
@@ -254,6 +260,9 @@ struct ContentView: View {
             isUploadingNow: transcriptionVM.isUploadingNow,
             onRestartRecording: { Task { await recordingVM.retryCapture() } },
             onUploadNow: { Task { await forceRetryAllPendingUploads() } },
+            deviceLinkFailed: authVM.deviceLinkFailed,
+            isRelinkingDevice: authVM.isRelinkingDevice,
+            onRetryDeviceLink: { Task { await authVM.retryDeviceLink() } },
             onStartAppointment: { requestStart($0) },
             onPauseRecording: { recordingVM.pauseRecording() },
             onResumeRecording: { recordingVM.resumeRecording() },

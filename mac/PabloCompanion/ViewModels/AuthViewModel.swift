@@ -97,6 +97,14 @@ final class AuthViewModel {
         isAdvancedVisible = true
     }
 
+    // MARK: - Device Link (storage; behaviour in AuthViewModel+DeviceLink.swift)
+
+    /// True when the last sign-in could not register this Mac with the server.
+    var deviceLinkFailed = false
+
+    /// A retry from `retryDeviceLink()` is in flight.
+    var isRelinkingDevice = false
+
     // MARK: - Sign In
 
     /// Starts the OAuth sign-in flow using a loopback redirect (RFC 8252 §7.3).
@@ -120,8 +128,10 @@ final class AuthViewModel {
                 return
             }
 
-            authState = .authenticating
-            errorMessage = nil
+            if !isRelinkingDevice {
+                authState = .authenticating
+                errorMessage = nil
+            }
 
             NSWorkspace.shared.open(url)
             logger.info("Opened auth URL in browser")
@@ -132,11 +142,9 @@ final class AuthViewModel {
 
             await exchangeCodeForTokens(code: code, redirectURI: server.redirectURI)
         } catch let error as LoopbackServer.ServerError {
-            errorMessage = error.errorDescription
-            authState = .unauthenticated
+            failSignIn(error.errorDescription)
         } catch {
-            errorMessage = "Sign-in failed. Please try again."
-            authState = .unauthenticated
+            failSignIn("Sign-in failed. Please try again.")
             logger.error("Sign-in error: \(error.localizedDescription)")
         }
 
@@ -152,8 +160,7 @@ final class AuthViewModel {
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
               Self.isValidAuthCode(code)
         else {
-            errorMessage = "Invalid or missing authorization code in callback."
-            authState = .unauthenticated
+            failSignIn("Invalid or missing authorization code in callback.")
             return nil
         }
 
@@ -163,8 +170,7 @@ final class AuthViewModel {
               let returnedState,
               PKCEHelper.constantTimeEquals(expectedState, returnedState)
         else {
-            errorMessage = "Sign-in failed. Please try again."
-            authState = .unauthenticated
+            failSignIn("Sign-in failed. Please try again.")
             logger.error("OAuth state mismatch on callback")
             return nil
         }
@@ -178,6 +184,7 @@ final class AuthViewModel {
         tokenExpiryTimestamp = 0
         authState = .unauthenticated
         errorMessage = nil
+        deviceLinkFailed = false
         logger.info("User signed out")
     }
 
@@ -295,8 +302,7 @@ final class AuthViewModel {
     private func exchangeCodeForTokens(code: String, redirectURI: String) async {
         let base = authServerURL.trimmingCharacters(in: .init(charactersIn: "/"))
         guard let exchangeURL = URL(string: "\(base)/api/auth/native/exchange") else {
-            errorMessage = "Invalid auth server URL."
-            authState = .unauthenticated
+            failSignIn("Invalid auth server URL.")
             return
         }
 
@@ -318,27 +324,30 @@ final class AuthViewModel {
         // the required device_public_key_jwk + key_storage); a partial object
         // would 422 the whole exchange. So attach it only when we can build a
         // complete payload, and omit it otherwise rather than send a partial.
+        // An omitted payload still counts as a failed enrollment (see
+        // `DeviceEnrollment.outcome`), so the clinician hears about it.
         let installID = KeychainManager.getOrCreateInstallID()
-        if let enrollment = DeviceEnrollment.payload(installID: installID) {
+        let enrollment = DeviceEnrollment.payload(installID: installID)
+        if let enrollment {
             body["enrollment"] = enrollment
+        } else {
+            logger.error("Device enrollment payload unavailable; no device key")
         }
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            try handleExchangeResponse(data: data, response: response)
+            try handleExchangeResponse(data: data, response: response, sentEnrollment: enrollment != nil)
         } catch let error as ExchangeError {
-            errorMessage = error.errorDescription
-            authState = .unauthenticated
+            failSignIn(error.errorDescription)
         } catch {
-            errorMessage = "Network error during sign in. Please try again."
-            authState = .unauthenticated
+            failSignIn("Network error during sign in. Please try again.")
             logger.error("Code exchange failed: \(error.localizedDescription)")
         }
     }
 
-    private func handleExchangeResponse(data: Data, response: URLResponse) throws {
+    private func handleExchangeResponse(data: Data, response: URLResponse, sentEnrollment: Bool) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ExchangeError.invalidResponse
         }
@@ -365,6 +374,15 @@ final class AuthViewModel {
 
         if let expiry = extractExpiry(from: idToken) {
             tokenExpiryTimestamp = expiry.timeIntervalSince1970
+        }
+
+        switch DeviceEnrollment.outcome(sentPayload: sentEnrollment, exchangeResponse: json) {
+        case .enrolled: deviceLinkFailed = false
+        case .failed: deviceLinkFailed = true
+        case .unreported: break
+        }
+        if deviceLinkFailed {
+            logger.error("Device enrollment did not complete")
         }
 
         authState = .authenticated(email: email)

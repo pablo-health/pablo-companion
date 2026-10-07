@@ -36,6 +36,29 @@ public enum DeviceEnrollment {
         ]
     }
 
+    /// Whether this install ended up registered after a code exchange.
+    public enum Outcome: Equatable, Sendable {
+        case enrolled
+        /// No payload could be built, or the server rejected it. The web
+        /// dashboard will not recognise this Mac until a later attempt works.
+        case failed
+        /// The server did not say. Older servers omit the field; there is
+        /// nothing to show the clinician in that case.
+        case unreported
+    }
+
+    /// Reads the exchange response's `enrollment` field. `sentPayload` is
+    /// false when `payload(installID:)` returned nil and the exchange went out
+    /// without one, which is a failure whatever the server says.
+    public static func outcome(sentPayload: Bool, exchangeResponse json: [String: Any]) -> Outcome {
+        guard sentPayload else { return .failed }
+        switch json["enrollment"] as? String {
+        case "enrolled": return .enrolled
+        case "failed": return .failed
+        default: return .unreported
+        }
+    }
+
     /// SHA-256 hex (lowercase) of the local hostname. Returns the hash of an empty
     /// string when no hostname is available — never the raw hostname.
     public static func hostnameHash() -> String {
