@@ -9,13 +9,15 @@ import SwiftUI
 struct OnRecordingAsk: Equatable {
     let patientId: String?
     let retentionDays: Int?
+    /// Where the session is; the answer is saved as given there.
+    let modality: AiConsentModality
 }
 
 extension ContentView {
     /// Start from the companion's own window (the next-appointment card, or
     /// the native dashboard). A client who is clear starts at once, as before;
-    /// a declined client, or one nobody has asked yet, gets the confirmation
-    /// sheet instead.
+    /// a declined client, or one nobody has asked yet ("Start recording and ask" or "Don't
+    /// record"), gets the confirmation sheet instead.
     func requestStart(_ appointment: Appointment) {
         guard startingAppointmentId == nil, pendingLaunch == nil else { return }
         startingAppointmentId = appointment.id
@@ -57,7 +59,8 @@ extension ContentView {
                 askVM.begin(
                     sessionId: session.id,
                     patientId: askingOnRecording.patientId,
-                    retentionDays: askingOnRecording.retentionDays
+                    retentionDays: askingOnRecording.retentionDays,
+                    modality: askingOnRecording.modality
                 )
             }
             VideoLaunchService.launch(session: session)
@@ -68,7 +71,7 @@ extension ContentView {
     /// — the client declined, or is a telehealth client nobody has asked, and
     /// the answer changed after the check or was never read — nothing was
     /// created and nothing arms: the confirmation comes back with the declined
-    /// message, or with "Ask now" and "Don't record", rather than a generic
+    /// message, or with "Start recording and ask" and "Don't record", rather than a generic
     /// error.
     func createSession(fromAppointmentId appointmentId: String, askingOnRecording: Bool) async -> Session? {
         switch await sessionVM.startSessionFromAppointment(
@@ -83,7 +86,7 @@ extension ContentView {
             return nil
         case .consentNeeded:
             pendingLaunch = PendingLaunch(appointmentId: appointmentId, patientName: nil)
-            // Read again, so "Ask now" knows the client and the practice's
+            // Read again, so "Start recording and ask" knows the client and the practice's
             // retention window; the server has said what the answer is.
             let read = await consentVM.check(
                 appointmentId: appointmentId,
@@ -91,7 +94,8 @@ extension ContentView {
                 modality: .telehealth,
                 service: sessionVM.consentService
             )
-            if read != .askOnRecording { consentVM.showConsentNeeded() }
+            if case .askOnRecording = read { return nil }
+            consentVM.showConsentNeeded()
             return nil
         case .failed:
             return nil
@@ -103,12 +107,8 @@ extension ContentView {
             patientName: launch.patientName,
             consent: consentVM.consent,
             isCheckingConsent: consentVM.isChecking,
-            isSavingConsent: consentVM.isSaving,
-            consentError: consentVM.saveError,
             scriptRetentionDays: consentVM.scriptRetentionDays,
-            giver: $consentVM.giver,
             onStartRecording: { confirmPendingLaunch() },
-            onAgreedToday: { agreedToday() },
             onAskNow: { askNow() },
             onOpenChart: consentVM.patientId.map { patientId in { openChart(patientId: patientId) } },
             onCancel: {
@@ -130,27 +130,22 @@ extension ContentView {
     /// What the start in hand asks once recording starts, read before the
     /// confirmation is reset. `nil` unless the clinician chose to ask then.
     var pendingOnRecordingAsk: OnRecordingAsk? {
-        guard consentVM.consent.startsAskingOnRecording else { return nil }
-        return OnRecordingAsk(patientId: consentVM.patientId, retentionDays: consentVM.scriptRetentionDays)
+        guard let modality = consentVM.consent.askingModality else { return nil }
+        return OnRecordingAsk(
+            patientId: consentVM.patientId,
+            retentionDays: consentVM.scriptRetentionDays,
+            modality: modality
+        )
     }
 
-    /// "Client agreed today": save the answer, then arm. A failed save stays on
-    /// the sheet with its message; nothing arms.
-    private func agreedToday() {
-        Task {
-            guard await consentVM.recordAgreedToday(service: sessionVM.consentService) else { return }
-            confirmPendingLaunch()
-        }
-    }
-
-    /// "Ask now": start, telling the server the clinician asks on the
+    /// "Start recording and ask": start, telling the server the clinician asks on the
     /// recording; the script follows once recording is running.
     private func askNow() {
         consentVM.askNow()
         confirmPendingLaunch()
     }
 
-    /// Saves the answer given on the recording, over telehealth. An agreement
+    /// Saves the answer given on the recording. An agreement
     /// closes the panel. A decline first stops and deletes the recording, so
     /// nothing of it is uploaded whether or not the answer saves, and the
     /// panel then says so. A failed save stays on the panel with its message.

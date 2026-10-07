@@ -47,7 +47,7 @@ enum PabloError: LocalizedError, Sendable {
         case let .clientDeclinedAiNotes(declinedOn):
             return RecordingConsentCopy.declined(on: declinedOn)
         case .clientAiConsentNeeded:
-            return RecordingConsentCopy.askOnRecordingMessage
+            return RecordingConsentCopy.consentNeededError
         }
     }
 }

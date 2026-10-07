@@ -66,58 +66,43 @@ struct RecordingConsentViewModelTests {
         #expect(service.checkedAppointments == ["appt-1"])
     }
 
-    @Test("Not asked: agreed today records consent for the client, then reads clear")
-    func agreedToday() async {
+    @Test("In person with nothing on file offers Start recording and ask, which asks on the recording, in person")
+    func inPersonAskNow() async {
         let service = FakeConsentService()
-        service.check = check(.notAsked)
+        service.check = check(.askOnRecording(.inPerson))
         let vm = RecordingConsentViewModel()
-        await vm.check(appointmentId: "appt-1", patientId: nil, service: service)
-        #expect(vm.consent == .notAsked)
+
+        let consent = await vm.check(appointmentId: "appt-1", patientId: "pat-1", modality: .inPerson, service: service)
+
+        #expect(consent == .askOnRecording(.inPerson))
+        #expect(!vm.consent.startsAskingOnRecording)
+
+        vm.askNow()
+
+        #expect(vm.consent == .askingOnRecording(.inPerson))
+        #expect(vm.consent.askingModality == .inPerson)
+        #expect(vm.patientId == "pat-1")
         #expect(vm.scriptRetentionDays == 365)
-
-        let saved = await vm.recordAgreedToday(service: service)
-
-        #expect(saved)
-        #expect(service.recordedPatients == ["pat-1"])
-        #expect(service.recordedAnswers == [.agreedInPerson(by: .client)])
-        #expect(vm.consent == .clear)
-        #expect(vm.saveError == nil)
+        // Nothing is written before the client answers on the recording:
+        // there is no pre-selected "agreed".
+        #expect(service.recordedAnswers.isEmpty)
     }
 
-    @Test("Agreed today records who answered, in person")
-    func agreedTodayByParent() async {
-        let service = FakeConsentService()
-        service.check = check(.notAsked)
-        let vm = RecordingConsentViewModel()
-        await vm.check(appointmentId: "appt-1", patientId: nil, service: service)
-        vm.giver = .parent
-
-        _ = await vm.recordAgreedToday(service: service)
-
-        #expect(service.recordedAnswers.first?.body == [
-            "decision": "consented",
-            "modality": "in_person",
-            "consented_by": "parent",
-        ])
-        vm.reset()
-        #expect(vm.giver == .client)
-    }
-
-    @Test("Telehealth with nothing on file offers Ask now; Ask now starts asking on the recording")
+    @Test("Telehealth with nothing on file offers Start recording and ask, which asks on the recording")
     func telehealthAskNow() async {
         let service = FakeConsentService()
-        service.check = check(.askOnRecording)
+        service.check = check(.askOnRecording(.telehealth))
         let vm = RecordingConsentViewModel()
 
         let consent = await vm.check(appointmentId: "appt-1", patientId: "pat-1", modality: .telehealth, service: service)
 
-        #expect(consent == .askOnRecording)
+        #expect(consent == .askOnRecording(.telehealth))
         #expect(service.checkedModalities == [.telehealth])
         #expect(!vm.consent.startsAskingOnRecording)
 
         vm.askNow()
 
-        #expect(vm.consent == .askingOnRecording)
+        #expect(vm.consent == .askingOnRecording(.telehealth))
         #expect(vm.consent.startsAskingOnRecording)
         #expect(vm.patientId == "pat-1")
         #expect(vm.scriptRetentionDays == 365)
@@ -125,48 +110,66 @@ struct RecordingConsentViewModelTests {
         #expect(service.recordedAnswers.isEmpty)
     }
 
-    @Test("Ask now does nothing for an in-person client")
-    func askNowInPerson() async {
+    @Test("Start recording and ask does nothing when there is nothing to ask")
+    func askNowWhenClear() async {
         let service = FakeConsentService()
-        service.check = check(.notAsked)
+        service.check = check(.clear)
         let vm = RecordingConsentViewModel()
         await vm.check(appointmentId: "appt-1", patientId: nil, service: service)
 
         vm.askNow()
 
-        #expect(vm.consent == .notAsked)
+        #expect(vm.consent == .clear)
+        #expect(!vm.consent.startsAskingOnRecording)
+    }
+
+    @Test("Don't record writes nothing: the prompt never calls the service on its own")
+    func dontRecordWritesNothing() async {
+        let service = FakeConsentService()
+        service.check = check(.askOnRecording(.inPerson))
+        let vm = RecordingConsentViewModel()
+        await vm.check(appointmentId: "appt-1", patientId: nil, service: service)
+
+        // "Don't record" dismisses straight from the view; nothing here records.
+        vm.reset()
+
+        #expect(service.recordedPatients.isEmpty)
+        #expect(vm.consent == .clear)
     }
 
     @Test("A web 'Record anyway' does not clear a telehealth client nobody has asked")
     func webRecordAnywayTelehealth() async {
         let service = FakeConsentService()
-        service.check = check(.askOnRecording)
+        service.check = check(.askOnRecording(.telehealth))
         let vm = RecordingConsentViewModel()
 
         let consent = await vm.check(appointmentId: "appt-1", patientId: nil, webAlreadyAsked: true, service: service)
 
-        #expect(consent == .askOnRecording)
+        #expect(consent == .askOnRecording(.telehealth))
     }
 
-    @Test("A web 'Ask now' hand-off starts asking on the recording without offering it again")
-    func webAskNow() async {
+    @Test(
+        "A web 'Ask now' hand-off starts asking on the recording without offering it again",
+        arguments: [AiConsentModality.telehealth, .inPerson]
+    )
+    func webAskNow(modality: AiConsentModality) async {
         let service = FakeConsentService()
-        service.check = check(.askOnRecording)
+        service.check = check(.askOnRecording(modality))
         let vm = RecordingConsentViewModel()
 
         let consent = await vm.check(
             appointmentId: "appt-1",
             patientId: nil,
-            modality: .telehealth,
+            modality: modality,
             webAskingOnRecording: true,
             service: service
         )
 
-        #expect(consent == .askingOnRecording)
-        #expect(vm.consent.startsAskingOnRecording)
+        #expect(consent == .askingOnRecording(modality))
+        #expect(vm.consent.askingModality == modality)
     }
 
-    @Test("A server consent-needed refusal turns into Ask now / Don't record")
+    @Test("A server consent-needed refusal turns into Start recording and ask / Don't record")
     func serverConsentNeeded() async {
         let service = FakeConsentService()
         service.check = check(.clear)
@@ -175,7 +178,7 @@ struct RecordingConsentViewModelTests {
 
         vm.showConsentNeeded()
 
-        #expect(vm.consent == .askOnRecording)
+        #expect(vm.consent == .askOnRecording(.telehealth))
         #expect(vm.patientId == "pat-1")
         #expect(vm.scriptRetentionDays == 365)
     }
@@ -186,65 +189,33 @@ struct RecordingConsentViewModelTests {
 
         vm.showConsentNeeded()
 
-        #expect(vm.consent == .askOnRecording)
+        #expect(vm.consent == .askOnRecording(.telehealth))
         #expect(vm.scriptRetentionDays == nil)
     }
 
-    @Test("A failed save keeps the prompt up with a message, and records nothing")
-    func agreedTodayFails() async {
-        let service = FakeConsentService()
-        service.check = check(.notAsked)
-        service.saveError = URLError(.notConnectedToInternet)
-        let vm = RecordingConsentViewModel()
-        await vm.check(appointmentId: "appt-1", patientId: nil, service: service)
-
-        let saved = await vm.recordAgreedToday(service: service)
-
-        #expect(!saved)
-        #expect(vm.consent == .notAsked)
-        #expect(vm.saveError == RecordingConsentCopy.saveFailed)
-        #expect(!vm.isSaving)
-    }
-
-    @Test("Record anyway writes nothing: the prompt never calls the service on its own")
-    func recordAnywayWritesNothing() async {
-        let service = FakeConsentService()
-        service.check = check(.notAsked)
-        let vm = RecordingConsentViewModel()
-        await vm.check(appointmentId: "appt-1", patientId: nil, service: service)
-
-        // "Record anyway" arms straight from the view; nothing here records.
-        vm.reset()
-
-        #expect(service.recordedPatients.isEmpty)
-        #expect(vm.consent == .clear)
-    }
-
-    @Test("A hand-off the web already asked about arms without asking again")
+    @Test("An in-person hand-off the web already asked about arms without asking again")
     func webAlreadyAsked() async {
         let service = FakeConsentService()
-        service.check = check(.notAsked)
+        service.check = check(.askOnRecording(.inPerson))
         let vm = RecordingConsentViewModel()
 
         let consent = await vm.check(appointmentId: "appt-1", patientId: nil, webAlreadyAsked: true, service: service)
 
         #expect(consent == .clear)
         #expect(vm.consent == .clear)
-        // Still read, and the script is still one click away.
         #expect(service.checkedAppointments == ["appt-1"])
-        #expect(vm.scriptRetentionDays == 365)
     }
 
     @Test("A hand-off without the web's answer still asks")
     func webDidNotAsk() async {
         let service = FakeConsentService()
-        service.check = check(.notAsked)
+        service.check = check(.askOnRecording(.inPerson))
         let vm = RecordingConsentViewModel()
 
         let consent = await vm.check(appointmentId: "appt-1", patientId: nil, service: service)
 
-        #expect(consent == .notAsked)
-        #expect(vm.consent == .notAsked)
+        #expect(consent == .askOnRecording(.inPerson))
+        #expect(vm.consent == .askOnRecording(.inPerson))
     }
 
     @Test("A declined client is still refused when the web already asked")
@@ -410,7 +381,7 @@ struct AskOnRecordingViewModelTests {
     func recordsTelehealthAnswer() async {
         let service = FakeConsentService()
         let vm = AskOnRecordingViewModel()
-        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 0)
+        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 0, modality: .telehealth)
         vm.giver = .guardian
         vm.location = " At home "
 
@@ -426,11 +397,64 @@ struct AskOnRecordingViewModelTests {
         ])
     }
 
+    @Test("In person, the answer is saved as given in person, with who answered and no place")
+    func recordsInPersonAnswer() async {
+        let service = FakeConsentService()
+        let vm = AskOnRecordingViewModel()
+        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 365, modality: .inPerson)
+        #expect(!vm.asksLocation)
+        vm.giver = .parent
+        // Left over from nowhere the panel shows; never sent in person.
+        vm.location = "Office"
+
+        let saved = await vm.record(decision: AiConsentEntry.consented, service: service)
+
+        #expect(saved)
+        #expect(service.recordedPatients == ["pat-1"])
+        #expect(service.recordedAnswers.first?.body == [
+            "decision": "consented",
+            "modality": "in_person",
+            "consented_by": "parent",
+        ])
+    }
+
+    @Test("In person, a decline on the recording is saved as given in person")
+    func recordsInPersonDecline() async {
+        let service = FakeConsentService()
+        let vm = AskOnRecordingViewModel()
+        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 365, modality: .inPerson)
+
+        _ = await vm.record(decision: AiConsentEntry.declined, service: service)
+
+        #expect(service.recordedAnswers.first?.body == [
+            "decision": "declined",
+            "modality": "in_person",
+            "consented_by": "client",
+        ])
+    }
+
+    @Test("Telehealth asks where the client is")
+    func telehealthAsksLocation() {
+        let vm = AskOnRecordingViewModel()
+        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 0, modality: .telehealth)
+        #expect(vm.asksLocation)
+    }
+
+    @Test("With nothing asked, there is no answer to send")
+    func noAskNoAnswer() async {
+        let service = FakeConsentService()
+        let vm = AskOnRecordingViewModel()
+        #expect(vm.answer(decision: AiConsentEntry.consented) == nil)
+        let saved = await vm.record(decision: AiConsentEntry.consented, service: service)
+        #expect(!saved)
+        #expect(service.recordedAnswers.isEmpty)
+    }
+
     @Test("A decline on the recording is saved the same way")
     func recordsDecline() async {
         let service = FakeConsentService()
         let vm = AskOnRecordingViewModel()
-        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90)
+        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90, modality: .telehealth)
 
         _ = await vm.record(decision: AiConsentEntry.declined, service: service)
 
@@ -445,7 +469,7 @@ struct AskOnRecordingViewModelTests {
     func noPlace() async {
         let service = FakeConsentService()
         let vm = AskOnRecordingViewModel()
-        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90)
+        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90, modality: .telehealth)
 
         _ = await vm.record(decision: AiConsentEntry.consented, service: service)
 
@@ -461,7 +485,7 @@ struct AskOnRecordingViewModelTests {
         let service = FakeConsentService()
         service.saveError = URLError(.notConnectedToInternet)
         let vm = AskOnRecordingViewModel()
-        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90)
+        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90, modality: .telehealth)
 
         let saved = await vm.record(decision: AiConsentEntry.consented, service: service)
 
@@ -475,7 +499,7 @@ struct AskOnRecordingViewModelTests {
     func unknownClient() async {
         let service = FakeConsentService()
         let vm = AskOnRecordingViewModel()
-        vm.begin(sessionId: "s1", patientId: nil, retentionDays: nil)
+        vm.begin(sessionId: "s1", patientId: nil, retentionDays: nil, modality: .telehealth)
 
         let saved = await vm.record(decision: AiConsentEntry.consented, service: service)
 
@@ -486,13 +510,13 @@ struct AskOnRecordingViewModelTests {
     @Test("Each ask starts fresh")
     func beginResets() {
         let vm = AskOnRecordingViewModel()
-        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90)
+        vm.begin(sessionId: "s1", patientId: "pat-1", retentionDays: 90, modality: .telehealth)
         vm.giver = .parent
         vm.location = "Car"
         vm.markRecordingDeleted()
         #expect(vm.recordingDeleted)
 
-        vm.begin(sessionId: "s2", patientId: "pat-2", retentionDays: 90)
+        vm.begin(sessionId: "s2", patientId: "pat-2", retentionDays: 90, modality: .telehealth)
 
         #expect(vm.giver == .client)
         #expect(vm.location.isEmpty)

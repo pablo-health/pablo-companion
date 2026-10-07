@@ -5,9 +5,9 @@ import os
 /// The client's answer about AI-assisted notes, read before the microphone arms.
 ///
 /// When the practice asks its clients, a client who declined stops the start.
-/// A client nobody has asked yet gets, in person, three choices: record a
-/// verbal OK for today and start, record anyway, or cancel. Over telehealth
-/// they get two: ask once recording starts ("Ask now"), or don't record. With
+/// A client nobody has asked yet, in person or over telehealth, gets two
+/// choices: ask once recording starts ("Start recording and ask"), or don't record. The answer
+/// is then given on the recording and saved from the panel shown there. With
 /// the setting off this is always ``RecordingConsent/clear`` and no prompt
 /// appears.
 ///
@@ -26,11 +26,6 @@ final class RecordingConsentViewModel {
     }
 
     private(set) var phase: Phase = .idle
-    private(set) var isSaving = false
-    /// Shown under the choices when "agreed today" could not be saved.
-    private(set) var saveError: String?
-    /// Who answers "agreed today": the client, or a parent or guardian.
-    var giver: AiConsentGiver = .client
 
     /// Bumped on every check and reset, so a slow read for a start the
     /// clinician already cancelled cannot overwrite a newer one.
@@ -54,7 +49,7 @@ final class RecordingConsentViewModel {
         return check.audioRetentionDays
     }
 
-    /// The client the answer belongs to, for "agreed today".
+    /// The client the answer belongs to, for the answer given on the recording.
     var patientId: String? {
         if case let .ready(check) = phase { return check.patientId }
         return nil
@@ -79,7 +74,6 @@ final class RecordingConsentViewModel {
         generation += 1
         let current = generation
         phase = .checking
-        saveError = nil
         do {
             let read = try await service.checkRecordingConsent(
                 appointmentId: appointmentId,
@@ -109,45 +103,21 @@ final class RecordingConsentViewModel {
 
     /// The server refused a telehealth start because nobody has asked the
     /// client (an older read, or the answer was removed after it). Offers
-    /// "Ask now" or "Don't record" in place of a generic error.
+    /// "Start recording and ask" or "Don't record" in place of a generic error.
     func showConsentNeeded() {
-        showServerAnswer(.askOnRecording)
+        showServerAnswer(.askOnRecording(.telehealth))
     }
 
-    /// "Ask now": the start tells the server the clinician is asking once
+    /// "Start recording and ask": the start tells the server the clinician is asking once
     /// recording starts, and the script follows once recording is running.
     func askNow() {
-        guard case let .ready(check) = phase, check.consent == .askOnRecording else { return }
-        phase = .ready(replacing(check, with: .askingOnRecording))
-    }
-
-    /// Records that the client (or the chosen ``giver``) agreed today, in
-    /// person. Returns true when saved, and the prompt then reads as clear;
-    /// false leaves ``saveError`` set.
-    func recordAgreedToday(service: RecordingConsentService) async -> Bool {
-        guard case let .ready(check) = phase, let patientId = check.patientId else { return false }
-        isSaving = true
-        saveError = nil
-        defer { isSaving = false }
-        do {
-            // Only an in-person start reaches "agreed today" (telehealth asks
-            // on the recording), so that is how it was given.
-            try await service.recordConsent(.agreedInPerson(by: giver), patientId: patientId)
-            phase = .ready(replacing(check, with: .clear))
-            return true
-        } catch {
-            logger.error("Recording consent failed: \(error.localizedDescription)")
-            saveError = RecordingConsentCopy.saveFailed
-            return false
-        }
+        guard case let .ready(check) = phase, case let .askOnRecording(modality) = check.consent else { return }
+        phase = .ready(replacing(check, with: .askingOnRecording(modality)))
     }
 
     func reset() {
         generation += 1
         phase = .idle
-        isSaving = false
-        saveError = nil
-        giver = .client
     }
 
     private func showServerAnswer(_ consent: RecordingConsent) {
@@ -161,7 +131,6 @@ final class RecordingConsentViewModel {
             audioRetentionDays: previous?.audioRetentionDays ?? 0,
             patientId: previous?.patientId
         ))
-        saveError = nil
     }
 
     private func replacing(_ check: RecordingConsentCheck, with consent: RecordingConsent) -> RecordingConsentCheck {

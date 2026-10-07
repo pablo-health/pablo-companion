@@ -15,9 +15,9 @@ struct RecordingConsentDecisionTests {
         #expect(RecordingConsent.evaluate(asksClients: false, current: declined) == .clear)
     }
 
-    @Test("Setting on with no answer asks first")
+    @Test("Setting on with no answer, in person, asks once recording starts")
     func notAsked() {
-        #expect(RecordingConsent.evaluate(asksClients: true, current: nil) == .notAsked)
+        #expect(RecordingConsent.evaluate(asksClients: true, current: nil) == .askOnRecording(.inPerson))
     }
 
     @Test("Setting on: consented is clear, declined stops with its date")
@@ -28,9 +28,9 @@ struct RecordingConsentDecisionTests {
         #expect(RecordingConsent.evaluate(asksClients: true, current: declined) == .declined(on: "2026-09-01"))
     }
 
-    @Test("A hand-off the web already asked about does not ask again")
+    @Test("An in-person hand-off the web already asked about does not ask again")
     func handedOffAfterWebAsked() {
-        #expect(RecordingConsent.notAsked.handedOff(webAlreadyAsked: true) == .clear)
+        #expect(RecordingConsent.askOnRecording(.inPerson).handedOff(webAlreadyAsked: true) == .clear)
         #expect(RecordingConsent.clear.handedOff(webAlreadyAsked: true) == .clear)
     }
 
@@ -42,7 +42,8 @@ struct RecordingConsentDecisionTests {
 
     @Test("Without the web's answer, a hand-off still asks")
     func handedOffWithoutWebAnswer() {
-        #expect(RecordingConsent.notAsked.handedOff(webAlreadyAsked: false) == .notAsked)
+        #expect(RecordingConsent.askOnRecording(.inPerson).handedOff(webAlreadyAsked: false)
+            == .askOnRecording(.inPerson))
         #expect(RecordingConsent.declined(on: "2026-09-01").handedOff(webAlreadyAsked: false)
             == .declined(on: "2026-09-01"))
         #expect(RecordingConsent.clear.handedOff(webAlreadyAsked: false) == .clear)
@@ -52,8 +53,8 @@ struct RecordingConsentDecisionTests {
     @Test(
         "Where the session is × what is on file",
         arguments: [
-            (false, nil, RecordingConsent.notAsked),
-            (true, nil, .askOnRecording),
+            (false, nil, RecordingConsent.askOnRecording(.inPerson)),
+            (true, nil, .askOnRecording(.telehealth)),
             (false, "consented", .clear),
             (true, "consented", .clear),
             (false, "declined", .declined(on: "2026-09-01")),
@@ -72,20 +73,26 @@ struct RecordingConsentDecisionTests {
 
     @Test("A web 'record anyway' never clears a telehealth start with nothing on file")
     func webRecordAnywayTelehealth() {
-        #expect(RecordingConsent.askOnRecording.handedOff(webAlreadyAsked: true) == .askOnRecording)
+        #expect(RecordingConsent.askOnRecording(.telehealth).handedOff(webAlreadyAsked: true)
+            == .askOnRecording(.telehealth))
     }
 
-    @Test("A web 'Ask now' starts asking on the recording without offering it again")
-    func webAskNow() {
-        #expect(RecordingConsent.askOnRecording.handedOff(webAlreadyAsked: false, webAskingOnRecording: true)
-            == .askingOnRecording)
-        #expect(RecordingConsent.askingOnRecording.startsAskingOnRecording)
+    @Test(
+        "A web 'Ask now' starts asking on the recording without offering it again",
+        arguments: AiConsentModality.allCases
+    )
+    func webAskNow(modality: AiConsentModality) {
+        #expect(RecordingConsent.askOnRecording(modality)
+            .handedOff(webAlreadyAsked: false, webAskingOnRecording: true) == .askingOnRecording(modality))
+        #expect(RecordingConsent.askingOnRecording(modality).startsAskingOnRecording)
+        #expect(RecordingConsent.askingOnRecording(modality).askingModality == modality)
         // Answered since the web asked: nothing to ask on the recording.
         #expect(RecordingConsent.clear.handedOff(webAlreadyAsked: false, webAskingOnRecording: true) == .clear)
         #expect(RecordingConsent.declined(on: "2026-09-01")
             .handedOff(webAlreadyAsked: false, webAskingOnRecording: true) == .declined(on: "2026-09-01"))
         #expect(!RecordingConsent.clear.startsAskingOnRecording)
-        #expect(!RecordingConsent.askOnRecording.startsAskingOnRecording)
+        #expect(!RecordingConsent.askOnRecording(modality).startsAskingOnRecording)
+        #expect(RecordingConsent.askOnRecording(modality).askingModality == nil)
     }
 
     @Test("The server's consent-needed refusal is recognized")
@@ -181,9 +188,15 @@ struct ConsentScriptTests {
 
 @Suite("Consent request bodies")
 struct ConsentRequestBodyTests {
-    @Test("'Agreed today' in the room says in person and who answered")
-    func agreedInPerson() {
-        #expect(AiConsentAnswer.agreedInPerson(by: .parent).body == [
+    @Test("An answer given in the room says in person and who answered, and never a place")
+    func answeredInPerson() {
+        let answer = AiConsentAnswer(
+            decision: AiConsentEntry.consented,
+            modality: .inPerson,
+            consentedBy: .parent,
+            clientStatedLocation: "Office"
+        )
+        #expect(answer.body == [
             "decision": "consented",
             "modality": "in_person",
             "consented_by": "parent",
@@ -370,7 +383,7 @@ struct RecordingConsentClientTests {
 
         let check = try await makeClient().check(appointmentId: "appt-1")
 
-        #expect(check.consent == .notAsked)
+        #expect(check.consent == .askOnRecording(.inPerson))
         #expect(check.patientId == "pat-9")
         #expect(check.audioRetentionDays == 365)
         #expect(recorder.captured.map { $0.url?.path } == [
@@ -427,7 +440,7 @@ struct RecordingConsentClientTests {
 
         let check = try await makeClient().check(appointmentId: "appt-1")
 
-        #expect(check.consent == .askOnRecording)
+        #expect(check.consent == .askOnRecording(.telehealth))
     }
 
     @Test("The caller's telehealth answer wins over the appointment's")
@@ -439,7 +452,7 @@ struct RecordingConsentClientTests {
 
         let check = try await makeClient().check(appointmentId: "appt-1", patientId: "pat-9", modality: .telehealth)
 
-        #expect(check.consent == .askOnRecording)
+        #expect(check.consent == .askOnRecording(.telehealth))
         #expect(recorder.captured.count == 2)
     }
 
@@ -469,8 +482,8 @@ struct RecordingConsentClientTests {
         ])
     }
 
-    @Test("Agreed today posts a consent with no date")
-    func recordAgreedToday() async throws {
+    @Test("An in-person answer posts how it was given, with no date")
+    func recordInPersonAnswer() async throws {
         let recorder = ConsentStubProtocol.install()
         defer { ConsentStubProtocol.reset() }
         recorder.enqueue(status: 201, json: """
@@ -479,7 +492,7 @@ struct RecordingConsentClientTests {
          "history": []}
         """)
 
-        try await makeClient().record(.agreedInPerson(by: .client), patientId: "pat-9")
+        try await makeClient().record(Self.inPersonAgreed, patientId: "pat-9")
 
         let request = try #require(recorder.captured.first)
         #expect(request.httpMethod == "POST")
@@ -496,7 +509,13 @@ struct RecordingConsentClientTests {
         recorder.enqueue(status: 401, json: #"{"error": {"code": "IDLE_TIMEOUT", "message": "x"}}"#)
 
         await #expect(throws: ConsentRequestError(statusCode: 401, code: "IDLE_TIMEOUT")) {
-            try await makeClient().record(.agreedInPerson(by: .client), patientId: "pat-9")
+            try await makeClient().record(Self.inPersonAgreed, patientId: "pat-9")
         }
     }
+
+    private static let inPersonAgreed = AiConsentAnswer(
+        decision: AiConsentEntry.consented,
+        modality: .inPerson,
+        consentedBy: .client
+    )
 }

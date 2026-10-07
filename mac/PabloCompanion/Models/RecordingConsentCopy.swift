@@ -7,13 +7,16 @@ import Foundation
 /// it says "client".
 enum RecordingConsentCopy {
     static let declinedTitle = "AI-assisted notes declined"
-    static let notAskedTitle = "No consent on file"
-    static let notAskedMessage = "Ask whether the client agrees to AI-assisted notes before you record."
-    /// Telehealth with nothing on file: the only way to record is to ask once
-    /// recording starts, so the answer is on the recording.
-    static let askOnRecordingMessage =
-        "For a telehealth session, ask once recording starts, so the client's answer is on the recording."
-    static let askNow = "Ask now"
+    static let notAskedTitle = "No consent for AI-assisted notes"
+    /// Nothing on file, in person or over telehealth: the only way to record is
+    /// to ask once recording starts, so the answer is on the recording. The
+    /// script is shown then, not before; its first line says recording has
+    /// started.
+    static let askOnRecordingMessage = "You'll see what to read aloud once recording starts."
+    /// A telehealth start the server refused for the same reason, wherever it
+    /// shows without the "Start recording and ask" button beside it.
+    static let consentNeededError = "Ask about AI-assisted notes once recording starts."
+    static let startAndAsk = "Start recording and ask"
     static let dontRecord = "Don't record"
     static let answeredBy = "Answered by"
     static let saveFailed = "Could not save. Please try again."
@@ -27,11 +30,6 @@ enum RecordingConsentCopy {
     static let recordOnChart = "Record the client's answer on their chart."
     /// After a decline on the recording: capture stopped and the audio deleted.
     static let recordingDeleted = "Recording stopped and deleted. Write this note yourself."
-
-    /// "Client agreed today", "Parent agreed today".
-    static func agreedToday(by giver: AiConsentGiver) -> String {
-        "\(giver.word) agreed today"
-    }
 
     /// "Client agreed", "Guardian declined".
     static func answered(_ decision: String, by giver: AiConsentGiver) -> String {
