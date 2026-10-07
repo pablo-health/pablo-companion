@@ -16,7 +16,7 @@ struct OnRecordingAsk: Equatable {
 extension ContentView {
     /// Start from the companion's own window (the next-appointment card, or
     /// the native dashboard). A client who is clear starts at once, as before;
-    /// a declined client, or one nobody has asked yet ("Ask now" or "Don't
+    /// a declined client, or one nobody has asked yet ("Start recording and ask" or "Don't
     /// record"), gets the confirmation sheet instead.
     func requestStart(_ appointment: Appointment) {
         guard startingAppointmentId == nil, pendingLaunch == nil else { return }
@@ -71,7 +71,7 @@ extension ContentView {
     /// — the client declined, or is a telehealth client nobody has asked, and
     /// the answer changed after the check or was never read — nothing was
     /// created and nothing arms: the confirmation comes back with the declined
-    /// message, or with "Ask now" and "Don't record", rather than a generic
+    /// message, or with "Start recording and ask" and "Don't record", rather than a generic
     /// error.
     func createSession(fromAppointmentId appointmentId: String, askingOnRecording: Bool) async -> Session? {
         switch await sessionVM.startSessionFromAppointment(
@@ -86,7 +86,7 @@ extension ContentView {
             return nil
         case .consentNeeded:
             pendingLaunch = PendingLaunch(appointmentId: appointmentId, patientName: nil)
-            // Read again, so "Ask now" knows the client and the practice's
+            // Read again, so "Start recording and ask" knows the client and the practice's
             // retention window; the server has said what the answer is.
             let read = await consentVM.check(
                 appointmentId: appointmentId,
@@ -138,7 +138,7 @@ extension ContentView {
         )
     }
 
-    /// "Ask now": start, telling the server the clinician asks on the
+    /// "Start recording and ask": start, telling the server the clinician asks on the
     /// recording; the script follows once recording is running.
     private func askNow() {
         consentVM.askNow()

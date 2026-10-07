@@ -66,7 +66,7 @@ struct RecordingConsentViewModelTests {
         #expect(service.checkedAppointments == ["appt-1"])
     }
 
-    @Test("In person with nothing on file offers Ask now; Ask now starts asking on the recording, in person")
+    @Test("In person with nothing on file offers Start recording and ask, which asks on the recording, in person")
     func inPersonAskNow() async {
         let service = FakeConsentService()
         service.check = check(.askOnRecording(.inPerson))
@@ -88,7 +88,7 @@ struct RecordingConsentViewModelTests {
         #expect(service.recordedAnswers.isEmpty)
     }
 
-    @Test("Telehealth with nothing on file offers Ask now; Ask now starts asking on the recording")
+    @Test("Telehealth with nothing on file offers Start recording and ask, which asks on the recording")
     func telehealthAskNow() async {
         let service = FakeConsentService()
         service.check = check(.askOnRecording(.telehealth))
@@ -110,7 +110,7 @@ struct RecordingConsentViewModelTests {
         #expect(service.recordedAnswers.isEmpty)
     }
 
-    @Test("Ask now does nothing when there is nothing to ask")
+    @Test("Start recording and ask does nothing when there is nothing to ask")
     func askNowWhenClear() async {
         let service = FakeConsentService()
         service.check = check(.clear)
@@ -169,7 +169,7 @@ struct RecordingConsentViewModelTests {
         #expect(vm.consent.askingModality == modality)
     }
 
-    @Test("A server consent-needed refusal turns into Ask now / Don't record")
+    @Test("A server consent-needed refusal turns into Start recording and ask / Don't record")
     func serverConsentNeeded() async {
         let service = FakeConsentService()
         service.check = check(.clear)

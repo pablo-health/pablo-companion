@@ -9,8 +9,8 @@ import SwiftUI
 /// It also carries the client's answer about AI-assisted notes, when the
 /// practice asks: a client who declined gets the declined message and no way
 /// to arm. A client nobody has asked yet, in person or over telehealth, gets
-/// "Ask now" and "Don't record". "Ask now" starts recording and the script
-/// follows once it is running, because the script opens "I've started
+/// "Start recording and ask" and "Don't record". The first starts recording
+/// and the script follows once it is running, because the script opens "I've started
 /// recording our session". Nothing here records a yes before the client
 /// answers. A direct start from the companion's own window lands here only in
 /// those cases.
@@ -33,10 +33,11 @@ struct SessionConfirmationView: View {
     var scriptRetentionDays: Int?
 
     /// Invoked when the therapist taps "Start Recording". Only here (and on
-    /// "Ask now") does the mic arm.
+    /// "Start recording and ask") does the mic arm.
     let onStartRecording: () -> Void
 
-    /// "Ask now": arm, telling the server the clinician asks on the recording.
+    /// "Start recording and ask": arm, telling the server the clinician asks
+    /// on the recording.
     var onAskNow: () -> Void = {}
 
     /// Opens the client's chart, where a declined answer can be changed.
@@ -118,13 +119,14 @@ struct SessionConfirmationView: View {
             )
             VStack(spacing: 10) {
                 Button(action: onAskNow) {
-                    Text(RecordingConsentCopy.askNow)
+                    Text(RecordingConsentCopy.startAndAsk)
+                        .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
-                .accessibilityLabel("\(RecordingConsentCopy.askNow), start recording")
+                .accessibilityLabel(RecordingConsentCopy.startAndAsk)
 
                 wideButton(RecordingConsentCopy.dontRecord, role: .cancel, action: onCancel)
             }

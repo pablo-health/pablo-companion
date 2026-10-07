@@ -25,7 +25,7 @@ public enum RecordingConsent: Equatable, Sendable {
     /// Record. The practice does not ask, or the client agreed.
     case clear
     /// The practice asks and nobody has asked this client yet: offer asking
-    /// once recording starts ("Ask now"), or not recording.
+    /// once recording starts ("Start recording and ask"), or not recording.
     case askOnRecording(AiConsentModality)
     /// The clinician chose to ask once recording starts: start, telling the
     /// server so, and show the script once recording is running.

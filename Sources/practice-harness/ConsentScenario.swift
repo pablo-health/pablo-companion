@@ -196,7 +196,7 @@ private struct Driver {
         )
 
         // ── In person, nothing on file ─────────────────────────────────────
-        // Same as telehealth on the app's side: "Ask now", then the answer is
+        // Same as telehealth on the app's side: ask once recording starts; the answer is
         // given on the recording and saved as given in person.
         let office = try await seedVisit(videoLink: nil, inHours: 1)
         let inPerson = try await consent.check(appointmentId: office.appointmentId)
@@ -207,7 +207,7 @@ private struct Driver {
         )
         let officeStart = try await start(office.appointmentId, asking: true)
         check(
-            "in-person 'Ask now' start is accepted",
+            "in-person start asking on the recording is accepted",
             (200 ... 299).contains(officeStart.status),
             "HTTP \(officeStart.status)"
         )

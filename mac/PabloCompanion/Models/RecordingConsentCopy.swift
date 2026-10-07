@@ -11,12 +11,12 @@ enum RecordingConsentCopy {
     /// Nothing on file, in person or over telehealth: the only way to record is
     /// to ask once recording starts, so the answer is on the recording. The
     /// script is shown then, not before; its first line says recording has
-    /// started. "Ask now" keeps the web app's label, so this says what it does.
-    static let askOnRecordingMessage = "Ask now starts recording, then shows what to read aloud."
+    /// started.
+    static let askOnRecordingMessage = "You'll see what to read aloud once recording starts."
     /// A telehealth start the server refused for the same reason, wherever it
-    /// shows without the "Ask now" button beside it.
+    /// shows without the "Start recording and ask" button beside it.
     static let consentNeededError = "Ask about AI-assisted notes once recording starts."
-    static let askNow = "Ask now"
+    static let startAndAsk = "Start recording and ask"
     static let dontRecord = "Don't record"
     static let answeredBy = "Answered by"
     static let saveFailed = "Could not save. Please try again."

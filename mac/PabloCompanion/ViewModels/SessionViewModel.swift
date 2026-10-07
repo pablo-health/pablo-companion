@@ -154,7 +154,7 @@ final class SessionViewModel {
         case declined(on: String)
         /// The server refused: a telehealth client nobody has asked, and the
         /// start did not say the clinician is asking on the recording. Not an
-        /// error alert either — the caller offers "Ask now" or "Don't record".
+        /// error alert either — the caller offers "Start recording and ask" or "Don't record".
         case consentNeeded
         /// Any other failure; `errorMessage` / `showError` are set.
         case failed

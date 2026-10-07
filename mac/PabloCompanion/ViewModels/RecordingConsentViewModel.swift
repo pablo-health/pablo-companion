@@ -6,7 +6,7 @@ import os
 ///
 /// When the practice asks its clients, a client who declined stops the start.
 /// A client nobody has asked yet, in person or over telehealth, gets two
-/// choices: ask once recording starts ("Ask now"), or don't record. The answer
+/// choices: ask once recording starts ("Start recording and ask"), or don't record. The answer
 /// is then given on the recording and saved from the panel shown there. With
 /// the setting off this is always ``RecordingConsent/clear`` and no prompt
 /// appears.
@@ -103,12 +103,12 @@ final class RecordingConsentViewModel {
 
     /// The server refused a telehealth start because nobody has asked the
     /// client (an older read, or the answer was removed after it). Offers
-    /// "Ask now" or "Don't record" in place of a generic error.
+    /// "Start recording and ask" or "Don't record" in place of a generic error.
     func showConsentNeeded() {
         showServerAnswer(.askOnRecording(.telehealth))
     }
 
-    /// "Ask now": the start tells the server the clinician is asking once
+    /// "Start recording and ask": the start tells the server the clinician is asking once
     /// recording starts, and the script follows once recording is running.
     func askNow() {
         guard case let .ready(check) = phase, case let .askOnRecording(modality) = check.consent else { return }
