@@ -382,7 +382,6 @@
 				INFOPLIST_FILE = PabloCompanion/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
 				INFOPLIST_KEY_CFBundleName = Pablo;
-				INFOPLIST_KEY_NSAudioCaptureUsageDescription = "Pablo records system audio during therapy sessions to generate session notes.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pablo Companion needs microphone access to record audio.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -433,7 +432,6 @@
 				INFOPLIST_FILE = PabloCompanion/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Pablo;
 				INFOPLIST_KEY_CFBundleName = Pablo;
-				INFOPLIST_KEY_NSAudioCaptureUsageDescription = "Pablo records system audio during therapy sessions to generate session notes.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pablo Companion needs microphone access to record audio.";
 				LD_RUNPATH_SEARCH_PATHS = (
