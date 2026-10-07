@@ -78,4 +78,33 @@ struct DeviceEnrollmentTests {
         let second = DeviceEnrollment.hostnameHash()
         #expect(first == second)
     }
+
+    // MARK: - Exchange outcome
+
+    @Test func serverReportedEnrollmentIsEnrolled() {
+        let json: [String: Any] = ["id_token": "t", "refresh_token": "r", "enrollment": "enrolled"]
+        #expect(DeviceEnrollment.outcome(sentPayload: true, exchangeResponse: json) == .enrolled)
+    }
+
+    @Test func serverReportedFailureIsFailed() {
+        let json: [String: Any] = ["id_token": "t", "refresh_token": "r", "enrollment": "failed"]
+        #expect(DeviceEnrollment.outcome(sentPayload: true, exchangeResponse: json) == .failed)
+    }
+
+    @Test func missingPayloadIsFailedWhateverTheServerSays() {
+        // No device key means nothing was sent; the server answers null, which
+        // must not read as "nothing to report".
+        let json: [String: Any] = ["id_token": "t", "refresh_token": "r", "enrollment": NSNull()]
+        #expect(DeviceEnrollment.outcome(sentPayload: false, exchangeResponse: json) == .failed)
+    }
+
+    @Test func olderServerWithoutTheFieldIsUnreported() {
+        let json: [String: Any] = ["id_token": "t", "refresh_token": "r"]
+        #expect(DeviceEnrollment.outcome(sentPayload: true, exchangeResponse: json) == .unreported)
+    }
+
+    @Test func unknownValueIsUnreported() {
+        let json: [String: Any] = ["enrollment": "pending"]
+        #expect(DeviceEnrollment.outcome(sentPayload: true, exchangeResponse: json) == .unreported)
+    }
 }
