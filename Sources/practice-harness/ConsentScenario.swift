@@ -130,7 +130,11 @@ private struct Driver {
         // ── Telehealth, nothing on file ─────────────────────────────────────
         let remote = try await seedVisit(videoLink: "https://video.example/room", inHours: 0)
         let read = try await consent.check(appointmentId: remote.appointmentId)
-        check("telehealth visit offers only asking on the recording", read.consent == .askOnRecording, "\(read.consent)")
+        check(
+            "telehealth visit offers only asking on the recording",
+            read.consent == .askOnRecording(.telehealth),
+            "\(read.consent)"
+        )
         let script = ConsentScript.lines(retentionDays: read.audioRetentionDays)
         check("script names the practice's window", true, "retention \(read.audioRetentionDays): \(script[2])")
 
@@ -191,12 +195,34 @@ private struct Driver {
             "HTTP \(laterStart.status) \(laterStart.text)"
         )
 
-        // ── In person, nothing on file (unchanged) ─────────────────────────
+        // ── In person, nothing on file ─────────────────────────────────────
+        // Same as telehealth on the app's side: "Ask now", then the answer is
+        // given on the recording and saved as given in person.
         let office = try await seedVisit(videoLink: nil, inHours: 1)
         let inPerson = try await consent.check(appointmentId: office.appointmentId)
-        check("in-person visit still offers agreed today / record anyway", inPerson.consent == .notAsked, "\(inPerson.consent)")
-        let officeStart = try await start(office.appointmentId, asking: false)
-        check("plain in-person start is accepted", (200 ... 299).contains(officeStart.status), "HTTP \(officeStart.status)")
+        check(
+            "in-person visit offers asking on the recording",
+            inPerson.consent == .askOnRecording(.inPerson),
+            "\(inPerson.consent)"
+        )
+        let officeStart = try await start(office.appointmentId, asking: true)
+        check(
+            "in-person 'Ask now' start is accepted",
+            (200 ... 299).contains(officeStart.status),
+            "HTTP \(officeStart.status)"
+        )
+        try await consent.record(
+            AiConsentAnswer(decision: AiConsentEntry.consented, modality: .inPerson, consentedBy: .client),
+            patientId: office.patientId
+        )
+        let officeStored = try await send("GET", "/api/patients/\(office.patientId)/ai-consent")
+        let officeCurrent = (officeStored.json?["current"] as? [String: Any]) ?? [:]
+        check(
+            "answer saved as given in person",
+            officeCurrent["modality"] as? String == "in_person"
+                && (officeCurrent["client_stated_location"] as? String) == nil,
+            "modality=\(officeCurrent["modality"] ?? "nil")"
+        )
 
         guard failures == 0 else { throw Failure(description: "\(failures) check(s) failed") }
         ConsentScenario.log("ALL CHECKS PASSED")

@@ -8,10 +8,12 @@ import SwiftUI
 ///
 /// It also carries the client's answer about AI-assisted notes, when the
 /// practice asks: a client who declined gets the declined message and no way
-/// to arm. A client nobody has asked yet gets, in person, "Client agreed
-/// today", "Record anyway" and "Cancel"; over telehealth, only "Ask now" and
-/// "Don't record" — there is no recording before asking. A direct start from
-/// the companion's own window lands here only in those cases.
+/// to arm. A client nobody has asked yet, in person or over telehealth, gets
+/// "Ask now" and "Don't record". "Ask now" starts recording and the script
+/// follows once it is running, because the script opens "I've started
+/// recording our session". Nothing here records a yes before the client
+/// answers. A direct start from the companion's own window lands here only in
+/// those cases.
 ///
 /// Presented as a sheet over whatever window is frontmost, matching how other
 /// session surfaces (practice, transcript viewer) are presented today.
@@ -26,26 +28,13 @@ struct SessionConfirmationView: View {
     /// The answer is still being read; Start Recording waits for it.
     var isCheckingConsent = false
 
-    /// "Client agreed today" is being saved.
-    var isSavingConsent = false
-
-    /// Shown when "Client agreed today" could not be saved.
-    var consentError: String?
-
     /// The practice's audio retention window when it asks its clients; offers
-    /// the read-aloud script. `nil` hides it.
+    /// the read-aloud script to a client who already agreed. `nil` hides it.
     var scriptRetentionDays: Int?
 
-    /// Who answers "agreed today".
-    var giver: Binding<AiConsentGiver> = .constant(.client)
-
-    /// Invoked when the therapist taps "Start Recording" or "Record anyway".
-    /// Only here (and after "Client agreed today" is saved, or "Ask now") does
-    /// the mic arm.
+    /// Invoked when the therapist taps "Start Recording". Only here (and on
+    /// "Ask now") does the mic arm.
     let onStartRecording: () -> Void
-
-    /// "Client agreed today": record the answer, then arm.
-    var onAgreedToday: () -> Void = {}
 
     /// "Ask now": arm, telling the server the clinician asks on the recording.
     var onAskNow: () -> Void = {}
@@ -68,8 +57,6 @@ struct SessionConfirmationView: View {
             switch consent {
             case .clear, .askingOnRecording:
                 startContent
-            case .notAsked:
-                notAskedContent
             case .askOnRecording:
                 askOnRecordingContent
             case let .declined(on):
@@ -88,7 +75,11 @@ struct SessionConfirmationView: View {
                 title: "Start session with \(displayName)?",
                 message: "Recording won't begin until you tap Start Recording."
             )
-            script
+            // A start that asks on the recording shows the script once
+            // recording is running, never before.
+            if !consent.startsAskingOnRecording {
+                script
+            }
             VStack(spacing: 10) {
                 Button(action: onStartRecording) {
                     HStack(spacing: 8) {
@@ -114,42 +105,10 @@ struct SessionConfirmationView: View {
         .accessibilityLabel("Start session with \(displayName)")
     }
 
-    private var notAskedContent: some View {
-        VStack(spacing: 20) {
-            header(
-                icon: "questionmark.bubble",
-                title: RecordingConsentCopy.notAskedTitle,
-                message: RecordingConsentCopy.notAskedMessage
-            )
-            script
-            ConsentGiverPicker(giver: giver)
-                .disabled(isSavingConsent)
-            if let consentError {
-                ErrorMessageLabel(message: consentError)
-            }
-            VStack(spacing: 10) {
-                let agreed = RecordingConsentCopy.agreedToday(by: giver.wrappedValue)
-                Button(action: onAgreedToday) {
-                    Text(isSavingConsent ? "Saving…" : agreed)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut(.defaultAction)
-                .disabled(isSavingConsent)
-                .accessibilityLabel("\(agreed), start recording")
-
-                wideButton("Record anyway", action: onStartRecording)
-                    .disabled(isSavingConsent)
-                wideButton("Cancel", role: .cancel, action: onCancel)
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(RecordingConsentCopy.notAskedTitle)
-    }
-
-    /// Telehealth with nothing on file: ask once recording starts, or don't
-    /// record. The server refuses any other start, so nothing else is offered.
+    /// Nothing on file, in person or over telehealth: ask once recording
+    /// starts, or don't record. No script here: its first line, "I've started
+    /// recording our session", is not true yet. It is shown on the panel that
+    /// opens once recording is running.
     private var askOnRecordingContent: some View {
         VStack(spacing: 20) {
             header(
@@ -157,7 +116,6 @@ struct SessionConfirmationView: View {
                 title: RecordingConsentCopy.notAskedTitle,
                 message: RecordingConsentCopy.askOnRecordingMessage
             )
-            script
             VStack(spacing: 10) {
                 Button(action: onAskNow) {
                     Text(RecordingConsentCopy.askNow)
@@ -248,10 +206,19 @@ struct SessionConfirmationView: View {
     SessionConfirmationView(patientName: "Sam", onStartRecording: {}, onCancel: {})
 }
 
-#Preview("Not asked") {
+#Preview("Agreed, script offered") {
     SessionConfirmationView(
         patientName: "Sam",
-        consent: .notAsked,
+        scriptRetentionDays: 365,
+        onStartRecording: {},
+        onCancel: {}
+    )
+}
+
+#Preview("In person, not asked") {
+    SessionConfirmationView(
+        patientName: "Sam",
+        consent: .askOnRecording(.inPerson),
         scriptRetentionDays: 365,
         onStartRecording: {},
         onCancel: {}
@@ -261,7 +228,7 @@ struct SessionConfirmationView: View {
 #Preview("Telehealth, not asked") {
     SessionConfirmationView(
         patientName: "Sam",
-        consent: .askOnRecording,
+        consent: .askOnRecording(.telehealth),
         scriptRetentionDays: 0,
         onStartRecording: {},
         onCancel: {}

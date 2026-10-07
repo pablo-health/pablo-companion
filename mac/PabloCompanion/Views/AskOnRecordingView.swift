@@ -1,9 +1,10 @@
 import CompanionSessionCore
 import SwiftUI
 
-/// Shown once recording has started for a telehealth client nobody had asked
-/// about AI-assisted notes: the script to read aloud, so the answer is on the
-/// recording, and the answer to save on the client's record.
+/// Shown once recording has started for a client nobody had asked about
+/// AI-assisted notes, in person or over telehealth: the script to read aloud,
+/// so the answer is on the recording, and the answer to save on the client's
+/// record. Only telehealth asks where the client is.
 struct AskOnRecordingView: View {
     @Bindable var viewModel: AskOnRecordingViewModel
 
@@ -60,21 +61,27 @@ struct AskOnRecordingView: View {
     private var answerControls: some View {
         VStack(alignment: .leading, spacing: 10) {
             ConsentGiverPicker(giver: $viewModel.giver)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(RecordingConsentCopy.locationLabel)
-                    .font(.subheadline)
-                TextField(RecordingConsentCopy.locationLabel, text: $viewModel.location)
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .accessibilityLabel(RecordingConsentCopy.locationLabel)
-                    .onChange(of: viewModel.location) { _, value in
-                        if value.count > AiConsentAnswer.locationMaxLength {
-                            viewModel.location = String(value.prefix(AiConsentAnswer.locationMaxLength))
-                        }
-                    }
+            if viewModel.asksLocation {
+                locationField
             }
         }
         .disabled(viewModel.isSaving)
+    }
+
+    private var locationField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(RecordingConsentCopy.locationLabel)
+                .font(.subheadline)
+            TextField(RecordingConsentCopy.locationLabel, text: $viewModel.location)
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+                .accessibilityLabel(RecordingConsentCopy.locationLabel)
+                .onChange(of: viewModel.location) { _, value in
+                    if value.count > AiConsentAnswer.locationMaxLength {
+                        viewModel.location = String(value.prefix(AiConsentAnswer.locationMaxLength))
+                    }
+                }
+        }
     }
 
     private var buttons: some View {
@@ -117,8 +124,14 @@ struct AskOnRecordingView: View {
     }
 }
 
-#Preview {
+#Preview("Telehealth") {
     let viewModel = AskOnRecordingViewModel()
-    viewModel.begin(sessionId: "s1", patientId: "p1", retentionDays: 0)
+    viewModel.begin(sessionId: "s1", patientId: "p1", retentionDays: 0, modality: .telehealth)
+    return AskOnRecordingView(viewModel: viewModel, onAnswer: { _ in }, onClose: {})
+}
+
+#Preview("In person") {
+    let viewModel = AskOnRecordingViewModel()
+    viewModel.begin(sessionId: "s1", patientId: "p1", retentionDays: 365, modality: .inPerson)
     return AskOnRecordingView(viewModel: viewModel, onAnswer: { _ in }, onClose: {})
 }

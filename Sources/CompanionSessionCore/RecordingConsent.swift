@@ -1,32 +1,35 @@
 import Foundation
 
 /// What a client's answer about AI-assisted notes means for starting a
-/// recording: go ahead, ask first, ask once recording starts, or stop.
+/// recording: go ahead, ask once recording starts, or stop.
 ///
 /// Mirrors the web app's check. Only a practice that asks its clients (the
 /// practice's AI-notes consent setting) is ever anything but ``clear``. The
 /// server refuses a declined client's recording regardless — this is what lets
-/// the companion say so before the microphone arms, and offer a one-click
-/// "agreed today" when nobody has asked yet.
+/// the companion say so before the microphone arms.
 ///
-/// Nobody having asked yet splits on where the client is. In the room, the
-/// clinician may ask before recording or record anyway (``notAsked``). Over
-/// telehealth the client may be somewhere every party has to agree to a
-/// recording, so the only way to record is to ask once recording starts, which
-/// puts the answer on the recording (``askOnRecording``). The server refuses a
-/// telehealth start with nothing on file unless the start says so
-/// (`asking_consent_on_recording`).
+/// When nobody has asked the client yet, in the room or over telehealth, the
+/// companion offers one way to record: ask once recording starts, so the
+/// answer is on the recording (``askOnRecording(_:)``). The read-aloud script
+/// opens "I've started recording our session", so it is only shown once that
+/// is true. There is no "record anyway" and no pre-selected "agreed": a yes is
+/// recorded only as the answer given on the recording, and a no stops and
+/// deletes it. The server refuses a telehealth start with nothing on file
+/// unless the start says it is asking (`asking_consent_on_recording`); it
+/// accepts an in-person start either way, and the companion says so anyway.
+///
+/// Where the session is rides along, because the answer is saved with how it
+/// was given (in person, or over telehealth with where the client said they
+/// were).
 public enum RecordingConsent: Equatable, Sendable {
     /// Record. The practice does not ask, or the client agreed.
     case clear
-    /// The practice asks and nobody has asked this client yet (in person).
-    case notAsked
-    /// Telehealth, and nobody has asked this client yet: offer only asking
-    /// once recording starts, or not recording. Never "record anyway".
-    case askOnRecording
+    /// The practice asks and nobody has asked this client yet: offer asking
+    /// once recording starts ("Ask now"), or not recording.
+    case askOnRecording(AiConsentModality)
     /// The clinician chose to ask once recording starts: start, telling the
     /// server so, and show the script once recording is running.
-    case askingOnRecording
+    case askingOnRecording(AiConsentModality)
     /// The client declined. `on` is the day they answered, as `YYYY-MM-DD`.
     case declined(on: String)
 
@@ -45,33 +48,41 @@ public enum RecordingConsent: Equatable, Sendable {
         telehealth: Bool = false
     ) -> RecordingConsent {
         guard asksClients else { return .clear }
-        guard let current else { return telehealth ? .askOnRecording : .notAsked }
+        guard let current else { return .askOnRecording(telehealth ? .telehealth : .inPerson) }
         return current.decision == AiConsentEntry.declined ? .declined(on: current.effectiveOn) : .clear
     }
 
     /// Whether the session start tells the server the clinician is asking
     /// once recording starts.
     public var startsAskingOnRecording: Bool {
-        self == .askingOnRecording
+        askingModality != nil
+    }
+
+    /// Where the session is, when the clinician is asking once recording
+    /// starts; `nil` otherwise.
+    public var askingModality: AiConsentModality? {
+        if case let .askingOnRecording(modality) = self { return modality }
+        return nil
     }
 
     /// The answer for a start handed off from the web app.
     ///
-    /// `webAlreadyAsked`: the web app already asked "No consent on file" and
-    /// the clinician chose to record anyway. Asking again would be the same
-    /// question twice, so a missing in-person answer reads as clear. It never
-    /// clears a telehealth start: the server would refuse it.
+    /// `webAskingOnRecording`: for a start with nothing on file, the web app
+    /// already offered "Ask now" and the clinician took it, so the companion
+    /// starts asking on the recording without offering it again.
     ///
-    /// `webAskingOnRecording`: for a telehealth start with nothing on file,
-    /// the web app already offered "Ask now" and the clinician took it, so the
-    /// companion starts asking on the recording without offering it again.
+    /// `webAlreadyAsked`: for an in-person visit, the web app already asked
+    /// "No consent on file" and the clinician chose to record anyway there.
+    /// That choice was made in the web app, so a missing in-person answer reads
+    /// as clear rather than asking the same question twice. It never clears a
+    /// telehealth start: the server would refuse it.
     ///
     /// A decline still stops either way: it may have been recorded after the
     /// web app asked.
     public func handedOff(webAlreadyAsked: Bool, webAskingOnRecording: Bool = false) -> RecordingConsent {
         switch self {
-        case .notAsked where webAlreadyAsked: .clear
-        case .askOnRecording where webAskingOnRecording: .askingOnRecording
+        case let .askOnRecording(modality) where webAskingOnRecording: .askingOnRecording(modality)
+        case .askOnRecording(.inPerson) where webAlreadyAsked: .clear
         default: self
         }
     }
@@ -214,11 +225,6 @@ public struct AiConsentAnswer: Equatable, Sendable {
         self.modality = modality
         self.consentedBy = consentedBy
         self.clientStatedLocation = clientStatedLocation
-    }
-
-    /// "Client agreed today" in the room, as the web app records it.
-    public static func agreedInPerson(by giver: AiConsentGiver) -> AiConsentAnswer {
-        AiConsentAnswer(decision: AiConsentEntry.consented, modality: .inPerson, consentedBy: giver)
     }
 
     /// The request body. A place is sent only for telehealth, trimmed, and

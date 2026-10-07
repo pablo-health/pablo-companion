@@ -88,8 +88,8 @@ extension ContentView {
     }
 
     /// Arms recording for a confirmed handoff. Called ONLY from the confirmation
-    /// view's explicit "Start Recording" (or "Ask now", or a saved "agreed
-    /// today") tap — this is the consent gate.
+    /// view's explicit "Start Recording" (or "Ask now") tap — this is the
+    /// consent gate.
     func confirmPendingLaunch() {
         guard let launch = pendingLaunch else { return }
         let ask = pendingOnRecordingAsk
