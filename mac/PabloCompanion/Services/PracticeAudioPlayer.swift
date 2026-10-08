@@ -12,32 +12,31 @@ final class PracticeAudioPlayer: PracticeAudioSink, @unchecked Sendable {
     private let logger = Logger(subsystem: AppConstants.appBundleID, category: "PracticeAudioPlayer")
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
-    private let outputFormat: AVAudioFormat
+    private let outputFormat: AVAudioFormat?
     private let lock = NSLock()
     private var isPlaying = false
+    private var isGraphConfigured = false
 
     /// Current RMS level for waveform visualization (0.0–1.0).
     var onLevelUpdate: (@Sendable (Float) -> Void)?
 
+    /// The audio graph is NOT built here. `PracticeViewModel` (and so this
+    /// player) is created at app launch, and `AVAudioEngine.connect` raises
+    /// an Objective-C exception, which Swift cannot catch, when it rejects a
+    /// format. Building the graph lazily in `start()` keeps a failure there
+    /// from ever taking down app launch.
     init() {
-        // Pablo audio: 24kHz, 16-bit signed LE, mono
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: 24000,
-            channels: 1,
-            interleaved: true
-        ) else {
-            preconditionFailure("24kHz mono PCM format must be supported")
-        }
-        outputFormat = format
-        engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: outputFormat)
+        // The player node runs in the standard deinterleaved Float32 format.
+        // macOS 15 rejects an Int16 player-node output format and aborts;
+        // macOS 26 accepts it. Pablo's Int16 chunks are converted in `enqueue`.
+        outputFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)
     }
 
     func start() {
         lock.lock()
         defer { lock.unlock() }
         guard !isPlaying else { return }
+        guard configureGraphIfNeeded() else { return }
         do {
             try engine.start()
             playerNode.play()
@@ -46,6 +45,19 @@ final class PracticeAudioPlayer: PracticeAudioSink, @unchecked Sendable {
         } catch {
             logger.error("Failed to start audio engine: \(error.localizedDescription)")
         }
+    }
+
+    /// Attaches and connects the player node once. Caller holds `lock`.
+    private func configureGraphIfNeeded() -> Bool {
+        if isGraphConfigured { return true }
+        guard let outputFormat else {
+            logger.error("24kHz mono Float32 format unavailable; practice audio disabled")
+            return false
+        }
+        engine.attach(playerNode)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: outputFormat)
+        isGraphConfigured = true
+        return true
     }
 
     func stop() {
@@ -58,44 +70,50 @@ final class PracticeAudioPlayer: PracticeAudioSink, @unchecked Sendable {
         logger.info("Audio engine stopped")
     }
 
-    /// Queue a PCM chunk for immediate playback.
+    /// Queue a PCM chunk (24kHz, 16-bit signed LE, mono) for immediate playback.
     func enqueue(_ pcmData: Data) {
-        guard pcmData.count >= 2 else { return }
+        let samples = Self.floatSamples(fromInt16LE: pcmData)
+        guard !samples.isEmpty else { return }
 
-        let frameCount = AVAudioFrameCount(pcmData.count / 2) // 16-bit = 2 bytes per sample
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: frameCount) else {
+        lock.lock()
+        let ready = isPlaying
+        lock.unlock()
+        // Scheduling on a node that isn't attached to a running engine raises.
+        guard ready, let outputFormat else { return }
+
+        let frameCount = AVAudioFrameCount(samples.count)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: frameCount),
+              let dst = buffer.floatChannelData?[0]
+        else {
             logger.warning("Failed to create audio buffer")
             return
         }
         buffer.frameLength = frameCount
-
-        // Copy PCM data into the buffer
-        pcmData.withUnsafeBytes { rawBuffer in
-            guard let src = rawBuffer.baseAddress,
-                  let dst = buffer.int16ChannelData?[0]
-            else { return }
-            memcpy(dst, src, pcmData.count)
+        samples.withUnsafeBufferPointer { src in
+            guard let base = src.baseAddress else { return }
+            dst.update(from: base, count: samples.count)
         }
 
-        // Compute RMS for waveform visualization
-        if let onLevelUpdate {
-            let rms = computeRMS(buffer)
-            onLevelUpdate(rms)
-        }
-
+        onLevelUpdate?(Self.rms(samples))
         playerNode.scheduleBuffer(buffer)
     }
 
-    private func computeRMS(_ buffer: AVAudioPCMBuffer) -> Float {
-        guard let samples = buffer.int16ChannelData?[0] else { return 0 }
-        let count = Int(buffer.frameLength)
-        guard count > 0 else { return 0 }
-
-        var sum: Float = 0
-        for i in 0 ..< count {
-            let normalized = Float(samples[i]) / Float(Int16.max)
-            sum += normalized * normalized
+    /// Converts 16-bit signed little-endian PCM to Float32 in [-1, 1].
+    /// A trailing odd byte is ignored.
+    static func floatSamples(fromInt16LE data: Data) -> [Float] {
+        let count = data.count / 2
+        guard count > 0 else { return [] }
+        return data.withUnsafeBytes { raw in
+            (0 ..< count).map { i in
+                let value = Int16(littleEndian: raw.loadUnaligned(fromByteOffset: i * 2, as: Int16.self))
+                return Float(value) / Float(Int16.max)
+            }
         }
-        return sqrt(sum / Float(count))
+    }
+
+    static func rms(_ samples: [Float]) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        let sum = samples.reduce(Float(0)) { $0 + $1 * $1 }
+        return sqrt(sum / Float(samples.count))
     }
 }
