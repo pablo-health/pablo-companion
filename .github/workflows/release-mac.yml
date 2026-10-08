@@ -117,7 +117,7 @@ jobs:
           echo "DSYM_ZIP=$DSYM_ZIP" >> "$GITHUB_ENV"
 
       - name: Upload dSYMs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dSYMs-${{ env.VERSION }}
           path: ${{ runner.temp }}/${{ env.DSYM_ZIP }}
