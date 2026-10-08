@@ -100,6 +100,29 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
+      # Keep the dSYMs so crash reports from this build can be symbolicated:
+      # without them Pablo's own frames show only as "Pablo 0x... + offset".
+      # Re-signing below doesn't change the binary UUIDs, so these match the
+      # shipped app. Fails the build if the archive produced none.
+      - name: Package dSYMs
+        run: |
+          DSYM_DIR=$RUNNER_TEMP/Pablo.xcarchive/dSYMs
+          if [ -z "$(ls -A "$DSYM_DIR" 2>/dev/null)" ]; then
+            echo "::error::Archive produced no dSYMs"
+            exit 1
+          fi
+          dwarfdump --uuid "$DSYM_DIR"/*.dSYM
+          DSYM_ZIP=Pablo-${VERSION}-dSYMs.zip
+          ditto -c -k --keepParent "$DSYM_DIR" "$RUNNER_TEMP/$DSYM_ZIP"
+          echo "DSYM_ZIP=$DSYM_ZIP" >> "$GITHUB_ENV"
+
+      - name: Upload dSYMs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dSYMs-${{ env.VERSION }}
+          path: ${{ runner.temp }}/${{ env.DSYM_ZIP }}
+          retention-days: 90
+
       - name: Export
         run: |
           xcodebuild -exportArchive \
@@ -290,6 +313,7 @@ jobs:
           files: |
             ${{ runner.temp }}/${{ env.DMG_NAME }}
             ${{ runner.temp }}/Pablo.dmg
+            ${{ runner.temp }}/${{ env.DSYM_ZIP }}
           generate_release_notes: true
 
       - name: Publish appcast
