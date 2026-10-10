@@ -4,91 +4,101 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:PabloCompanion.Views">
 
+    <!-- Live capture state plus the two controls a therapist needs mid-session:
+         Pause (a brief hold; the session stays open) and End Session (stop,
+         upload, close). There is deliberately no "stop recording only": it left
+         the session in progress with nothing uploaded. -->
     <Border Background="{StaticResource PabloSage}"
             CornerRadius="8"
-            Padding="12,8"
+            Padding="12,10"
             x:Name="BannerBorder">
-        <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <StackPanel Spacing="10">
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-            <!-- Recording indicator dot -->
-            <Ellipse Grid.Column="0"
-                     x:Name="RecordingDot"
-                     Width="10" Height="10"
-                     Fill="#FFFFFF"
-                     VerticalAlignment="Center"
-                     AutomationProperties.Name="Recording status indicator" />
+                <!-- Recording indicator dot (decorative; the status text carries the state) -->
+                <Ellipse Grid.Column="0"
+                         x:Name="RecordingDot"
+                         Width="10" Height="10"
+                         Fill="#FFFFFF"
+                         VerticalAlignment="Center"
+                         AutomationProperties.AccessibilityView="Raw" />
 
-            <!-- Status text -->
-            <TextBlock Grid.Column="1"
-                       x:Name="StatusText"
-                       Text="Recording"
-                       Foreground="White"
-                       FontWeight="SemiBold"
-                       VerticalAlignment="Center" />
+                <!-- Status text -->
+                <TextBlock Grid.Column="1"
+                           x:Name="StatusText"
+                           Text="Recording"
+                           Foreground="White"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
 
-            <!-- Duration -->
-            <TextBlock Grid.Column="2"
-                       x:Name="DurationText"
-                       Text="00:00:00"
-                       Foreground="#E0FFFFFF"
-                       FontFamily="Consolas"
-                       VerticalAlignment="Center" />
+                <!-- Duration -->
+                <TextBlock Grid.Column="2"
+                           x:Name="DurationText"
+                           Text="00:00:00"
+                           Foreground="#E0FFFFFF"
+                           FontFamily="Consolas"
+                           VerticalAlignment="Center" />
 
-            <!-- Volume meters -->
-            <local:LevelMeter Grid.Column="3"
-                              x:Name="MicMeter"
-                              Label="Mic" />
+                <!-- Volume meters -->
+                <local:LevelMeter Grid.Column="4"
+                                  x:Name="MicMeter"
+                                  Label="Mic" />
 
-            <local:LevelMeter Grid.Column="4"
-                              x:Name="SysMeter"
-                              Label="Sys" />
+                <local:LevelMeter Grid.Column="5"
+                                  x:Name="SysMeter"
+                                  Label="Sys" />
+            </Grid>
 
             <!-- System audio indicator -->
-            <StackPanel Grid.Column="5"
-                        Orientation="Horizontal"
+            <StackPanel Orientation="Horizontal"
                         Spacing="4"
                         VerticalAlignment="Center">
                 <Ellipse x:Name="SystemAudioDot"
                          Width="8" Height="8"
                          Fill="#80FFFFFF"
-                         VerticalAlignment="Center" />
+                         VerticalAlignment="Center"
+                         AutomationProperties.AccessibilityView="Raw" />
                 <TextBlock Text="System Audio"
                            Foreground="#C0FFFFFF"
                            FontSize="12"
                            VerticalAlignment="Center" />
             </StackPanel>
 
-            <!-- Stop Recording + End Session buttons -->
-            <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="8">
-                <Button x:Name="StopRecordingButton"
-                        Content="Stop Recording"
-                        Click="StopRecordingButton_Click"
+            <!-- Pause / Resume + End Session -->
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0"
+                        x:Name="PauseResumeButton"
+                        Content="Pause"
+                        Click="PauseResumeButton_Click"
                         Background="#8B7355"
                         Foreground="White"
-                        Padding="12,6"
-                        CornerRadius="4"
-                        VerticalAlignment="Center"
-                        AutomationProperties.Name="Stop recording only" />
-                <Button x:Name="EndSessionButton"
+                        Padding="12,8"
+                        CornerRadius="8"
+                        HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="Pause recording" />
+                <Button Grid.Column="1"
+                        x:Name="EndSessionButton"
                         Content="End Session"
                         Click="EndSessionButton_Click"
                         Background="#C45B4A"
                         Foreground="White"
-                        Padding="12,6"
-                        CornerRadius="4"
-                        VerticalAlignment="Center"
-                        AutomationProperties.Name="Stop recording and end session" />
-            </StackPanel>
-        </Grid>
+                        Padding="12,8"
+                        CornerRadius="8"
+                        HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="End session" />
+            </Grid>
+        </StackPanel>
     </Border>
 </UserControl>

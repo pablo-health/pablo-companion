@@ -47,9 +47,12 @@ public sealed partial class MainWindow : Window
         var dpi = GetDpiForWindow(hwnd);
         var scale = dpi / 96.0;
         var appWindow = this.AppWindow;
+        // The session-first window is compact (it matches the Mac minimal
+        // window); the native dashboard keeps its original size.
+        var (width, height) = EnableNativeDashboard ? (1000, 750) : (480, 560);
         appWindow.Resize(new Windows.Graphics.SizeInt32(
-            (int)(1000 * scale),
-            (int)(750 * scale)));
+            (int)(width * scale),
+            (int)(height * scale)));
 
         // Ensure window is resizable
         if (appWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter)
@@ -69,6 +72,10 @@ public sealed partial class MainWindow : Window
         _deepLinks.UriReceived += OnDeepLinkReceived;
 
         _apiClient = App.Services.GetRequiredService<APIClient>();
+
+        // This window holds the only End Session button. Closing it mid-session
+        // would leave the mic live (or the session open) with no way to stop.
+        appWindow.Closing += AppWindow_Closing;
 
         // Keep the backend session alive while a recording is active — capture
         // is local and uploads happen at stop, so without this the server-side
@@ -149,6 +156,9 @@ public sealed partial class MainWindow : Window
                 NavView.Visibility = Visibility.Collapsed;
                 MinimalShell.Visibility = Visibility.Visible;
                 MinimalShell.Refresh();
+
+                // Today's appointments now and every 60 s while signed in.
+                App.Services.GetRequiredService<SessionViewModel>().StartAppointmentRefresh();
             }
 
             TryDrainDeepLink();
@@ -159,6 +169,7 @@ public sealed partial class MainWindow : Window
             NavView.Visibility = Visibility.Collapsed;
             MinimalShell.Visibility = Visibility.Collapsed;
             _subscriptionVm.ClearAllData();
+            App.Services.GetRequiredService<SessionViewModel>().StopAppointmentRefresh();
         }
     }
 
@@ -275,26 +286,73 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // Minimal shell: no day view in the frame. Drive the recording pipeline
-        // directly (the recording itself lives in RecordingViewModel, not the UI),
-        // and surface the live controls in an ephemeral recording window so the user
-        // can see the duration/levels and Stop / End Session.
+        // Minimal shell: the handoff lands in the appointment card, which pins
+        // the appointment through "Starting session..." and then shows the live
+        // recording controls (Pause / Resume, End Session). RecordingWindow is no
+        // longer opened from here.
+        Activate();
         _ = StartSessionDirectAsync(appointmentId);
     }
 
-    private async Task StartSessionDirectAsync(string appointmentId)
+    private static async Task StartSessionDirectAsync(string appointmentId)
     {
-        var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
-        var session = await sessionVm.StartSessionFromAppointmentAsync(appointmentId);
-        if (session is null) return;
-        await sessionVm.StartSessionAsync(session.Id);
+        try
+        {
+            // Same guarded path as the card's Start Session, so a handoff landing
+            // mid-start or mid-recording can't create a second session.
+            var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+            await sessionVm.StartAppointmentSessionAsync(appointmentId);
+        }
+        catch (Exception ex)
+        {
+            App.LogException("StartSessionDirectAsync", ex);
+        }
+    }
 
-        // Only show the recording surface once the mic is actually live. The window
-        // hosts the same controls the day view uses and closes itself when recording
-        // returns to Idle (End Session / sign-out).
+    private bool _closeNoticeOpen;
+
+    /// <summary>
+    /// Blocks closing while a session is recording (or being started): cancel the
+    /// close and say why. No close-to-tray; once the session ends the window
+    /// closes normally.
+    /// </summary>
+    private void AppWindow_Closing(Microsoft.UI.Windowing.AppWindow sender,
+        Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+    {
         var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
-        if (recordingVm.State == Models.RecordingUIState.Idle) return;
-        new RecordingWindow().Activate();
+        var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+        var busy = recordingVm.State != Models.RecordingUIState.Idle
+            || recordingVm.ActiveSessionId is not null
+            || sessionVm.StartingAppointmentId is not null;
+        if (!busy) return;
+
+        args.Cancel = true;
+        _ = ShowEndSessionFirstAsync();
+    }
+
+    private async Task ShowEndSessionFirstAsync()
+    {
+        // ContentDialog throws if a second one opens; one notice at a time.
+        if (_closeNoticeOpen || Content?.XamlRoot is null) return;
+        _closeNoticeOpen = true;
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "End the session before closing Pablo",
+                CloseButtonText = "OK",
+                XamlRoot = Content.XamlRoot,
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("MainWindow.ShowEndSessionFirst", ex);
+        }
+        finally
+        {
+            _closeNoticeOpen = false;
+        }
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
