@@ -50,6 +50,22 @@ public partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     public partial string? StartingAppointmentId { get; set; }
 
+    /// <summary>
+    /// Appointment whose session was opened on this PC but whose recording didn't
+    /// start. The card keeps it and offers Start Session again, which reuses that
+    /// session: an appointment has at most one.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? UnrecordedAppointmentId { get; set; }
+
+    /// <summary>
+    /// Why the last Start Session from the main window didn't get a session going,
+    /// when the recording itself didn't say (see <c>RecordingViewModel.ErrorMessage</c>).
+    /// Kept apart from <see cref="ErrorMessage"/>, which the appointment refresh clears.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? StartErrorMessage { get; set; }
+
     // --- Today's sessions ---
 
     [ObservableProperty]
@@ -113,6 +129,8 @@ public partial class SessionViewModel : ObservableObject
         TodayAppointments = [];
         AppointmentsErrorMessage = null;
         StartingAppointmentId = null;
+        UnrecordedAppointmentId = null;
+        StartErrorMessage = null;
         TodaySessions = [];
         Sessions = [];
         ActiveSession = null;
@@ -175,11 +193,20 @@ public partial class SessionViewModel : ObservableObject
         if (_recordingVm.State != RecordingUIState.Idle || _recordingVm.ActiveSessionId is not null) return false;
 
         StartingAppointmentId = appointmentId;
+        StartErrorMessage = null;
         try
         {
-            var session = await StartSessionFromAppointmentAsync(appointmentId);
-            if (session is null) return true;
-            await StartSessionAsync(session.Id);
+            var sessionId = UnrecordedSessionId(appointmentId)
+                ?? (await StartSessionFromAppointmentAsync(appointmentId))?.Id;
+            if (sessionId is null)
+            {
+                StartErrorMessage = ErrorMessage;
+                return true;
+            }
+            await StartSessionAsync(sessionId);
+            var recording = _recordingVm.ActiveSessionId == sessionId;
+            UnrecordedAppointmentId = recording ? null : appointmentId;
+            if (!recording && _recordingVm.ErrorMessage is null) StartErrorMessage = ErrorMessage;
             return true;
         }
         finally
@@ -189,6 +216,11 @@ public partial class SessionViewModel : ObservableObject
             await LoadTodayAppointmentsAsync();
         }
     }
+
+    private string? UnrecordedSessionId(string appointmentId) =>
+        appointmentId == UnrecordedAppointmentId
+            ? TodayAppointments.FirstOrDefault(a => a.Id == appointmentId)?.SessionId
+            : null;
 
     /// <summary>
     /// End Session from the minimal window: stop, mark complete, upload (all in
@@ -270,8 +302,14 @@ public partial class SessionViewModel : ObservableObject
             ActiveSession = session;
             _videoLaunch.LaunchVideoCall(session.VideoLink, session.VideoPlatform?.ToString());
 
-            // Start recording
-            _ = _recordingVm.StartRecordingAsync(sessionId);
+            // Awaited, not fired and forgotten: a capture that doesn't start lets
+            // the session go, so nothing shows a recording that isn't happening.
+            // The reason is in RecordingViewModel.ErrorMessage.
+            if (!await _recordingVm.StartRecordingForSessionAsync(sessionId))
+            {
+                ActiveSession = null;
+                await ReleaseSessionAsync(sessionId);
+            }
 
             await LoadTodaySessionsAsync();
         }
@@ -286,13 +324,32 @@ public partial class SessionViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Puts a session whose recording didn't start back to scheduled, so it isn't
+    /// shown as in progress anywhere and a later Start can mark it in progress
+    /// again. Best effort: a failure here leaves the session in progress.
+    /// </summary>
+    private async Task ReleaseSessionAsync(string sessionId)
+    {
+        try
+        {
+            await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.Scheduled);
+        }
+        catch (Exception ex)
+        {
+            App.Log($"ReleaseSession failed type={ex.GetType().Name}");
+        }
+    }
+
     [RelayCommand]
     public async Task EndSessionAsync(string sessionId)
     {
         // Stop recording first.
         try
         {
-            if (_recordingVm.State != Models.RecordingUIState.Idle)
+            // Also when capture already stopped on its own: the session is still
+            // open on the card until this lets it go.
+            if (_recordingVm.State != Models.RecordingUIState.Idle || _recordingVm.ActiveSessionId is not null)
                 await _recordingVm.StopRecordingAsync();
         }
         catch (Exception ex)

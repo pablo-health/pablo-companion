@@ -348,6 +348,67 @@ public class MinimalShellSelectionTests
         Assert.Null(MinimalShellSelection.NextAppointment([started], now));
     }
 
+    // --- A session whose recording didn't start (Windows-only) ---
+
+    [Fact]
+    public void AnUnrecordedAppointmentStaysOnTheCardOfferingStart()
+    {
+        var unrecorded = MakeAppointment("2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z",
+            id: "unrecorded", sessionId: "session-1", sessionStatus: "scheduled");
+        var later = MakeAppointment("2026-09-03T16:00:00Z", "2026-09-03T16:50:00Z", id: "later");
+        var now = At("2026-09-03T15:10:00Z");
+
+        var card = MinimalShellSelection.SelectCard(
+            [unrecorded, later], now, activeSessionId: null, startingAppointmentId: null,
+            isLoading: false, hasError: false, unrecordedAppointmentId: "unrecorded");
+
+        Assert.Equal("unrecorded", card.Appointment?.Id);
+        Assert.Equal(AppointmentAction.Start, card.Action);
+
+        // Without the pin it reads as done and the card advances.
+        Assert.Equal("later", MinimalShellSelection.NextAppointment([unrecorded, later], now)?.Id);
+    }
+
+    [Fact]
+    public void AnUnrecordedAppointmentIsNotRecordingOnAnotherDevice()
+    {
+        var unrecorded = MakeAppointment("2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z",
+            id: "unrecorded", sessionId: "session-1", sessionStatus: "in_progress");
+        var now = At("2026-09-03T15:10:00Z");
+
+        Assert.NotNull(MinimalShellSelection.InProgressElsewhere([unrecorded], now));
+        Assert.Null(MinimalShellSelection.InProgressElsewhere([unrecorded], now, unrecordedAppointmentId: "unrecorded"));
+    }
+
+    [Fact]
+    public void AnUnrecordedAppointmentLetsGoOfTheCardOnceItsSlotEnds()
+    {
+        var unrecorded = MakeAppointment("2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z",
+            id: "unrecorded", sessionId: "session-1");
+        var later = MakeAppointment("2026-09-03T16:00:00Z", "2026-09-03T16:50:00Z", id: "later");
+
+        var selected = MinimalShellSelection.NextAppointment(
+            [unrecorded, later], At("2026-09-03T15:55:00Z"), unrecordedAppointmentId: "unrecorded");
+
+        Assert.Equal("later", selected?.Id);
+    }
+
+    [Fact]
+    public void ALiveRecordingAndAStartInFlightOutrankAnUnrecordedAppointment()
+    {
+        var unrecorded = MakeAppointment("2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z",
+            id: "unrecorded", sessionId: "session-1");
+        var recording = MakeAppointment("2026-09-03T14:00:00Z", "2026-09-03T14:50:00Z",
+            id: "recording", sessionId: "session-2");
+        var starting = MakeAppointment("2026-09-03T16:00:00Z", "2026-09-03T16:50:00Z", id: "starting");
+        var now = At("2026-09-03T15:10:00Z");
+
+        Assert.Equal("recording", MinimalShellSelection.NextAppointment(
+            [unrecorded, recording, starting], now, "session-2", "starting", "unrecorded")?.Id);
+        Assert.Equal("starting", MinimalShellSelection.NextAppointment(
+            [unrecorded, recording, starting], now, null, "starting", "unrecorded")?.Id);
+    }
+
     // --- Decoding session_status ---
 
     private static Appointment Decode(string sessionStatusJson)

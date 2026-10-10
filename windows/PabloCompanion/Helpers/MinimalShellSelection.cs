@@ -64,6 +64,11 @@ public static class MinimalShellSelection
     /// is pinned the same way: its <c>session_id</c> lands before the recording's
     /// session id is set, and the filter below would skip it.
     ///
+    /// An appointment whose session opened here but whose recording didn't start
+    /// (<paramref name="unrecordedAppointmentId"/>) stays on the card until its
+    /// slot ends, offering Start again: it has a <c>session_id</c> too, and the
+    /// filter below would read it as done. (Windows-only: the Mac card advances.)
+    ///
     /// Otherwise an appointment that already has a session is done, so the card
     /// advances to the next one.
     /// </summary>
@@ -71,7 +76,8 @@ public static class MinimalShellSelection
         IReadOnlyList<Appointment> appointments,
         DateTimeOffset now,
         string? activeSessionId = null,
-        string? startingAppointmentId = null)
+        string? startingAppointmentId = null,
+        string? unrecordedAppointmentId = null)
     {
         // The live recording outranks one mid-start: it holds the End Session button.
         if (activeSessionId is not null)
@@ -84,6 +90,13 @@ public static class MinimalShellSelection
         {
             var starting = appointments.FirstOrDefault(a => a.Id == startingAppointmentId);
             if (starting is not null) return starting;
+        }
+
+        if (unrecordedAppointmentId is not null)
+        {
+            var unrecorded = appointments.FirstOrDefault(a => a.Id == unrecordedAppointmentId);
+            if (unrecorded is not null && ParseDate(unrecorded.EndAt) is { } unrecordedEnd && unrecordedEnd >= now)
+                return unrecorded;
         }
 
         Appointment? best = null;
@@ -114,13 +127,15 @@ public static class MinimalShellSelection
         IReadOnlyList<Appointment> appointments,
         DateTimeOffset now,
         string? activeSessionId = null,
-        string? startingAppointmentId = null)
+        string? startingAppointmentId = null,
+        string? unrecordedAppointmentId = null)
     {
         return appointments.FirstOrDefault(appointment =>
             appointment.ParsedSessionStatus() == SessionStatus.InProgress
             && appointment.SessionId is { } sessionId
             && sessionId != activeSessionId
             && appointment.Id != startingAppointmentId
+            && appointment.Id != unrecordedAppointmentId
             && ParseDate(appointment.EndAt) is { } end
             && end >= now);
     }
@@ -136,9 +151,10 @@ public static class MinimalShellSelection
         string? activeSessionId,
         string? startingAppointmentId,
         bool isLoading,
-        bool hasError)
+        bool hasError,
+        string? unrecordedAppointmentId = null)
     {
-        if (NextAppointment(appointments, now, activeSessionId, startingAppointmentId) is { } appointment)
+        if (NextAppointment(appointments, now, activeSessionId, startingAppointmentId, unrecordedAppointmentId) is { } appointment)
         {
             return new ShellCard(
                 ShellCardKind.Appointment,

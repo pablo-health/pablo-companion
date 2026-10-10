@@ -477,6 +477,66 @@ public sealed class TranscriptionViewModelTests : IDisposable
 
     // --- stubs ---
 
+    // --- Upload backlog (main window) ---
+
+    [Fact]
+    public void UploadBacklog_CountsOnlyEntriesStillWaitingToUpload()
+    {
+        var store = MakePendingStore();
+        store.Add("waiting-1", _audioPath, null, isEncrypted: false);
+        store.Add("waiting-2", _audioPath, null, isEncrypted: false);
+        store.IncrementRetry("waiting-2");
+        store.Add("uploaded", _audioPath, null, isEncrypted: false);
+        store.SetState("uploaded", UploadLifecycleState.AwaitingNote);
+
+        var vm = MakeVm(new StubApiClient(_credentials), store);
+
+        var pendingUploads = store.GetAll().Count(e => e.State == UploadLifecycleState.PendingUpload);
+        Assert.Equal(pendingUploads, vm.UploadBacklogCount);
+        Assert.Equal(2, vm.UploadBacklog.Waiting);
+        Assert.True(vm.UploadBacklog.HasFailed);
+        Assert.Equal("Audio from 2 sessions hasn't uploaded yet.", vm.UploadBacklog.Message);
+    }
+
+    [Fact]
+    public async Task UploadNow_ForceRetriesEveryWaitingUpload_AndTheBacklogEmpties()
+    {
+        var store = MakePendingStore();
+        store.Add("waiting-1", _audioPath, null, isEncrypted: false);
+        store.Add("waiting-2", _audioPath, null, isEncrypted: false);
+        // Deep in backoff: the scheduled drain would skip it; Upload Now must not.
+        for (var i = 0; i < 3; i++) store.IncrementRetry("waiting-2");
+        store.Add("uploaded", _audioPath, null, isEncrypted: false);
+        store.SetState("uploaded", UploadLifecycleState.AwaitingNote);
+        var api = new StubApiClient(_credentials);
+        var vm = MakeVm(api, store);
+        Assert.Equal(2, vm.UploadBacklogCount);
+
+        await vm.UploadNowAsync();
+
+        // ForceRetryPendingUploadsAsync ran: one upload per waiting entry, none for
+        // the one already uploaded.
+        Assert.Equal(2, api.CallCount);
+        Assert.Equal(0, vm.UploadBacklogCount);
+        Assert.Null(vm.UploadBacklog.Message);
+        Assert.False(vm.IsUploadingNow);
+    }
+
+    [Fact]
+    public async Task UploadNow_AFailedAttemptKeepsTheBacklogAndMarksItFailed()
+    {
+        var store = MakePendingStore();
+        store.Add("waiting-1", _audioPath, null, isEncrypted: false);
+        var api = new StubApiClient(_credentials) { FailNext = true };
+        var vm = MakeVm(api, store);
+        Assert.False(vm.UploadBacklog.HasFailed);
+
+        await vm.UploadNowAsync();
+
+        Assert.Equal(1, vm.UploadBacklogCount);
+        Assert.True(vm.UploadBacklog.HasFailed);
+    }
+
     /// <summary>
     /// Stands in for a cleaner that can't do its job — a sidecar still locked by
     /// another handle, say. The real one swallows its own failures; this proves

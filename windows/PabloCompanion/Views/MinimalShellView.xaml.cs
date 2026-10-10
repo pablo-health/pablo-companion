@@ -27,6 +27,7 @@ public sealed partial class MinimalShellView : UserControl
     private readonly CredentialManager _credentials;
     private readonly RecordingViewModel _recordingVm;
     private readonly SessionViewModel _sessionVm;
+    private readonly TranscriptionViewModel _transcriptionVm;
 
     private Window? _preferencesWindow;
 
@@ -36,14 +37,17 @@ public sealed partial class MinimalShellView : UserControl
         _credentials = App.Services.GetRequiredService<CredentialManager>();
         _recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
         _sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+        _transcriptionVm = App.Services.GetRequiredService<TranscriptionViewModel>();
 
         InitializeComponent();
 
         VersionText.Text = $"Pablo Companion (Windows) v{ClientVersion}";
         Card.StartRequested += Card_StartRequested;
+        BacklogNote.UploadNowRequested += BacklogNote_UploadNowRequested;
 
         _sessionVm.PropertyChanged += ViewModel_PropertyChanged;
         _recordingVm.PropertyChanged += RecordingVm_PropertyChanged;
+        _transcriptionVm.PropertyChanged += TranscriptionVm_PropertyChanged;
     }
 
     /// <summary>
@@ -65,6 +69,9 @@ public sealed partial class MinimalShellView : UserControl
 
         _ = RefreshMicStatusAsync();
         UpdateCard();
+        UpdateStartError();
+        _transcriptionVm.RefreshUploadBacklog();
+        UpdateBacklog();
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -75,9 +82,19 @@ public sealed partial class MinimalShellView : UserControl
             case nameof(SessionViewModel.IsLoadingAppointments):
             case nameof(SessionViewModel.AppointmentsErrorMessage):
             case nameof(SessionViewModel.StartingAppointmentId):
+            case nameof(SessionViewModel.UnrecordedAppointmentId):
                 DispatcherQueue.TryEnqueue(UpdateCard);
                 break;
+            case nameof(SessionViewModel.StartErrorMessage):
+                DispatcherQueue.TryEnqueue(UpdateStartError);
+                break;
         }
+    }
+
+    private void TranscriptionVm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(TranscriptionViewModel.UploadBacklog) or nameof(TranscriptionViewModel.IsUploadingNow))
+            DispatcherQueue.TryEnqueue(UpdateBacklog);
     }
 
     private void RecordingVm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -85,6 +102,54 @@ public sealed partial class MinimalShellView : UserControl
         // Levels and duration tick many times a second; the banner handles those.
         if (e.PropertyName is nameof(RecordingViewModel.ActiveSessionId) or nameof(RecordingViewModel.State))
             DispatcherQueue.TryEnqueue(UpdateCard);
+        if (e.PropertyName is nameof(RecordingViewModel.ErrorMessage) or nameof(RecordingViewModel.ErrorIsMicrophonePermission))
+            DispatcherQueue.TryEnqueue(UpdateStartError);
+    }
+
+    /// <summary>
+    /// The start alert: the recording's own reason first (no key, microphone
+    /// refused, no device), else why the session itself didn't start.
+    /// </summary>
+    private void UpdateStartError()
+    {
+        var recordingError = _recordingVm.ErrorMessage;
+        var message = recordingError ?? _sessionVm.StartErrorMessage;
+        if (message is null)
+        {
+            StartErrorBar.IsOpen = false;
+            return;
+        }
+        StartErrorBar.Message = message;
+        OpenMicSettingsButton.Visibility = recordingError is not null && _recordingVm.ErrorIsMicrophonePermission
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StartErrorBar.IsOpen = true;
+    }
+
+    private void StartErrorBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        _recordingVm.DismissError();
+        _sessionVm.StartErrorMessage = null;
+    }
+
+    private async void OpenMicSettings_Click(object sender, RoutedEventArgs e)
+    {
+        await Windows.System.Launcher.LaunchUriAsync(new Uri(RecordingStartFailure.MicrophoneSettingsUri));
+    }
+
+    private void UpdateBacklog() =>
+        BacklogNote.Show(_transcriptionVm.UploadBacklog, _transcriptionVm.IsUploadingNow);
+
+    private async void BacklogNote_UploadNowRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            await _transcriptionVm.UploadNowAsync();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("MinimalShell.UploadNow", ex);
+        }
     }
 
     /// <summary>
@@ -98,8 +163,9 @@ public sealed partial class MinimalShellView : UserControl
         var appointments = _sessionVm.TodayAppointments;
         var activeSessionId = _recordingVm.ActiveSessionId;
         var startingId = _sessionVm.StartingAppointmentId;
+        var unrecordedId = _sessionVm.UnrecordedAppointmentId;
 
-        var elsewhere = MinimalShellSelection.InProgressElsewhere(appointments, now, activeSessionId, startingId);
+        var elsewhere = MinimalShellSelection.InProgressElsewhere(appointments, now, activeSessionId, startingId, unrecordedId);
         ElsewhereNote.Visibility = elsewhere is null ? Visibility.Collapsed : Visibility.Visible;
         if (elsewhere is not null)
         {
@@ -113,7 +179,8 @@ public sealed partial class MinimalShellView : UserControl
             activeSessionId,
             startingId,
             isLoading: _sessionVm.IsLoadingAppointments,
-            hasError: _sessionVm.AppointmentsErrorMessage is not null);
+            hasError: _sessionVm.AppointmentsErrorMessage is not null,
+            unrecordedAppointmentId: unrecordedId);
 
         Card.Visibility = card.Kind is ShellCardKind.Appointment or ShellCardKind.UntrackedRecording
             ? Visibility.Visible

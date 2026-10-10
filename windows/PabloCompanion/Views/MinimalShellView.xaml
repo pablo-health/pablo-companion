@@ -63,6 +63,20 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Why the last Start Session didn't get a recording going -->
+                    <InfoBar x:Name="StartErrorBar"
+                             Severity="Error"
+                             IsOpen="False"
+                             IsClosable="True"
+                             Closed="StartErrorBar_Closed">
+                        <InfoBar.ActionButton>
+                            <HyperlinkButton x:Name="OpenMicSettingsButton"
+                                             Content="Open Settings"
+                                             Click="OpenMicSettings_Click"
+                                             AutomationProperties.Name="Open microphone privacy settings" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+
                     <!-- Next appointment / live recording -->
                     <local:AppointmentCard x:Name="Card"
                                            Visibility="Collapsed" />
@@ -137,6 +151,10 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
+
+                    <!-- Session audio that hasn't uploaded yet -->
+                    <local:UploadBacklogNote x:Name="BacklogNote"
+                                             Visibility="Collapsed" />
                 </StackPanel>
 
                 <Button Content="Open Web Dashboard"
