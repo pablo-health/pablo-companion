@@ -252,6 +252,33 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (EnableNativeDashboard)
+        {
+            ShowConfirmation(redeemed.AppointmentId, redeemed.PatientName);
+            return;
+        }
+
+        // The client's answer about AI-assisted notes, read with what the web
+        // start already chose. A declined client, or one nobody has asked yet,
+        // gets the prompt in the minimal window in place of the confirmation:
+        // its "Start recording and ask" is the explicit tap that arms the mic.
+        // Otherwise the confirmation stays the gate, and a web "Ask now" asks
+        // on the recording once its Start Recording is tapped.
+        var consentVm = App.Services.GetRequiredService<RecordingConsentViewModel>();
+        var consent = await consentVm.CheckHandoffAsync(
+            redeemed.AppointmentId,
+            redeemed.Telehealth is { } telehealth
+                ? (telehealth ? Core.AiConsentModality.Telehealth : Core.AiConsentModality.InPerson)
+                : null,
+            webAlreadyAsked: redeemed.AiConsentPrompted,
+            webAskingOnRecording: redeemed.AskConsentOnRecording);
+        if (consent is null) return;
+        if (consentVm.Prompt != ConsentPromptKind.None)
+        {
+            Activate();
+            return;
+        }
+
         ShowConfirmation(redeemed.AppointmentId, redeemed.PatientName);
     }
 
@@ -299,9 +326,10 @@ public sealed partial class MainWindow : Window
         try
         {
             // Same guarded path as the card's Start Session, so a handoff landing
-            // mid-start or mid-recording can't create a second session.
-            var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
-            await sessionVm.StartAppointmentSessionAsync(appointmentId);
+            // mid-start or mid-recording can't create a second session. Asks on
+            // the recording when the web start chose "Ask now".
+            var consentVm = App.Services.GetRequiredService<RecordingConsentViewModel>();
+            await consentVm.ConfirmHandoffAsync(appointmentId);
         }
         catch (Exception ex)
         {
