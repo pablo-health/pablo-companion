@@ -30,6 +30,7 @@ public sealed partial class MinimalShellView : UserControl
     private readonly CredentialManager _credentials;
     private readonly RecordingViewModel _recordingVm;
     private readonly SessionViewModel _sessionVm;
+    private readonly TranscriptionViewModel _transcriptionVm;
     private readonly RecordingConsentViewModel _consentVm;
 
     private Window? _preferencesWindow;
@@ -40,15 +41,18 @@ public sealed partial class MinimalShellView : UserControl
         _credentials = App.Services.GetRequiredService<CredentialManager>();
         _recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
         _sessionVm = App.Services.GetRequiredService<SessionViewModel>();
+        _transcriptionVm = App.Services.GetRequiredService<TranscriptionViewModel>();
         _consentVm = App.Services.GetRequiredService<RecordingConsentViewModel>();
 
         InitializeComponent();
 
         VersionText.Text = $"Pablo Companion (Windows) v{ClientVersion}";
         Card.StartRequested += Card_StartRequested;
+        BacklogNote.UploadNowRequested += BacklogNote_UploadNowRequested;
 
         _sessionVm.PropertyChanged += ViewModel_PropertyChanged;
         _recordingVm.PropertyChanged += RecordingVm_PropertyChanged;
+        _transcriptionVm.PropertyChanged += TranscriptionVm_PropertyChanged;
         _consentVm.PropertyChanged += ConsentVm_PropertyChanged;
         AskPanel.Bind(_consentVm);
     }
@@ -71,7 +75,10 @@ public sealed partial class MinimalShellView : UserControl
         StatusDot.Fill = ThemeBrush(connected ? "PabloSage" : "PabloError");
 
         _ = RefreshMicStatusAsync();
-        UpdateCard();
+        UpdateConsentPrompt();
+        UpdateStartError();
+        _transcriptionVm.RefreshUploadBacklog();
+        UpdateBacklog();
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -82,9 +89,19 @@ public sealed partial class MinimalShellView : UserControl
             case nameof(SessionViewModel.IsLoadingAppointments):
             case nameof(SessionViewModel.AppointmentsErrorMessage):
             case nameof(SessionViewModel.StartingAppointmentId):
+            case nameof(SessionViewModel.UnrecordedAppointmentId):
                 DispatcherQueue.TryEnqueue(UpdateCard);
                 break;
+            case nameof(SessionViewModel.StartErrorMessage):
+                DispatcherQueue.TryEnqueue(UpdateStartError);
+                break;
         }
+    }
+
+    private void TranscriptionVm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(TranscriptionViewModel.UploadBacklog) or nameof(TranscriptionViewModel.IsUploadingNow))
+            DispatcherQueue.TryEnqueue(UpdateBacklog);
     }
 
     private void RecordingVm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -92,12 +109,65 @@ public sealed partial class MinimalShellView : UserControl
         // Levels and duration tick many times a second; the banner handles those.
         if (e.PropertyName is nameof(RecordingViewModel.ActiveSessionId) or nameof(RecordingViewModel.State))
             DispatcherQueue.TryEnqueue(UpdateCard);
+        if (e.PropertyName is nameof(RecordingViewModel.ErrorMessage) or nameof(RecordingViewModel.ErrorIsMicrophonePermission))
+            DispatcherQueue.TryEnqueue(UpdateStartError);
     }
 
     /// <summary>
-    /// Card priority: recording, then loading, then error, then "No upcoming
-    /// appointments for today". The "Recording on another device" note sits
-    /// above whichever card shows.
+    /// The start alert: the recording's own reason first (no key, microphone
+    /// refused, no device), else why the session itself didn't start. Not shown
+    /// under a consent prompt: that prompt is a new start, and closing the alert
+    /// for it clears the old reason.
+    /// </summary>
+    private void UpdateStartError()
+    {
+        var recordingError = _recordingVm.ErrorMessage;
+        var message = recordingError ?? _sessionVm.StartErrorMessage;
+        if (message is null || _consentVm.Prompt != ConsentPromptKind.None)
+        {
+            StartErrorBar.IsOpen = false;
+            return;
+        }
+        StartErrorBar.Message = message;
+        OpenMicSettingsButton.Visibility = recordingError is not null && _recordingVm.ErrorIsMicrophonePermission
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StartErrorBar.IsOpen = true;
+    }
+
+    private void StartErrorBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        _recordingVm.DismissError();
+        _sessionVm.StartErrorMessage = null;
+    }
+
+    private async void OpenMicSettings_Click(object sender, RoutedEventArgs e)
+    {
+        await Windows.System.Launcher.LaunchUriAsync(new Uri(RecordingStartFailure.MicrophoneSettingsUri));
+    }
+
+    private void UpdateBacklog() =>
+        BacklogNote.Show(_transcriptionVm.UploadBacklog, _transcriptionVm.IsUploadingNow);
+
+    private async void BacklogNote_UploadNowRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            await _transcriptionVm.UploadNowAsync();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("MinimalShell.UploadNow", ex);
+        }
+    }
+
+    /// <summary>
+    /// The card slot holds one thing. A consent prompt, while it shows, holds it
+    /// alone (see <see cref="UpdateConsentPrompt"/>). Otherwise: recording (the
+    /// recording's trouble note sits inside that card), then loading, then error,
+    /// then "No upcoming appointments for today". Around the slot, not in it: the
+    /// start alert and the "Recording on another device" note above, the asking
+    /// panel above the recording card, the upload backlog note below.
     /// </summary>
     private void UpdateCard()
     {
@@ -105,8 +175,9 @@ public sealed partial class MinimalShellView : UserControl
         var appointments = _sessionVm.TodayAppointments;
         var activeSessionId = _recordingVm.ActiveSessionId;
         var startingId = _sessionVm.StartingAppointmentId;
+        var unrecordedId = _sessionVm.UnrecordedAppointmentId;
 
-        var elsewhere = MinimalShellSelection.InProgressElsewhere(appointments, now, activeSessionId, startingId);
+        var elsewhere = MinimalShellSelection.InProgressElsewhere(appointments, now, activeSessionId, startingId, unrecordedId);
         ElsewhereNote.Visibility = elsewhere is null ? Visibility.Collapsed : Visibility.Visible;
         if (elsewhere is not null)
         {
@@ -120,15 +191,14 @@ public sealed partial class MinimalShellView : UserControl
             activeSessionId,
             startingId,
             isLoading: _sessionVm.IsLoadingAppointments,
-            hasError: _sessionVm.AppointmentsErrorMessage is not null);
+            hasError: _sessionVm.AppointmentsErrorMessage is not null,
+            unrecordedAppointmentId: unrecordedId);
 
-        Card.Visibility = _consentVm.Prompt == ConsentPromptKind.None
-            && card.Kind is ShellCardKind.Appointment or ShellCardKind.UntrackedRecording
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        LoadingCard.Visibility = Show(card.Kind == ShellCardKind.Loading);
-        ErrorCard.Visibility = Show(card.Kind == ShellCardKind.Error);
-        NoUpcomingCard.Visibility = Show(card.Kind == ShellCardKind.NoUpcoming);
+        var slotFree = _consentVm.Prompt == ConsentPromptKind.None;
+        Card.Visibility = Show(slotFree && card.Kind is ShellCardKind.Appointment or ShellCardKind.UntrackedRecording);
+        LoadingCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.Loading);
+        ErrorCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.Error);
+        NoUpcomingCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.NoUpcoming);
 
         if (card.Kind == ShellCardKind.Appointment && card.Appointment is { } appointment)
             Card.ShowAppointment(appointment, card.Action, now);
@@ -162,17 +232,14 @@ public sealed partial class MinimalShellView : UserControl
     private void ConsentVm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         => DispatcherQueue.TryEnqueue(UpdateConsentPrompt);
 
-    /// <summary>Renders the before-arming prompt; the card hides while it shows.</summary>
+    /// <summary>Renders the before-arming prompt; the card slot is its alone while it shows.</summary>
     private void UpdateConsentPrompt()
     {
         var prompt = _consentVm.Prompt;
         ConsentPrompt.Visibility = Show(prompt != ConsentPromptKind.None);
-        if (prompt == ConsentPromptKind.None)
-        {
-            UpdateCard();
-            return;
-        }
-        Card.Visibility = Visibility.Collapsed;
+        UpdateCard();
+        UpdateStartError();
+        if (prompt == ConsentPromptKind.None) return;
 
         if (prompt == ConsentPromptKind.AskOnRecording)
         {

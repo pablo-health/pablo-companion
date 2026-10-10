@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using AudioCapture.Models;
 using PabloCompanion.Core;
+using PabloCompanion.Helpers;
+using PabloCompanion.Tests.Helpers;
 using PabloCompanion.Models;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
@@ -53,6 +55,30 @@ public sealed class SessionViewModelTests : IDisposable
         var sessionVm = new SessionViewModel(api, videoLaunch, recordingVm, transcriptionVm);
         return (sessionVm, api, store);
     }
+
+    /// <summary>
+    /// A SUT whose recording can never start: no encryption key, so the capture
+    /// fails closed before touching any audio device.
+    /// </summary>
+    private (SessionViewModel session, StubApiClient api, RecordingViewModel recording) MakeSutWithoutKey()
+    {
+        var api = new StubApiClient(_credentials);
+        var transcriptionVm = new TranscriptionViewModel(
+            _recordingStore, MakePendingStore(), api, _credentials, new RecordingCleaner(_recordingsRoot));
+        var recordingService = new RecordingService(new KeyCredentialManager(null));
+        var recordingVm = new RecordingViewModel(recordingService, _recordingStore);
+        var sessionVm = new SessionViewModel(api, new VideoLaunchService(), recordingVm, transcriptionVm);
+        return (sessionVm, api, recordingVm);
+    }
+
+    private static Appointment MakeAppointment(string id, DateTimeOffset now) => new(
+        Id: id,
+        PatientId: "patient",
+        Title: "Initial consultation",
+        StartAt: now.AddMinutes(-5).ToString("o"),
+        EndAt: now.AddMinutes(45).ToString("o"),
+        DurationMinutes: 50,
+        Status: "scheduled");
 
     private void SeedRecording(string sessionId)
     {
@@ -128,6 +154,70 @@ public sealed class SessionViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task StartAppointmentSessionAsync_WhenCaptureDoesNotStart_ReleasesTheSessionAndOffersStartAgain()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var (sessionVm, api, recordingVm) = MakeSutWithoutKey();
+        api.Appointments = [MakeAppointment("appointment-1", now)];
+        await sessionVm.LoadTodayAppointmentsAsync();
+
+        var outcome = await sessionVm.StartAppointmentSessionAsync("appointment-1");
+
+        // A start whose capture didn't start is a failure, not a start, so the
+        // asking panel (which waits on Recording) never opens for it.
+        Assert.Equal(AppointmentStartKind.Failed, outcome.Kind);
+        Assert.False(outcome.Recording);
+        Assert.Equal("session-1", outcome.SessionId);
+
+        // Nothing shows a recording that isn't happening...
+        Assert.Null(recordingVm.ActiveSessionId);
+        Assert.Equal(RecordingUIState.Idle, recordingVm.State);
+        Assert.Null(recordingVm.Trouble);
+        Assert.Null(sessionVm.ActiveSession);
+        Assert.Equal(RecordingStartFailure.EncryptionUnavailableMessage, recordingVm.ErrorMessage);
+        // ...the session marked in progress is put back to scheduled...
+        Assert.Equal([SessionStatus.InProgress, SessionStatus.Scheduled], api.PatchStatuses);
+        Assert.Equal("appointment-1", sessionVm.UnrecordedAppointmentId);
+
+        // ...and the card offers Start again for the same appointment, not as
+        // "recording on another device".
+        var appointments = sessionVm.TodayAppointments;
+        Assert.Equal("session-1", Assert.Single(appointments).SessionId);
+        var card = MinimalShellSelection.SelectCard(
+            appointments, now, recordingVm.ActiveSessionId, sessionVm.StartingAppointmentId,
+            isLoading: false, hasError: false, unrecordedAppointmentId: sessionVm.UnrecordedAppointmentId);
+        Assert.Equal(ShellCardKind.Appointment, card.Kind);
+        Assert.Equal("appointment-1", card.Appointment?.Id);
+        Assert.Equal(AppointmentAction.Start, card.Action);
+        Assert.Null(MinimalShellSelection.InProgressElsewhere(
+            appointments, now, recordingVm.ActiveSessionId, sessionVm.StartingAppointmentId, sessionVm.UnrecordedAppointmentId));
+
+        // Start again reuses the appointment's session: the server allows one.
+        var again = await sessionVm.StartAppointmentSessionAsync("appointment-1", askingConsentOnRecording: true);
+        Assert.Equal(AppointmentStartKind.Failed, again.Kind);
+        Assert.Equal("session-1", again.SessionId);
+        Assert.Equal(1, api.StartSessionCallCount);
+        Assert.Equal(
+            [SessionStatus.InProgress, SessionStatus.Scheduled, SessionStatus.InProgress, SessionStatus.Scheduled],
+            api.PatchStatuses);
+        Assert.Equal("appointment-1", sessionVm.UnrecordedAppointmentId);
+    }
+
+    [Fact]
+    public async Task StartAppointmentSessionAsync_WhenTheSessionDoesNotStart_SaysWhy()
+    {
+        var (sessionVm, api, recordingVm) = MakeSutWithoutKey();
+        api.FailStartSession = true;
+
+        var outcome = await sessionVm.StartAppointmentSessionAsync("appointment-1");
+
+        Assert.Equal(AppointmentStartKind.Failed, outcome.Kind);
+        Assert.Equal("Failed to start session from appointment.", sessionVm.StartErrorMessage);
+        Assert.Null(recordingVm.ErrorMessage);
+        Assert.Null(sessionVm.UnrecordedAppointmentId);
+    }
+
+    [Fact]
     public async Task StartAppointmentSessionAsync_ClearsTheGuardSoALaterStartRuns()
     {
         var (sessionVm, api, _) = MakeSut();
@@ -170,6 +260,8 @@ public sealed class SessionViewModelTests : IDisposable
         private int _callSequence;
 
         public int PatchCallCount { get; private set; }
+        public List<SessionStatus> PatchStatuses { get; } = [];
+        public Appointment[] Appointments { get; set; } = [];
         public int UploadCallCount { get; private set; }
         public SessionStatus? LastPatchStatus { get; private set; }
         public int PatchOrder { get; private set; } = int.MaxValue;
@@ -192,6 +284,7 @@ public sealed class SessionViewModelTests : IDisposable
             PatchCallCount++;
             PatchOrder = ++_callSequence;
             LastPatchStatus = status;
+            PatchStatuses.Add(status);
             if (FailNextPatch)
                 throw new PabloException(500, "Simulated PATCH failure");
             return Task.FromResult(MakeSession(sessionId, status));
@@ -215,7 +308,7 @@ public sealed class SessionViewModelTests : IDisposable
             => Task.FromResult(Array.Empty<Session>());
 
         public override Task<Appointment[]> FetchTodayAppointmentsAsync()
-            => Task.FromResult(Array.Empty<Appointment>());
+            => Task.FromResult(Appointments);
 
         public override Task<Session> StartSessionFromAppointmentAsync(
             string appointmentId, bool askingConsentOnRecording = false)
@@ -223,6 +316,10 @@ public sealed class SessionViewModelTests : IDisposable
             StartSessionCallCount++;
             if (FailStartSession)
                 throw new PabloException(500, "Simulated start failure");
+            // The server links the new session to its appointment.
+            Appointments = Appointments
+                .Select(a => a.Id == appointmentId ? a with { SessionId = "session-1", SessionStatusRaw = "in_progress" } : a)
+                .ToArray();
             return HoldStartSession?.Task ?? Task.FromResult(MakeSession("session-1", SessionStatus.Scheduled));
         }
 

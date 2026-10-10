@@ -21,12 +21,14 @@ public sealed partial class RecordingBanner : UserControl
     private readonly RecordingViewModel _vm;
     private string? _sessionTitle;
     private bool _isEnding;
+    private bool _isRestarting;
 
     public RecordingBanner()
     {
         InitializeComponent();
         _vm = App.Services.GetRequiredService<RecordingViewModel>();
         _vm.PropertyChanged += Vm_PropertyChanged;
+        TroubleNote.RestartRequested += TroubleNote_RestartRequested;
         UpdateUI();
     }
 
@@ -53,8 +55,10 @@ public sealed partial class RecordingBanner : UserControl
         var isPaused = state == RecordingUIState.Paused;
         var stopped = state == RecordingUIState.Idle;
 
+        var trouble = _vm.Trouble;
+
         StatusText.Text = MinimalShellSelection.CaptureStateLabel(state);
-        RecordingDot.Fill = stopped
+        RecordingDot.Fill = stopped || trouble is not null
             ? (Brush)Application.Current.Resources["PabloError"]
             : isPaused
                 ? new SolidColorBrush(Colors.Yellow)
@@ -75,9 +79,25 @@ public sealed partial class RecordingBanner : UserControl
         SysMeter.Level = _vm.SystemLevel;
 
         // System audio indicator
-        SystemAudioDot.Fill = _vm.SystemAudioActive
-            ? new SolidColorBrush(Colors.LimeGreen)
-            : new SolidColorBrush(Windows.UI.Color.FromArgb(128, 255, 255, 255));
+        SystemAudioDot.Fill = _vm.SystemAudioInterrupted
+            ? (Brush)Application.Current.Resources["PabloError"]
+            : _vm.SystemAudioActive
+                ? new SolidColorBrush(Colors.LimeGreen)
+                : new SolidColorBrush(Windows.UI.Color.FromArgb(128, 255, 255, 255));
+        SystemAudioText.Text = _vm.SystemAudioInterrupted && !stopped ? "System audio isn't recording" : "System Audio";
+
+        // A stalled or stopped capture in the open session.
+        if (trouble is not null)
+        {
+            TroubleNote.Show(trouble, _vm.ErrorIsMicrophonePermission && trouble.Kind == RecordingTroubleKind.Stopped);
+            TroubleNote.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            TroubleNote.Clear();
+            TroubleNote.Visibility = Visibility.Collapsed;
+        }
+        TroubleNote.IsEnabled = !_isRestarting;
 
         // Pause means nothing once capture has stopped.
         PauseResumeButton.Visibility = stopped ? Visibility.Collapsed : Visibility.Visible;
@@ -87,6 +107,26 @@ public sealed partial class RecordingBanner : UserControl
         EndSessionButton.IsEnabled = !_isEnding;
         AutomationProperties.SetName(EndSessionButton,
             _sessionTitle is { Length: > 0 } title ? $"End session for {title}" : "End session");
+    }
+
+    private async void TroubleNote_RestartRequested(object? sender, EventArgs e)
+    {
+        if (_isRestarting) return;
+        _isRestarting = true;
+        UpdateUI();
+        try
+        {
+            await _vm.RestartRecordingAsync();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("RecordingBanner.RestartRecording", ex);
+        }
+        finally
+        {
+            _isRestarting = false;
+            UpdateUI();
+        }
     }
 
     private void PauseResumeButton_Click(object sender, RoutedEventArgs e)

@@ -57,6 +57,10 @@
                                   Label="Sys" />
             </Grid>
 
+            <!-- Stalled or stopped capture: the reason and Restart Recording -->
+            <local:RecordingTroubleNote x:Name="TroubleNote"
+                                        Visibility="Collapsed" />
+
             <!-- System audio indicator -->
             <StackPanel Orientation="Horizontal"
                         Spacing="4"
@@ -66,7 +70,8 @@
                          Fill="#80FFFFFF"
                          VerticalAlignment="Center"
                          AutomationProperties.AccessibilityView="Raw" />
-                <TextBlock Text="System Audio"
+                <TextBlock x:Name="SystemAudioText"
+                           Text="System Audio"
                            Foreground="#C0FFFFFF"
                            FontSize="12"
                            VerticalAlignment="Center" />

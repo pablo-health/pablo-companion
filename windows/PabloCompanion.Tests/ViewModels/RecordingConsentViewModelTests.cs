@@ -117,6 +117,26 @@ public sealed class RecordingConsentViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task StartRecordingAndAsk_WhenCaptureDoesNotStart_NeverOpensTheAskingPanel()
+    {
+        var sut = MakeSut();
+        sut.Recorder.FailStart = true;
+        sut.Api.Checks.Enqueue(() => Check(new RecordingConsent.AskOnRecording(AiConsentModality.InPerson)));
+
+        await sut.Consent.RequestStartAsync("appt-1", "pat-9", AiConsentModality.InPerson);
+        await sut.Consent.StartAndAskAsync();
+
+        // The start told the server it is asking, then capture failed: the session
+        // goes back to scheduled, the appointment stays startable, and nothing
+        // asks on a recording that isn't running.
+        Assert.Equal([("appt-1", true)], sut.Api.Starts);
+        Assert.Equal([SessionStatus.InProgress, SessionStatus.Scheduled], sut.Api.Statuses);
+        Assert.Equal("appt-1", sut.Session.UnrecordedAppointmentId);
+        Assert.False(sut.Consent.IsAsking);
+        Assert.Equal(ConsentPromptKind.None, sut.Consent.Prompt);
+    }
+
+    [Fact]
     public async Task DontRecord_WritesNothing()
     {
         var sut = MakeSut();
@@ -461,9 +481,13 @@ public sealed class RecordingConsentViewModelTests : IDisposable
         public string? ActiveSessionId { get; private set; }
         public List<string> Started { get; } = [];
 
+        /// <summary>Capture fails to start, as with no key or a refused microphone.</summary>
+        public bool FailStart { get; set; }
+
         public Task<bool> StartForSessionAsync(string sessionId)
         {
             Started.Add(sessionId);
+            if (FailStart) return Task.FromResult(false);
             ActiveSessionId = sessionId;
             return Task.FromResult(true);
         }

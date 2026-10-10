@@ -1,0 +1,49 @@
+<UserControl
+    x:Class="PabloCompanion.Views.UploadBacklogNote"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Session audio still on this PC, waiting to upload, with Upload Now to
+         send it immediately instead of waiting for the next retry.
+         Mirrors UploadBacklogNote.swift. -->
+    <Border x:Name="NoteBorder"
+            Background="#1AD4922E"
+            CornerRadius="8"
+            Padding="12">
+        <Grid ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <FontIcon x:Name="NoteIcon"
+                      Grid.Column="0"
+                      Glyph="&#xE898;"
+                      FontSize="16"
+                      Foreground="{StaticResource PabloHoney}"
+                      VerticalAlignment="Center"
+                      AutomationProperties.AccessibilityView="Raw" />
+            <TextBlock x:Name="MessageText"
+                       Grid.Column="1"
+                       Style="{StaticResource PabloBodyMedium}"
+                       Foreground="{StaticResource PabloBrownDeep}"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+            <Button x:Name="UploadNowButton"
+                    Grid.Column="2"
+                    Content="Upload Now"
+                    Click="UploadNowButton_Click"
+                    Style="{StaticResource PabloSecondaryButton}"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Upload session audio now" />
+            <ProgressRing x:Name="UploadingRing"
+                          Grid.Column="2"
+                          Width="16"
+                          Height="16"
+                          IsActive="False"
+                          Visibility="Collapsed"
+                          VerticalAlignment="Center"
+                          AutomationProperties.Name="Uploading" />
+        </Grid>
+    </Border>
+</UserControl>

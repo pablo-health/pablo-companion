@@ -76,6 +76,20 @@ public partial class TranscriptionViewModel : ObservableObject
     [ObservableProperty]
     public partial int PendingUploadCount { get; set; }
 
+    /// <summary>
+    /// Sessions whose audio the server hasn't accepted yet, for the main window.
+    /// Only PendingUpload entries count; AwaitingNote audio has reached the server.
+    /// </summary>
+    [ObservableProperty]
+    public partial UploadBacklog UploadBacklog { get; set; } = UploadBacklog.Empty;
+
+    /// <summary>True while Upload Now is draining the queue.</summary>
+    [ObservableProperty]
+    public partial bool IsUploadingNow { get; set; }
+
+    /// <summary>Number of sessions whose audio hasn't uploaded (see <see cref="UploadBacklog"/>).</summary>
+    public int UploadBacklogCount => UploadBacklog.Waiting;
+
     public TranscriptionViewModel(
         SessionRecordingStore recordingStore,
         PendingTranscriptionStore pendingStore,
@@ -90,6 +104,33 @@ public partial class TranscriptionViewModel : ObservableObject
         _cleaner = cleaner;
 
         PendingUploadCount = _pendingStore.GetAll().Length;
+        RefreshUploadBacklog();
+    }
+
+    /// <summary>Re-reads the queue into <see cref="UploadBacklog"/>.</summary>
+    public void RefreshUploadBacklog()
+    {
+        UploadBacklog = UploadBacklog.From(_pendingStore.GetAll());
+        OnPropertyChanged(nameof(UploadBacklogCount));
+    }
+
+    /// <summary>
+    /// The main window's Upload Now: send every waiting upload now, ignoring the
+    /// backoff. One drain at a time.
+    /// </summary>
+    public async Task UploadNowAsync()
+    {
+        if (IsUploadingNow) return;
+        IsUploadingNow = true;
+        try
+        {
+            await ForceRetryPendingUploadsAsync();
+        }
+        finally
+        {
+            IsUploadingNow = false;
+            RefreshUploadBacklog();
+        }
     }
 
     /// <summary>
@@ -148,6 +189,7 @@ public partial class TranscriptionViewModel : ObservableObject
             State = TranscriptionState.PendingUpload;
             ProgressMessage = "Session expired — sign in to resume the upload";
             App.Log($"Skipping audio upload for session={sessionId}: server session is no longer active");
+            RefreshUploadBacklog();
             return;
         }
 
@@ -176,6 +218,7 @@ public partial class TranscriptionViewModel : ObservableObject
             State = TranscriptionState.PendingUpload;
             ProgressMessage = "Upload failed — will retry later";
         }
+        RefreshUploadBacklog();
     }
 
     /// <summary>
@@ -293,6 +336,7 @@ public partial class TranscriptionViewModel : ObservableObject
         }
 
         PendingUploadCount = _pendingStore.GetAll().Length;
+        RefreshUploadBacklog();
         return confirmed;
     }
 
@@ -341,6 +385,7 @@ public partial class TranscriptionViewModel : ObservableObject
         {
             await UploadIfNotInFlightAsync(item);
         }
+        RefreshUploadBacklog();
     }
 
     /// <summary>

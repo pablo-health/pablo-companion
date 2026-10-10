@@ -63,6 +63,20 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Why the last Start Session didn't get a recording going -->
+                    <InfoBar x:Name="StartErrorBar"
+                             Severity="Error"
+                             IsOpen="False"
+                             IsClosable="True"
+                             Closed="StartErrorBar_Closed">
+                        <InfoBar.ActionButton>
+                            <HyperlinkButton x:Name="OpenMicSettingsButton"
+                                             Content="Open Settings"
+                                             Click="OpenMicSettings_Click"
+                                             AutomationProperties.Name="Open microphone privacy settings" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+
                     <!-- Before arming: the client's answer about AI-assisted notes.
                          Nobody has asked: "Start recording and ask" / "Don't record".
                          Declined: the declined message, "Open chart" / "Close".
@@ -184,6 +198,10 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
+
+                    <!-- Session audio that hasn't uploaded yet -->
+                    <local:UploadBacklogNote x:Name="BacklogNote"
+                                             Visibility="Collapsed" />
                 </StackPanel>
 
                 <Button Content="Open Web Dashboard"

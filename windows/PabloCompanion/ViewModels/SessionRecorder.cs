@@ -1,5 +1,3 @@
-using PabloCompanion.Models;
-
 namespace PabloCompanion.ViewModels;
 
 /// <summary>
@@ -25,13 +23,12 @@ public sealed class RecordingViewModelRecorder(RecordingViewModel recordingVm) :
 {
     public string? ActiveSessionId => recordingVm.ActiveSessionId;
 
-    public async Task<bool> StartForSessionAsync(string sessionId)
-    {
-        // StartRecordingAsync reports a capture failure by returning to Idle with
-        // no active session rather than by throwing.
-        await recordingVm.StartRecordingAsync(sessionId);
-        return recordingVm.ActiveSessionId == sessionId && recordingVm.State != RecordingUIState.Idle;
-    }
+    /// <summary>
+    /// Waits until capture is capturing (or has failed to start). A failed start
+    /// leaves no active session and puts the reason on
+    /// <see cref="RecordingViewModel.ErrorMessage"/>; the caller lets the session go.
+    /// </summary>
+    public Task<bool> StartForSessionAsync(string sessionId) => recordingVm.StartRecordingForSessionAsync(sessionId);
 
     public Task StopAsync() => recordingVm.StopRecordingAsync();
 }

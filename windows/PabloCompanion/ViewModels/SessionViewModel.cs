@@ -51,6 +51,22 @@ public partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     public partial string? StartingAppointmentId { get; set; }
 
+    /// <summary>
+    /// Appointment whose session was opened on this PC but whose recording didn't
+    /// start. The card keeps it and offers Start Session again, which reuses that
+    /// session: an appointment has at most one.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? UnrecordedAppointmentId { get; set; }
+
+    /// <summary>
+    /// Why the last Start Session from the main window didn't get a session going,
+    /// when the recording itself didn't say (see <c>RecordingViewModel.ErrorMessage</c>).
+    /// Kept apart from <see cref="ErrorMessage"/>, which the appointment refresh clears.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? StartErrorMessage { get; set; }
+
     // --- Today's sessions ---
 
     [ObservableProperty]
@@ -129,6 +145,8 @@ public partial class SessionViewModel : ObservableObject
         TodayAppointments = [];
         AppointmentsErrorMessage = null;
         StartingAppointmentId = null;
+        UnrecordedAppointmentId = null;
+        StartErrorMessage = null;
         TodaySessions = [];
         Sessions = [];
         ActiveSession = null;
@@ -193,9 +211,12 @@ public partial class SessionViewModel : ObservableObject
     /// <see cref="AppointmentStartKind.ConsentNeeded"/>, never a generic error,
     /// and nothing was created or armed.
     ///
-    /// Capture is awaited here (not fired and forgotten as in
-    /// <see cref="StartSessionAsync"/>) so the caller knows whether the session is
-    /// recording before it shows anything that says it is.
+    /// Capture is awaited, so the caller knows whether the session is recording
+    /// before it shows anything that says it is. When the in-progress PATCH or the
+    /// capture start fails, the session is put back to scheduled, the appointment
+    /// is pinned on <see cref="UnrecordedAppointmentId"/> so the card offers Start
+    /// again (reusing that session), <see cref="StartErrorMessage"/> says why when
+    /// the recording didn't, and the outcome is <see cref="AppointmentStartKind.Failed"/>.
     /// </summary>
     public async Task<AppointmentStartOutcome> StartAppointmentSessionAsync(
         string appointmentId, bool askingConsentOnRecording = false)
@@ -205,18 +226,37 @@ public partial class SessionViewModel : ObservableObject
             return AppointmentStartOutcome.Busy;
 
         StartingAppointmentId = appointmentId;
+        StartErrorMessage = null;
         try
         {
-            var created = await CreateSessionFromAppointmentAsync(appointmentId, askingConsentOnRecording);
-            if (created.Kind != AppointmentStartKind.Started || created.SessionId is not { } sessionId)
-                return created;
+            // A session this PC opened whose recording didn't start is reused: an
+            // appointment has at most one. The consent prompt has already run.
+            string sessionId;
+            if (UnrecordedSessionId(appointmentId) is { } unrecorded)
+            {
+                sessionId = unrecorded;
+            }
+            else
+            {
+                var created = await CreateSessionFromAppointmentAsync(appointmentId, askingConsentOnRecording);
+                if (created.Kind == AppointmentStartKind.Failed) StartErrorMessage = ErrorMessage;
+                if (created.Kind != AppointmentStartKind.Started || created.SessionId is not { } createdId)
+                    return created;
+                sessionId = createdId;
+            }
 
-            var session = await MarkInProgressAndLaunchAsync(sessionId);
-            if (session is null) return new AppointmentStartOutcome(AppointmentStartKind.Failed, sessionId);
+            var marked = await MarkInProgressAndLaunchAsync(sessionId) is not null;
+            var recording = marked && await StartCaptureOrReleaseAsync(sessionId);
+            UnrecordedAppointmentId = recording ? null : appointmentId;
 
-            var recording = await _recorder.StartForSessionAsync(sessionId);
+            // A capture that didn't start says why itself (RecordingViewModel.ErrorMessage);
+            // otherwise the session start's message is kept here, read before the
+            // refreshes below clear ErrorMessage.
+            if (!recording && (!marked || _recordingVm.ErrorMessage is null)) StartErrorMessage = ErrorMessage;
             _ = LoadTodaySessionsAsync();
-            return new AppointmentStartOutcome(AppointmentStartKind.Started, sessionId, Recording: recording);
+            return recording
+                ? new AppointmentStartOutcome(AppointmentStartKind.Started, sessionId, Recording: true)
+                : new AppointmentStartOutcome(AppointmentStartKind.Failed, sessionId);
         }
         finally
         {
@@ -225,6 +265,11 @@ public partial class SessionViewModel : ObservableObject
             await LoadTodayAppointmentsAsync();
         }
     }
+
+    private string? UnrecordedSessionId(string appointmentId) =>
+        appointmentId == UnrecordedAppointmentId
+            ? TodayAppointments.FirstOrDefault(a => a.Id == appointmentId)?.SessionId
+            : null;
 
     /// <summary>
     /// Returns a started session to "scheduled", the state of a session whose
@@ -358,10 +403,24 @@ public partial class SessionViewModel : ObservableObject
     {
         if (await MarkInProgressAndLaunchAsync(sessionId) is null) return;
 
-        // Start recording
-        _ = _recorder.StartForSessionAsync(sessionId);
+        await StartCaptureOrReleaseAsync(sessionId);
 
         await LoadTodaySessionsAsync();
+    }
+
+    /// <summary>
+    /// Arms capture for a session already marked in progress and waits until it is
+    /// recording. Awaited, not fired and forgotten: a capture that doesn't start
+    /// lets the session go (back to scheduled), so nothing shows a recording that
+    /// isn't happening. The reason is in <c>RecordingViewModel.ErrorMessage</c>.
+    /// </summary>
+    private async Task<bool> StartCaptureOrReleaseAsync(string sessionId)
+    {
+        if (await _recorder.StartForSessionAsync(sessionId)) return true;
+
+        ActiveSession = null;
+        await ReleaseSessionAsync(sessionId);
+        return false;
     }
 
     /// <summary>
@@ -390,13 +449,32 @@ public partial class SessionViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Puts a session whose recording didn't start back to scheduled, so it isn't
+    /// shown as in progress anywhere and a later Start can mark it in progress
+    /// again. Best effort: a failure here leaves the session in progress.
+    /// </summary>
+    private async Task ReleaseSessionAsync(string sessionId)
+    {
+        try
+        {
+            await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.Scheduled);
+        }
+        catch (Exception ex)
+        {
+            App.Log($"ReleaseSession failed type={ex.GetType().Name}");
+        }
+    }
+
     [RelayCommand]
     public async Task EndSessionAsync(string sessionId)
     {
         // Stop recording first.
         try
         {
-            if (_recordingVm.State != Models.RecordingUIState.Idle)
+            // Also when capture already stopped on its own: the session is still
+            // open on the card until this lets it go.
+            if (_recordingVm.State != Models.RecordingUIState.Idle || _recordingVm.ActiveSessionId is not null)
                 await _recordingVm.StopRecordingAsync();
         }
         catch (Exception ex)
@@ -573,7 +651,7 @@ public enum AppointmentStartKind
     /// <summary>Another start was in flight, or a recording is live: nothing was done.</summary>
     Busy,
 
-    /// <summary>The session was created and marked in progress.</summary>
+    /// <summary>The session was created, marked in progress and is recording.</summary>
     Started,
 
     /// <summary>The server refused: the client declined AI-assisted notes. Nothing was created.</summary>
@@ -585,7 +663,12 @@ public enum AppointmentStartKind
     /// </summary>
     ConsentNeeded,
 
-    /// <summary>Any other failure; the message is on <see cref="SessionViewModel.ErrorMessage"/>.</summary>
+    /// <summary>
+    /// Any other failure, including a capture that didn't start (then
+    /// <see cref="AppointmentStartOutcome.SessionId"/> is the released session).
+    /// The message is on <see cref="SessionViewModel.StartErrorMessage"/> or
+    /// <c>RecordingViewModel.ErrorMessage</c>.
+    /// </summary>
     Failed,
 }
 
