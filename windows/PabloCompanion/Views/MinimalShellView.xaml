@@ -77,6 +77,53 @@
                         </InfoBar.ActionButton>
                     </InfoBar>
 
+                    <!-- Before arming: the client's answer about AI-assisted notes.
+                         Nobody has asked: "Start recording and ask" / "Don't record".
+                         Declined: the declined message, "Open chart" / "Close".
+                         Takes the card's place while it shows. -->
+                    <Border x:Name="ConsentPrompt"
+                            Background="#1FD4922E"
+                            BorderBrush="#4DD4922E"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="16"
+                            Visibility="Collapsed">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon x:Name="ConsentPromptIcon"
+                                          FontSize="18"
+                                          Foreground="{StaticResource PabloSage}"
+                                          VerticalAlignment="Center"
+                                          AutomationProperties.AccessibilityView="Raw" />
+                                <TextBlock x:Name="ConsentPromptTitle"
+                                           FontFamily="{StaticResource PabloDisplayFont}"
+                                           FontSize="16"
+                                           Foreground="{StaticResource PabloBrownDeep}"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center"
+                                           MaxWidth="340" />
+                            </StackPanel>
+                            <TextBlock x:Name="ConsentPromptMessage"
+                                       Style="{StaticResource PabloBodyMedium}"
+                                       Foreground="{StaticResource PabloBrownSoft}"
+                                       TextWrapping="Wrap" />
+                            <StackPanel Spacing="8">
+                                <Button x:Name="ConsentPrimaryButton"
+                                        Click="ConsentPrimary_Click"
+                                        Style="{StaticResource PabloPrimaryButton}"
+                                        HorizontalAlignment="Stretch" />
+                                <Button x:Name="ConsentSecondaryButton"
+                                        Click="ConsentSecondary_Click"
+                                        Style="{StaticResource PabloSecondaryButton}"
+                                        HorizontalAlignment="Stretch" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Once recording has started: ask on the recording -->
+                    <local:AskOnRecordingPanel x:Name="AskPanel"
+                                               Visibility="Collapsed" />
+
                     <!-- Next appointment / live recording -->
                     <local:AppointmentCard x:Name="Card"
                                            Visibility="Collapsed" />

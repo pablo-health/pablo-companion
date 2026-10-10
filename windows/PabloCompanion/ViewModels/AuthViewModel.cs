@@ -317,6 +317,8 @@ public partial class AuthViewModel : ObservableObject
 
         var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
         recordingVm.ClearAllData();
+
+        App.Services.GetRequiredService<RecordingConsentViewModel>().ClearAllData();
     }
 
 

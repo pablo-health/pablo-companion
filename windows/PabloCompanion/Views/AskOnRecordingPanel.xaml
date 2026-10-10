@@ -1,0 +1,88 @@
+<UserControl
+    x:Class="PabloCompanion.Views.AskOnRecordingPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Shown once recording has started for a client nobody had asked about
+         AI-assisted notes: the script to read aloud, so the answer is on the
+         recording, and the answer to save on the client's record. Only
+         telehealth asks where the client is. Mirrors AskOnRecordingView.swift. -->
+    <Border Background="#1F7A9E7E"
+            BorderBrush="#4D7A9E7E"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="16">
+        <StackPanel Spacing="12">
+            <TextBlock x:Name="TitleText"
+                       FontFamily="{StaticResource PabloDisplayFont}"
+                       FontSize="16"
+                       Foreground="{StaticResource PabloBrownDeep}"
+                       TextWrapping="Wrap" />
+
+            <TextBlock x:Name="DeletedText"
+                       Style="{StaticResource PabloBodyMedium}"
+                       TextWrapping="Wrap"
+                       Visibility="Collapsed" />
+
+            <StackPanel x:Name="AskContent" Spacing="12">
+                <StackPanel x:Name="ScriptBlock" Spacing="8">
+                    <TextBlock x:Name="PromptText"
+                               Style="{StaticResource PabloBodySmall}"
+                               Foreground="{StaticResource PabloBrownSoft}"
+                               TextWrapping="Wrap" />
+                    <ItemsControl x:Name="ScriptLines">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{x:Bind}"
+                                           Style="{StaticResource PabloBodyMedium}"
+                                           Foreground="{StaticResource PabloBrownDeep}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,6" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel x:Name="AnswerControls" Spacing="10">
+                    <ComboBox x:Name="GiverPicker"
+                              HorizontalAlignment="Stretch"
+                              SelectionChanged="GiverPicker_SelectionChanged" />
+                    <StackPanel x:Name="LocationBlock" Spacing="4">
+                        <TextBlock x:Name="LocationLabel"
+                                   Style="{StaticResource PabloBodySmall}" />
+                        <TextBox x:Name="LocationBox"
+                                 MaxLength="200"
+                                 TextChanged="LocationBox_TextChanged" />
+                    </StackPanel>
+                </StackPanel>
+
+                <TextBlock x:Name="RecordOnChartText"
+                           Style="{StaticResource PabloBodySmall}"
+                           Foreground="{StaticResource PabloBrownSoft}"
+                           TextWrapping="Wrap"
+                           Visibility="Collapsed" />
+            </StackPanel>
+
+            <TextBlock x:Name="SaveErrorText"
+                       Style="{StaticResource PabloBodySmall}"
+                       Foreground="{StaticResource PabloError}"
+                       TextWrapping="Wrap"
+                       Visibility="Collapsed" />
+
+            <StackPanel Spacing="8">
+                <Button x:Name="AgreedButton"
+                        Click="Agreed_Click"
+                        Style="{StaticResource PabloPrimaryButton}"
+                        HorizontalAlignment="Stretch" />
+                <Button x:Name="DeclinedButton"
+                        Click="Declined_Click"
+                        Style="{StaticResource PabloSecondaryButton}"
+                        HorizontalAlignment="Stretch" />
+                <Button x:Name="CloseButton"
+                        Click="Close_Click"
+                        Style="{StaticResource PabloSecondaryButton}"
+                        HorizontalAlignment="Stretch" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

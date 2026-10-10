@@ -193,6 +193,7 @@ public partial class App : Application
         services.AddSingleton<ViewModels.PatientViewModel>();
         services.AddSingleton<ViewModels.RecordingViewModel>();
         services.AddSingleton<ViewModels.TranscriptionViewModel>();
+        services.AddSingleton<ViewModels.RecordingConsentViewModel>();
         services.AddSingleton<ViewModels.SubscriptionViewModel>();
         services.AddSingleton<ViewModels.PracticeViewModel>();
     }

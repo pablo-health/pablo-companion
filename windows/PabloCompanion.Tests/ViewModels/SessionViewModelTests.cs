@@ -146,9 +146,9 @@ public sealed class SessionViewModelTests : IDisposable
         api.HoldStartSession.SetResult(StubApiClient.MakeSession("session-1", SessionStatus.Scheduled));
         var firstResult = await first;
 
-        Assert.True(firstResult);
-        Assert.False(second);
-        Assert.False(otherAppointment);
+        Assert.True(firstResult.Ran);
+        Assert.False(second.Ran);
+        Assert.False(otherAppointment.Ran);
         Assert.Equal(1, api.StartSessionCallCount);
         Assert.Null(sessionVm.StartingAppointmentId);
     }
@@ -161,7 +161,13 @@ public sealed class SessionViewModelTests : IDisposable
         api.Appointments = [MakeAppointment("appointment-1", now)];
         await sessionVm.LoadTodayAppointmentsAsync();
 
-        Assert.True(await sessionVm.StartAppointmentSessionAsync("appointment-1"));
+        var outcome = await sessionVm.StartAppointmentSessionAsync("appointment-1");
+
+        // A start whose capture didn't start is a failure, not a start, so the
+        // asking panel (which waits on Recording) never opens for it.
+        Assert.Equal(AppointmentStartKind.Failed, outcome.Kind);
+        Assert.False(outcome.Recording);
+        Assert.Equal("session-1", outcome.SessionId);
 
         // Nothing shows a recording that isn't happening...
         Assert.Null(recordingVm.ActiveSessionId);
@@ -187,7 +193,9 @@ public sealed class SessionViewModelTests : IDisposable
             appointments, now, recordingVm.ActiveSessionId, sessionVm.StartingAppointmentId, sessionVm.UnrecordedAppointmentId));
 
         // Start again reuses the appointment's session: the server allows one.
-        Assert.True(await sessionVm.StartAppointmentSessionAsync("appointment-1"));
+        var again = await sessionVm.StartAppointmentSessionAsync("appointment-1", askingConsentOnRecording: true);
+        Assert.Equal(AppointmentStartKind.Failed, again.Kind);
+        Assert.Equal("session-1", again.SessionId);
         Assert.Equal(1, api.StartSessionCallCount);
         Assert.Equal(
             [SessionStatus.InProgress, SessionStatus.Scheduled, SessionStatus.InProgress, SessionStatus.Scheduled],
@@ -201,8 +209,9 @@ public sealed class SessionViewModelTests : IDisposable
         var (sessionVm, api, recordingVm) = MakeSutWithoutKey();
         api.FailStartSession = true;
 
-        await sessionVm.StartAppointmentSessionAsync("appointment-1");
+        var outcome = await sessionVm.StartAppointmentSessionAsync("appointment-1");
 
+        Assert.Equal(AppointmentStartKind.Failed, outcome.Kind);
         Assert.Equal("Failed to start session from appointment.", sessionVm.StartErrorMessage);
         Assert.Null(recordingVm.ErrorMessage);
         Assert.Null(sessionVm.UnrecordedAppointmentId);
@@ -214,9 +223,9 @@ public sealed class SessionViewModelTests : IDisposable
         var (sessionVm, api, _) = MakeSut();
         api.FailStartSession = true;
 
-        Assert.True(await sessionVm.StartAppointmentSessionAsync("appointment-1"));
+        Assert.True((await sessionVm.StartAppointmentSessionAsync("appointment-1")).Ran);
         Assert.Null(sessionVm.StartingAppointmentId);
-        Assert.True(await sessionVm.StartAppointmentSessionAsync("appointment-1"));
+        Assert.True((await sessionVm.StartAppointmentSessionAsync("appointment-1")).Ran);
         Assert.Equal(2, api.StartSessionCallCount);
     }
 
@@ -301,7 +310,8 @@ public sealed class SessionViewModelTests : IDisposable
         public override Task<Appointment[]> FetchTodayAppointmentsAsync()
             => Task.FromResult(Appointments);
 
-        public override Task<Session> StartSessionFromAppointmentAsync(string appointmentId)
+        public override Task<Session> StartSessionFromAppointmentAsync(
+            string appointmentId, bool askingConsentOnRecording = false)
         {
             StartSessionCallCount++;
             if (FailStartSession)

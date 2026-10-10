@@ -82,7 +82,22 @@ public class APIClient
             },
             http: Http,
             log: App.Log);
+
+        _consentClient = new RecordingConsentClient(
+            baseUrl: () => BaseUrl,
+            token: () => Task.FromResult(GetToken()),
+            attachBinding: AttachDeviceBinding,
+            clientHeaders: new Dictionary<string, string>
+            {
+                ["X-Client-Type"] = ClientTypeHeader,
+                ["X-Client-Version"] = ClientVersion,
+                ["X-Client-Platform"] = ClientPlatform,
+            },
+            http: Http);
     }
+
+    /// <summary>Reads and records a client's answer about AI-assisted notes.</summary>
+    private readonly RecordingConsentClient _consentClient;
 
     private string GetToken()
     {
@@ -196,18 +211,29 @@ public class APIClient
 
     private static async Task HandleErrorResponse(HttpResponseMessage response)
     {
-        var statusCode = (ushort)response.StatusCode;
         var body = await response.Content.ReadAsStringAsync();
-        var (envelopeMessage, errorCode) = TryParseErrorEnvelope(body);
+        throw MapError((ushort)response.StatusCode, body);
+    }
 
-        throw statusCode switch
+    /// <summary>
+    /// The <see cref="PabloException"/> a non-2xx response maps to. Internal so the
+    /// mapping (code and details carried through) is unit-testable.
+    /// </summary>
+    internal static PabloException MapError(ushort statusCode, string body)
+    {
+        var (envelopeMessage, errorCode) = TryParseErrorEnvelope(body);
+        // details carries what a refusal needs to be shown properly, such as the
+        // day a client declined AI-assisted notes (declined_on).
+        var details = RecordingConsent.ReadError(body)?.Details;
+
+        return statusCode switch
         {
-            401 => new PabloException(statusCode, "Unauthenticated", errorCode),
-            403 => new PabloException(statusCode, "Forbidden", errorCode),
-            404 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Not found" : body), errorCode),
-            409 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Conflict" : body), errorCode),
-            426 => new PabloException(statusCode, "Update required", errorCode),
-            _ => new PabloException(statusCode, envelopeMessage ?? $"HTTP {statusCode}: {body}", errorCode),
+            401 => new PabloException(statusCode, "Unauthenticated", errorCode, details),
+            403 => new PabloException(statusCode, "Forbidden", errorCode, details),
+            404 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Not found" : body), errorCode, details),
+            409 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Conflict" : body), errorCode, details),
+            426 => new PabloException(statusCode, "Update required", errorCode, details),
+            _ => new PabloException(statusCode, envelopeMessage ?? $"HTTP {statusCode}: {body}", errorCode, details),
         };
     }
 
@@ -302,11 +328,60 @@ public class APIClient
         return result.Data;
     }
 
-    public virtual async Task<Session> StartSessionFromAppointmentAsync(string appointmentId)
+    /// <summary>
+    /// Creates the session for an appointment. <paramref name="askingConsentOnRecording"/>:
+    /// the clinician asks the client about AI-assisted notes once recording starts,
+    /// which is what lets the server start a telehealth session with no answer on
+    /// file. Any other start sends no body, as before.
+    ///
+    /// A start the server refuses over the client's answer throws a
+    /// <see cref="PabloException"/> with <c>StatusCode == 403</c> and
+    /// <see cref="PabloException.ErrorCode"/> of
+    /// <see cref="RecordingConsent.ConsentNeededErrorCode"/> or
+    /// <see cref="RecordingConsent.DeclinedErrorCode"/> (with
+    /// <c>declined_on</c> in <see cref="PabloException.ErrorDetails"/>).
+    /// </summary>
+    public virtual async Task<Session> StartSessionFromAppointmentAsync(
+        string appointmentId, bool askingConsentOnRecording = false)
     {
         using var request = CreateRequest(HttpMethod.Post,
-            $"/api/appointments/{appointmentId}/start-session");
+            $"/api/appointments/{Uri.EscapeDataString(appointmentId)}/start-session");
+        var body = RecordingConsentClient.StartSessionBody(askingConsentOnRecording);
+        if (body is not null)
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
         return await SendAsync<Session>(request);
+    }
+
+    // --- AI-assisted notes consent ---
+
+    /// <summary>
+    /// Reads the practice setting and the client's answer about AI-assisted notes
+    /// for an appointment. See <see cref="RecordingConsentClient.CheckAsync"/>.
+    /// </summary>
+    public virtual Task<RecordingConsentCheck> CheckRecordingConsentAsync(
+        string appointmentId, string? patientId, AiConsentModality? modality)
+        => WithConsentAuthAsync(() => _consentClient.CheckAsync(appointmentId, patientId, modality));
+
+    /// <summary>Saves the client's answer about AI-assisted notes.</summary>
+    public virtual Task RecordConsentAsync(AiConsentAnswer answer, string patientId)
+        => WithConsentAuthAsync(async () =>
+        {
+            await _consentClient.RecordAsync(answer, patientId);
+            return true;
+        });
+
+    /// <summary>Routes a consent request's 401 to sign-in, as every other route does.</summary>
+    private async Task<T> WithConsentAuthAsync<T>(Func<Task<T>> call)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (ConsentRequestException ex) when (ex.StatusCode == 401)
+        {
+            UnauthenticatedDetected?.Invoke(ex.Code);
+            throw;
+        }
     }
 
     // ── Sessions ────────────────────────────────────────────────────────────

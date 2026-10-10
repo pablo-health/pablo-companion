@@ -36,6 +36,104 @@ public class RecordingCleaner
     }
 
     /// <summary>
+    /// The client declined AI-assisted notes on the recording. Deletes every file
+    /// the session captured and every record that could lead an upload back to
+    /// it: the queued upload, and the session -> recording map entry. Nothing of
+    /// the session is left for the upload queue or the launch-time sweep
+    /// (<see cref="RecordingDirectoryScanner.AdoptOrphans"/>, which adopts from
+    /// the directory) to send. Mirrors macOS <c>RecordingCleaner.discardDeclined</c>.
+    ///
+    /// The records go first, so a file still locked by another handle can at
+    /// worst leave audio on disk with nothing pointing at it to upload. Returns
+    /// true when no audio for the session is left on disk. Never throws.
+    /// </summary>
+    public virtual bool DiscardDeclined(
+        string sessionId,
+        SessionRecordingStore recordingStore,
+        PendingTranscriptionStore pendingStore)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return false;
+
+        var mapped = SafeGet(() => recordingStore.Get(sessionId));
+        SafeRun(() => pendingStore.Remove(sessionId));
+        SafeRun(() => recordingStore.Remove(sessionId));
+
+        DeleteSession(sessionId);
+        DeleteLeftoverFiles(sessionId);
+
+        // Capture files live in the session directory; a mapped path elsewhere
+        // (an older layout) is removed by name too.
+        var allGone = !Directory.Exists(SessionDirectory(sessionId));
+        if (mapped is not null)
+        {
+            foreach (var path in new[] { mapped.FilePath, mapped.MicPcmFilePath, mapped.SystemPcmFilePath })
+            {
+                if (string.IsNullOrEmpty(path)) continue;
+                try
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                }
+                catch (Exception ex)
+                {
+                    App.LogException("RecordingCleaner.DiscardDeclined", ex);
+                }
+                allGone &= !File.Exists(path);
+            }
+        }
+        App.Log($"  discarded declined audio for session={sessionId} complete={allGone}");
+        return allGone;
+    }
+
+    private string SessionDirectory(string sessionId) => Path.Combine(_recordingsRoot, sessionId);
+
+    /// <summary>
+    /// After a directory delete that did not complete, removes what it can file by
+    /// file, mic sidecars first: a mic file is what the launch-time sweep adopts
+    /// for upload, so it is the one that must not survive.
+    /// </summary>
+    private void DeleteLeftoverFiles(string sessionId)
+    {
+        try
+        {
+            var root = Path.GetFullPath(_recordingsRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var dir = Path.GetFullPath(Path.Combine(root, sessionId));
+            if (!dir.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return;
+            if (!Directory.Exists(dir)) return;
+
+            var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                .OrderBy(f => Path.GetFileName(f).Contains("_mic", StringComparison.OrdinalIgnoreCase) ? 0 : 1);
+            foreach (var file in files)
+            {
+                try { File.Delete(file); }
+                catch (Exception ex) { App.LogException("RecordingCleaner.DiscardDeclined", ex); }
+            }
+            try { Directory.Delete(dir, recursive: true); }
+            catch (Exception ex) { App.LogException("RecordingCleaner.DiscardDeclined", ex); }
+        }
+        catch (Exception ex)
+        {
+            App.LogException("RecordingCleaner.DiscardDeclined", ex);
+        }
+    }
+
+    private static void SafeRun(Action action)
+    {
+        try { action(); }
+        catch (Exception ex) { App.LogException("RecordingCleaner.DiscardDeclined", ex); }
+    }
+
+    private static T? SafeGet<T>(Func<T?> get) where T : class
+    {
+        try { return get(); }
+        catch (Exception ex)
+        {
+            App.LogException("RecordingCleaner.DiscardDeclined", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Deletes the whole recording directory for <paramref name="sessionId"/> —
     /// mic and system sidecars plus any mixed file. Returns true if a directory
     /// was removed.

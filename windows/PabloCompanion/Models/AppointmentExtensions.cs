@@ -28,4 +28,12 @@ public static class AppointmentExtensions
             return null;
         }
     }
+
+    /// <summary>
+    /// Where the visit is, for the AI-notes consent answer: telehealth when it has
+    /// a video service, a video link, or a telehealth place of service. Mirrors
+    /// <c>Appointment+Telehealth.swift</c>.
+    /// </summary>
+    public static Core.AiConsentModality ConsentModality(this Appointment appointment)
+        => Core.Telehealth.Modality(appointment.Provider, appointment.VideoLink, appointment.PlaceOfService);
 }

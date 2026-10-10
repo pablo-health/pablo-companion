@@ -1,8 +1,11 @@
 using System.ComponentModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using PabloCompanion.Core;
 using PabloCompanion.Helpers;
+using PabloCompanion.Models;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
 
@@ -28,6 +31,7 @@ public sealed partial class MinimalShellView : UserControl
     private readonly RecordingViewModel _recordingVm;
     private readonly SessionViewModel _sessionVm;
     private readonly TranscriptionViewModel _transcriptionVm;
+    private readonly RecordingConsentViewModel _consentVm;
 
     private Window? _preferencesWindow;
 
@@ -38,6 +42,7 @@ public sealed partial class MinimalShellView : UserControl
         _recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
         _sessionVm = App.Services.GetRequiredService<SessionViewModel>();
         _transcriptionVm = App.Services.GetRequiredService<TranscriptionViewModel>();
+        _consentVm = App.Services.GetRequiredService<RecordingConsentViewModel>();
 
         InitializeComponent();
 
@@ -48,6 +53,8 @@ public sealed partial class MinimalShellView : UserControl
         _sessionVm.PropertyChanged += ViewModel_PropertyChanged;
         _recordingVm.PropertyChanged += RecordingVm_PropertyChanged;
         _transcriptionVm.PropertyChanged += TranscriptionVm_PropertyChanged;
+        _consentVm.PropertyChanged += ConsentVm_PropertyChanged;
+        AskPanel.Bind(_consentVm);
     }
 
     /// <summary>
@@ -68,7 +75,7 @@ public sealed partial class MinimalShellView : UserControl
         StatusDot.Fill = ThemeBrush(connected ? "PabloSage" : "PabloError");
 
         _ = RefreshMicStatusAsync();
-        UpdateCard();
+        UpdateConsentPrompt();
         UpdateStartError();
         _transcriptionVm.RefreshUploadBacklog();
         UpdateBacklog();
@@ -108,13 +115,15 @@ public sealed partial class MinimalShellView : UserControl
 
     /// <summary>
     /// The start alert: the recording's own reason first (no key, microphone
-    /// refused, no device), else why the session itself didn't start.
+    /// refused, no device), else why the session itself didn't start. Not shown
+    /// under a consent prompt: that prompt is a new start, and closing the alert
+    /// for it clears the old reason.
     /// </summary>
     private void UpdateStartError()
     {
         var recordingError = _recordingVm.ErrorMessage;
         var message = recordingError ?? _sessionVm.StartErrorMessage;
-        if (message is null)
+        if (message is null || _consentVm.Prompt != ConsentPromptKind.None)
         {
             StartErrorBar.IsOpen = false;
             return;
@@ -153,9 +162,12 @@ public sealed partial class MinimalShellView : UserControl
     }
 
     /// <summary>
-    /// Card priority: recording, then loading, then error, then "No upcoming
-    /// appointments for today". The "Recording on another device" note sits
-    /// above whichever card shows.
+    /// The card slot holds one thing. A consent prompt, while it shows, holds it
+    /// alone (see <see cref="UpdateConsentPrompt"/>). Otherwise: recording (the
+    /// recording's trouble note sits inside that card), then loading, then error,
+    /// then "No upcoming appointments for today". Around the slot, not in it: the
+    /// start alert and the "Recording on another device" note above, the asking
+    /// panel above the recording card, the upload backlog note below.
     /// </summary>
     private void UpdateCard()
     {
@@ -182,12 +194,11 @@ public sealed partial class MinimalShellView : UserControl
             hasError: _sessionVm.AppointmentsErrorMessage is not null,
             unrecordedAppointmentId: unrecordedId);
 
-        Card.Visibility = card.Kind is ShellCardKind.Appointment or ShellCardKind.UntrackedRecording
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        LoadingCard.Visibility = Show(card.Kind == ShellCardKind.Loading);
-        ErrorCard.Visibility = Show(card.Kind == ShellCardKind.Error);
-        NoUpcomingCard.Visibility = Show(card.Kind == ShellCardKind.NoUpcoming);
+        var slotFree = _consentVm.Prompt == ConsentPromptKind.None;
+        Card.Visibility = Show(slotFree && card.Kind is ShellCardKind.Appointment or ShellCardKind.UntrackedRecording);
+        LoadingCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.Loading);
+        ErrorCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.Error);
+        NoUpcomingCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.NoUpcoming);
 
         if (card.Kind == ShellCardKind.Appointment && card.Appointment is { } appointment)
             Card.ShowAppointment(appointment, card.Action, now);
@@ -197,17 +208,94 @@ public sealed partial class MinimalShellView : UserControl
 
     private static Visibility Show(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>
+    /// Start Session. The client's answer about AI-assisted notes is read first:
+    /// a client who is clear (or a practice that does not ask) starts at once, as
+    /// before; otherwise the prompt takes the card's place and nothing arms until
+    /// the clinician chooses "Start recording and ask".
+    /// </summary>
     private async void Card_StartRequested(object? sender, string appointmentId)
     {
         try
         {
-            // Guarded in the view model: a double-click starts one session.
-            await _sessionVm.StartAppointmentSessionAsync(appointmentId);
+            var appointment = _sessionVm.TodayAppointments.FirstOrDefault(a => a.Id == appointmentId);
+            var patientId = string.IsNullOrEmpty(appointment?.PatientId) ? null : appointment.PatientId;
+            // Guarded in the view models: a double-click starts one session.
+            await _consentVm.RequestStartAsync(appointmentId, patientId, appointment?.ConsentModality());
         }
         catch (Exception ex)
         {
             App.LogException("MinimalShell.StartAppointmentSession", ex);
         }
+    }
+
+    private void ConsentVm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        => DispatcherQueue.TryEnqueue(UpdateConsentPrompt);
+
+    /// <summary>Renders the before-arming prompt; the card slot is its alone while it shows.</summary>
+    private void UpdateConsentPrompt()
+    {
+        var prompt = _consentVm.Prompt;
+        ConsentPrompt.Visibility = Show(prompt != ConsentPromptKind.None);
+        UpdateCard();
+        UpdateStartError();
+        if (prompt == ConsentPromptKind.None) return;
+
+        if (prompt == ConsentPromptKind.AskOnRecording)
+        {
+            ConsentPromptIcon.Glyph = "\uE897";
+            ConsentPromptTitle.Text = RecordingConsentCopy.NotAskedTitle;
+            ConsentPromptMessage.Text = RecordingConsentCopy.AskOnRecordingMessage;
+            SetButton(ConsentPrimaryButton, RecordingConsentCopy.StartAndAsk, "PabloPrimaryButton", visible: true);
+            SetButton(ConsentSecondaryButton, RecordingConsentCopy.DontRecord, "PabloSecondaryButton", visible: true);
+        }
+        else
+        {
+            ConsentPromptIcon.Glyph = "\uEC54";
+            ConsentPromptTitle.Text = RecordingConsentCopy.DeclinedTitle;
+            ConsentPromptMessage.Text = _consentVm.DeclinedMessage;
+            SetButton(ConsentPrimaryButton, RecordingConsentCopy.OpenChart, "PabloSecondaryButton",
+                visible: _consentVm.PatientId is not null);
+            SetButton(ConsentSecondaryButton, RecordingConsentCopy.Close, "PabloPrimaryButton", visible: true);
+        }
+        AutomationProperties.SetName(ConsentPrompt, ConsentPromptTitle.Text);
+    }
+
+    private static void SetButton(Button button, string text, string styleKey, bool visible)
+    {
+        button.Content = text;
+        button.Style = (Style)Application.Current.Resources[styleKey];
+        button.Visibility = Show(visible);
+        AutomationProperties.SetName(button, text);
+    }
+
+    private async void ConsentPrimary_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_consentVm.Prompt == ConsentPromptKind.AskOnRecording)
+                await _consentVm.StartAndAskAsync();
+            else if (_consentVm.PatientId is { } patientId)
+                await OpenChartAsync(patientId);
+        }
+        catch (Exception ex)
+        {
+            App.LogException("MinimalShell.ConsentPrimary", ex);
+        }
+    }
+
+    private void ConsentSecondary_Click(object sender, RoutedEventArgs e) => _consentVm.DismissPrompt();
+
+    /// <summary>
+    /// The client's chart in the web app, where a declined answer can be changed.
+    /// The same URL the Mac declined prompt opens: the dashboard's patient page.
+    /// </summary>
+    private async Task OpenChartAsync(string patientId)
+    {
+        var url = $"{DashboardBaseUrl().TrimEnd('/')}/dashboard/patients/{Uri.EscapeDataString(patientId)}";
+        _consentVm.DismissPrompt();
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;
+        await Windows.System.Launcher.LaunchUriAsync(uri);
     }
 
     private async void TryAgain_Click(object sender, RoutedEventArgs e)

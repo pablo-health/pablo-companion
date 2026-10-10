@@ -24,6 +24,7 @@ public class PendingUploadScheduler : IDisposable
 
     private readonly Func<Task> _pass;
     private readonly TimeSpan _interval;
+    private readonly SemaphoreSlim _passGate = new(1, 1);
     private Timer? _timer;
 
     public PendingUploadScheduler(Func<Task> pass)
@@ -59,6 +60,16 @@ public class PendingUploadScheduler : IDisposable
 
     internal async Task TickAsync()
     {
+        // A pass that outlasts the interval (a long upload on a slow uplink) must
+        // not have a second pass started alongside it: System.Threading.Timer
+        // fires regardless of whether the previous callback finished. Skip the
+        // tick instead; the next one picks up whatever is still due.
+        if (!_passGate.Wait(0))
+        {
+            App.Log("PendingUploadScheduler: previous pass still running; skipping tick");
+            return;
+        }
+
         try
         {
             await _pass();
@@ -70,7 +81,16 @@ public class PendingUploadScheduler : IDisposable
             // own per-entry failures; this guards the pass as a whole.
             App.LogException("PendingUploadScheduler.TickAsync", ex);
         }
+        finally
+        {
+            _passGate.Release();
+        }
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        // The gate is deliberately not disposed: a tick already in flight still
+        // releases it when its pass finishes.
+    }
 }

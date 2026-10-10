@@ -2,6 +2,7 @@ using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
+using PabloCompanion.Core;
 using PabloCompanion.Helpers;
 using PabloCompanion.Services;
 using PabloCompanion.Models;
@@ -110,14 +111,29 @@ public partial class SessionViewModel : ObservableObject
     private uint _historyPage = 1;
     private const uint HistoryPageSize = 20;
 
+    private readonly ISessionRecorder _recorder;
+
     public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch,
-        RecordingViewModel recordingVm, TranscriptionViewModel transcriptionVm)
+        RecordingViewModel recordingVm, TranscriptionViewModel transcriptionVm,
+        ISessionRecorder? recorder = null)
     {
         _apiClient = apiClient;
         _videoLaunch = videoLaunch;
         _recordingVm = recordingVm;
         _transcriptionVm = transcriptionVm;
+        _recorder = recorder ?? new RecordingViewModelRecorder(recordingVm);
     }
+
+    /// <summary>The recorder session starts arm; shared with the consent flow.</summary>
+    internal ISessionRecorder Recorder => _recorder;
+
+    /// <summary>
+    /// A 403 that is about the subscription, not about the client's answer on
+    /// AI-assisted notes (those carry their own codes and their own prompts).
+    /// </summary>
+    private static bool IsSubscriptionRefusal(PabloException ex)
+        => ex.StatusCode == 403
+            && ex.ErrorCode is not (RecordingConsent.ConsentNeededErrorCode or RecordingConsent.DeclinedErrorCode);
 
     /// <summary>
     /// Clears all session data. Called on sign-out to prevent PHI leakage.
@@ -185,29 +201,62 @@ public partial class SessionViewModel : ObservableObject
     /// create the session for the appointment, mark it in progress, arm the mic
     /// and open the video call. Guarded so a double-click (or a handoff landing
     /// while one start is in flight or a recording is live) creates exactly one
-    /// session. Returns whether this call did the start.
+    /// session. The outcome says whether this call did the start
+    /// (<see cref="AppointmentStartOutcome.Ran"/>) and how it ended.
+    ///
+    /// <paramref name="askingConsentOnRecording"/>: the clinician asks about
+    /// AI-assisted notes once recording starts; the start tells the server so.
+    /// A start the server refuses over the client's answer comes back as
+    /// <see cref="AppointmentStartKind.Declined"/> or
+    /// <see cref="AppointmentStartKind.ConsentNeeded"/>, never a generic error,
+    /// and nothing was created or armed.
+    ///
+    /// Capture is awaited, so the caller knows whether the session is recording
+    /// before it shows anything that says it is. When the in-progress PATCH or the
+    /// capture start fails, the session is put back to scheduled, the appointment
+    /// is pinned on <see cref="UnrecordedAppointmentId"/> so the card offers Start
+    /// again (reusing that session), <see cref="StartErrorMessage"/> says why when
+    /// the recording didn't, and the outcome is <see cref="AppointmentStartKind.Failed"/>.
     /// </summary>
-    public async Task<bool> StartAppointmentSessionAsync(string appointmentId)
+    public async Task<AppointmentStartOutcome> StartAppointmentSessionAsync(
+        string appointmentId, bool askingConsentOnRecording = false)
     {
-        if (StartingAppointmentId is not null) return false;
-        if (_recordingVm.State != RecordingUIState.Idle || _recordingVm.ActiveSessionId is not null) return false;
+        if (StartingAppointmentId is not null) return AppointmentStartOutcome.Busy;
+        if (_recordingVm.State != RecordingUIState.Idle || _recorder.ActiveSessionId is not null)
+            return AppointmentStartOutcome.Busy;
 
         StartingAppointmentId = appointmentId;
         StartErrorMessage = null;
         try
         {
-            var sessionId = UnrecordedSessionId(appointmentId)
-                ?? (await StartSessionFromAppointmentAsync(appointmentId))?.Id;
-            if (sessionId is null)
+            // A session this PC opened whose recording didn't start is reused: an
+            // appointment has at most one. The consent prompt has already run.
+            string sessionId;
+            if (UnrecordedSessionId(appointmentId) is { } unrecorded)
             {
-                StartErrorMessage = ErrorMessage;
-                return true;
+                sessionId = unrecorded;
             }
-            await StartSessionAsync(sessionId);
-            var recording = _recordingVm.ActiveSessionId == sessionId;
+            else
+            {
+                var created = await CreateSessionFromAppointmentAsync(appointmentId, askingConsentOnRecording);
+                if (created.Kind == AppointmentStartKind.Failed) StartErrorMessage = ErrorMessage;
+                if (created.Kind != AppointmentStartKind.Started || created.SessionId is not { } createdId)
+                    return created;
+                sessionId = createdId;
+            }
+
+            var marked = await MarkInProgressAndLaunchAsync(sessionId) is not null;
+            var recording = marked && await StartCaptureOrReleaseAsync(sessionId);
             UnrecordedAppointmentId = recording ? null : appointmentId;
-            if (!recording && _recordingVm.ErrorMessage is null) StartErrorMessage = ErrorMessage;
-            return true;
+
+            // A capture that didn't start says why itself (RecordingViewModel.ErrorMessage);
+            // otherwise the session start's message is kept here, read before the
+            // refreshes below clear ErrorMessage.
+            if (!recording && (!marked || _recordingVm.ErrorMessage is null)) StartErrorMessage = ErrorMessage;
+            _ = LoadTodaySessionsAsync();
+            return recording
+                ? new AppointmentStartOutcome(AppointmentStartKind.Started, sessionId, Recording: true)
+                : new AppointmentStartOutcome(AppointmentStartKind.Failed, sessionId);
         }
         finally
         {
@@ -221,6 +270,62 @@ public partial class SessionViewModel : ObservableObject
         appointmentId == UnrecordedAppointmentId
             ? TodayAppointments.FirstOrDefault(a => a.Id == appointmentId)?.SessionId
             : null;
+
+    /// <summary>
+    /// Returns a started session to "scheduled", the state of a session whose
+    /// note is written by hand (the web starts one without recording). Called
+    /// after a client declines AI-assisted notes on the recording and the
+    /// recording is discarded, so the session never waits for audio.
+    /// </summary>
+    public async Task<bool> ReturnToHandWrittenAsync(string sessionId)
+    {
+        try
+        {
+            await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.Scheduled);
+            if (ActiveSession?.Id == sessionId) ActiveSession = null;
+            return true;
+        }
+        catch (Exception ex) when (ex is PabloException or HttpRequestException or InvalidOperationException)
+        {
+            App.LogException("SessionViewModel.ReturnToHandWritten", ex);
+            ErrorMessage = "Failed to return the session to a hand-written note.";
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Creates the backend session for an appointment and maps the server's
+    /// refusals over AI-assisted notes onto their own outcomes.
+    /// </summary>
+    private async Task<AppointmentStartOutcome> CreateSessionFromAppointmentAsync(
+        string appointmentId, bool askingConsentOnRecording)
+    {
+        try
+        {
+            var session = await _apiClient.StartSessionFromAppointmentAsync(appointmentId, askingConsentOnRecording);
+            return new AppointmentStartOutcome(AppointmentStartKind.Started, session.Id);
+        }
+        catch (PabloException ex) when (ex.StatusCode == 403 && ex.ErrorCode == RecordingConsent.DeclinedErrorCode)
+        {
+            return new AppointmentStartOutcome(AppointmentStartKind.Declined,
+                DeclinedOn: ex.ErrorDetails.GetValueOrDefault("declined_on") ?? "");
+        }
+        catch (PabloException ex) when (ex.StatusCode == 403 && ex.ErrorCode == RecordingConsent.ConsentNeededErrorCode)
+        {
+            return new AppointmentStartOutcome(AppointmentStartKind.ConsentNeeded);
+        }
+        catch (PabloException ex) when (IsSubscriptionRefusal(ex))
+        {
+            SubscriptionBlocked = true;
+            ErrorMessage = "Subscription required to start sessions.";
+            return new AppointmentStartOutcome(AppointmentStartKind.Failed);
+        }
+        catch (Exception ex) when (ex is PabloException or HttpRequestException or InvalidOperationException)
+        {
+            ErrorMessage = "Failed to start session from appointment.";
+            return new AppointmentStartOutcome(AppointmentStartKind.Failed);
+        }
+    }
 
     /// <summary>
     /// End Session from the minimal window: stop, mark complete, upload (all in
@@ -241,7 +346,7 @@ public partial class SessionViewModel : ObservableObject
             await LoadTodayAppointmentsAsync();
             return session;
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("(403)"))
+        catch (PabloException ex) when (IsSubscriptionRefusal(ex))
         {
             SubscriptionBlocked = true;
             ErrorMessage = "Subscription required to start sessions.";
@@ -296,31 +401,51 @@ public partial class SessionViewModel : ObservableObject
     [RelayCommand]
     public async Task StartSessionAsync(string sessionId)
     {
+        if (await MarkInProgressAndLaunchAsync(sessionId) is null) return;
+
+        await StartCaptureOrReleaseAsync(sessionId);
+
+        await LoadTodaySessionsAsync();
+    }
+
+    /// <summary>
+    /// Arms capture for a session already marked in progress and waits until it is
+    /// recording. Awaited, not fired and forgotten: a capture that doesn't start
+    /// lets the session go (back to scheduled), so nothing shows a recording that
+    /// isn't happening. The reason is in <c>RecordingViewModel.ErrorMessage</c>.
+    /// </summary>
+    private async Task<bool> StartCaptureOrReleaseAsync(string sessionId)
+    {
+        if (await _recorder.StartForSessionAsync(sessionId)) return true;
+
+        ActiveSession = null;
+        await ReleaseSessionAsync(sessionId);
+        return false;
+    }
+
+    /// <summary>
+    /// Marks the session in progress and opens its video call. Null when the
+    /// PATCH failed (the error is already on <see cref="ErrorMessage"/>).
+    /// </summary>
+    private async Task<Session?> MarkInProgressAndLaunchAsync(string sessionId)
+    {
         try
         {
             var session = await _apiClient.UpdateSessionStatusAsync(sessionId, SessionStatus.InProgress);
             ActiveSession = session;
             _videoLaunch.LaunchVideoCall(session.VideoLink, session.VideoPlatform?.ToString());
-
-            // Awaited, not fired and forgotten: a capture that doesn't start lets
-            // the session go, so nothing shows a recording that isn't happening.
-            // The reason is in RecordingViewModel.ErrorMessage.
-            if (!await _recordingVm.StartRecordingForSessionAsync(sessionId))
-            {
-                ActiveSession = null;
-                await ReleaseSessionAsync(sessionId);
-            }
-
-            await LoadTodaySessionsAsync();
+            return session;
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("(403)"))
+        catch (PabloException ex) when (IsSubscriptionRefusal(ex))
         {
             SubscriptionBlocked = true;
             ErrorMessage = "Your subscription needs attention. Please update your billing.";
+            return null;
         }
         catch (PabloException)
         {
             ErrorMessage = "Failed to start session.";
+            return null;
         }
     }
 
@@ -404,7 +529,7 @@ public partial class SessionViewModel : ObservableObject
             var session = await _apiClient.CreateSessionAsync(request);
             await StartSessionAsync(session.Id);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("(403)"))
+        catch (PabloException ex) when (IsSubscriptionRefusal(ex))
         {
             SubscriptionBlocked = true;
             ErrorMessage = "Your subscription needs attention. Please update your billing.";
@@ -518,4 +643,48 @@ public partial class SessionViewModel : ObservableObject
         _appointmentRefreshTimer?.Stop();
         _appointmentRefreshTimer = null;
     }
+}
+
+/// <summary>How a start from an appointment ended.</summary>
+public enum AppointmentStartKind
+{
+    /// <summary>Another start was in flight, or a recording is live: nothing was done.</summary>
+    Busy,
+
+    /// <summary>The session was created, marked in progress and is recording.</summary>
+    Started,
+
+    /// <summary>The server refused: the client declined AI-assisted notes. Nothing was created.</summary>
+    Declined,
+
+    /// <summary>
+    /// The server refused a telehealth start: nobody has asked the client about
+    /// AI-assisted notes and the start did not say it is asking. Nothing was created.
+    /// </summary>
+    ConsentNeeded,
+
+    /// <summary>
+    /// Any other failure, including a capture that didn't start (then
+    /// <see cref="AppointmentStartOutcome.SessionId"/> is the released session).
+    /// The message is on <see cref="SessionViewModel.StartErrorMessage"/> or
+    /// <c>RecordingViewModel.ErrorMessage</c>.
+    /// </summary>
+    Failed,
+}
+
+/// <param name="Kind">How the start ended.</param>
+/// <param name="SessionId">The session created, when one was.</param>
+/// <param name="DeclinedOn">For <see cref="AppointmentStartKind.Declined"/>, the day the client
+/// declined as <c>YYYY-MM-DD</c>, or empty when the server sent none.</param>
+/// <param name="Recording">For <see cref="AppointmentStartKind.Started"/>, whether capture is running.</param>
+public sealed record AppointmentStartOutcome(
+    AppointmentStartKind Kind,
+    string? SessionId = null,
+    string? DeclinedOn = null,
+    bool Recording = false)
+{
+    public static readonly AppointmentStartOutcome Busy = new(AppointmentStartKind.Busy);
+
+    /// <summary>Whether this call did the start (it was not refused as busy).</summary>
+    public bool Ran => Kind != AppointmentStartKind.Busy;
 }
