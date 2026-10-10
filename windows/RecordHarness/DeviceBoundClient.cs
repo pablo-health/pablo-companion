@@ -156,6 +156,30 @@ public sealed class DeviceBoundClient : IDisposable
     }
 
     /// <summary>
+    /// As <see cref="RequestAsync"/>, with a body that is already JSON text (or
+    /// none), sent byte for byte. For bodies the shared core builds, such as
+    /// <see cref="RecordingConsentClient.StartSessionBody"/>, so the harness sends
+    /// exactly what the app sends rather than a re-serialization of it.
+    /// </summary>
+    public async Task<Response> RequestRawAsync(
+        HttpMethod method,
+        string path,
+        string idToken,
+        string? rawJson,
+        CancellationToken cancellationToken = default)
+    {
+        var url = _baseUrl + path;
+        using var request = new HttpRequestMessage(method, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+        request.Headers.Add("X-Install-ID", InstallId);
+        request.Headers.Add("DPoP", DpopProof.Create(_deviceKey, method.Method, url));
+        if (rawJson is not null)
+            request.Content = new StringContent(rawJson, Encoding.UTF8, "application/json");
+
+        return await SendAsync(request, cancellationToken);
+    }
+
+    /// <summary>
     /// Stamps the device binding onto a request built elsewhere — the delegate the
     /// shared <see cref="AudioUploadClient"/> takes, so the harness's upload carries
     /// the same headers as the app's.

@@ -79,4 +79,82 @@ internal static class SoapGate
 
         return hasSource || score > 0;
     }
+
+    // --- Polling the session to its note ---
+
+    /// <summary>
+    /// Polls the session until it reaches <c>pending_review</c> (then gates the
+    /// embedded note), <c>failed</c>, or the deadline.
+    /// </summary>
+    internal static async Task<Check> PollAsync(
+        DeviceBoundClient client,
+        string token,
+        string sessionId,
+        double pollSeconds,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(pollSeconds);
+        var lastStatus = "transcribing";
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var poll = await client.RequestAsync(
+                HttpMethod.Get, $"/api/sessions/{sessionId}", token, cancellationToken: cancellationToken);
+            if (poll.Status != 200)
+                throw new HarnessException($"poll failed: {poll.Status} {poll.BodyPrefix}");
+
+            lastStatus = poll.Json.GetStringOrNull("status") ?? lastStatus;
+            if (lastStatus == "failed")
+                return new Check("SOAP generated", false, "session status 'failed'");
+
+            if (lastStatus == "pending_review")
+            {
+                var note = poll.Json.GetPropertyOrNull("note");
+                DumpNote(note);
+                return EvaluateNote(note);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+        }
+
+        return new Check("SOAP generated", false, $"deadline hit (last status '{lastStatus}')");
+    }
+
+    /// <summary>
+    /// The embedded note must be a 4-section SOAP with at least one section
+    /// carrying transcript-anchored content.
+    /// </summary>
+    internal static Check EvaluateNote(JsonElement? note)
+    {
+        if (note is null || note.Value.ValueKind != JsonValueKind.Object)
+            return new Check("SOAP generated", false, "no note on session");
+
+        var noteType = note.GetStringOrNull("note_type");
+        if (noteType != "soap")
+            return new Check("SOAP generated", false, $"note_type {noteType ?? "nil"}");
+
+        var result = Evaluate(note.GetPropertyOrNull("content"));
+        return new Check("4-section SOAP with content", result.Ok, result.Detail);
+    }
+
+    /// <summary>
+    /// Logs the generated SOAP note so a run can be eyeballed against the fixture
+    /// audio. The session is always one the harness itself created in the pinned
+    /// test tenant from synthetic speech — never a real patient's note.
+    /// </summary>
+    private static void DumpNote(JsonElement? note)
+    {
+        if (note is null || note.Value.ValueKind != JsonValueKind.Object)
+        {
+            Harness.Log("generated note: nil");
+            return;
+        }
+
+        var noteType = note.GetStringOrNull("note_type") ?? "?";
+        var content = note.GetPropertyOrNull("content");
+        if (content is null) return;
+
+        var text = JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true });
+        Harness.Log($"----- generated SOAP (note_type={noteType}) -----\n{text}\n-----");
+    }
 }
