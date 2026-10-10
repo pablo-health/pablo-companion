@@ -81,6 +81,32 @@ public sealed class PendingUploadSchedulerTests : IDisposable
         await _scheduler.TickAsync();
     }
 
+    /// <summary>
+    /// A tick that fires while the previous pass is still running (a long upload
+    /// outlasting the interval) is skipped rather than starting a second pass.
+    /// </summary>
+    [Fact]
+    public async Task OverlappingTicks_RunThePassOnce()
+    {
+        var passes = 0;
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _scheduler = new PendingUploadScheduler(
+            async () => { Interlocked.Increment(ref passes); await release.Task; },
+            TimeSpan.FromHours(1));
+
+        var first = _scheduler.TickAsync();
+        await _scheduler.TickAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await _scheduler.TickAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, passes);
+        release.TrySetResult();
+        await first;
+
+        // Once the pass finishes, the next tick runs again.
+        await _scheduler.TickAsync();
+        Assert.Equal(2, passes);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);
