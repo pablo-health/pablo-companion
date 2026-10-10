@@ -1,15 +1,20 @@
+using System.ComponentModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PabloCompanion.Helpers;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
 
 namespace PabloCompanion.Views;
 
 /// <summary>
-/// The thin-client main surface: connection status, a mic-ready indicator, an
-/// "Open Web Dashboard" button, and a footer (preferences / sign-out / version).
-/// The web app is the dashboard; this window is a glanceable handoff target.
+/// The session-first main surface: today's next appointment with Start Session
+/// and the live recording controls (Pause / Resume, End Session), a
+/// "Recording on another device" note, an "Open Web Dashboard" button, and a
+/// footer (connection + mic status, preferences, sign-out, version).
+/// Mirrors <c>MinimalMainView.swift</c>; the selection rules live in
+/// <see cref="MinimalShellSelection"/>.
 ///
 /// Shown when <c>ENABLE_NATIVE_DASHBOARD</c> is false (the default). The full
 /// four-tab nav shell still exists and is shown verbatim when the flag is true.
@@ -21,7 +26,7 @@ public sealed partial class MinimalShellView : UserControl
     private readonly AuthViewModel _authVm;
     private readonly CredentialManager _credentials;
     private readonly RecordingViewModel _recordingVm;
-    private readonly APIClient _apiClient;
+    private readonly SessionViewModel _sessionVm;
 
     private Window? _preferencesWindow;
 
@@ -30,16 +35,20 @@ public sealed partial class MinimalShellView : UserControl
         _authVm = App.Services.GetRequiredService<AuthViewModel>();
         _credentials = App.Services.GetRequiredService<CredentialManager>();
         _recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
-        _apiClient = App.Services.GetRequiredService<APIClient>();
+        _sessionVm = App.Services.GetRequiredService<SessionViewModel>();
 
         InitializeComponent();
 
         VersionText.Text = $"Pablo Companion (Windows) v{ClientVersion}";
+        Card.StartRequested += Card_StartRequested;
+
+        _sessionVm.PropertyChanged += ViewModel_PropertyChanged;
+        _recordingVm.PropertyChanged += RecordingVm_PropertyChanged;
     }
 
     /// <summary>
-    /// Refreshes the status block. Called by <see cref="MainWindow"/> whenever the
-    /// shell becomes visible (i.e. after auth restores / changes).
+    /// Refreshes the status block and the card. Called by <see cref="MainWindow"/>
+    /// whenever the shell becomes visible (i.e. after auth restores / changes).
     /// </summary>
     public void Refresh()
     {
@@ -55,6 +64,88 @@ public sealed partial class MinimalShellView : UserControl
         StatusDot.Fill = ThemeBrush(connected ? "PabloSage" : "PabloError");
 
         _ = RefreshMicStatusAsync();
+        UpdateCard();
+    }
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(SessionViewModel.TodayAppointments):
+            case nameof(SessionViewModel.IsLoadingAppointments):
+            case nameof(SessionViewModel.AppointmentsErrorMessage):
+            case nameof(SessionViewModel.StartingAppointmentId):
+                DispatcherQueue.TryEnqueue(UpdateCard);
+                break;
+        }
+    }
+
+    private void RecordingVm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // Levels and duration tick many times a second; the banner handles those.
+        if (e.PropertyName is nameof(RecordingViewModel.ActiveSessionId) or nameof(RecordingViewModel.State))
+            DispatcherQueue.TryEnqueue(UpdateCard);
+    }
+
+    /// <summary>
+    /// Card priority: recording, then loading, then error, then "No upcoming
+    /// appointments for today". The "Recording on another device" note sits
+    /// above whichever card shows.
+    /// </summary>
+    private void UpdateCard()
+    {
+        var now = DateTimeOffset.Now;
+        var appointments = _sessionVm.TodayAppointments;
+        var activeSessionId = _recordingVm.ActiveSessionId;
+        var startingId = _sessionVm.StartingAppointmentId;
+
+        var elsewhere = MinimalShellSelection.InProgressElsewhere(appointments, now, activeSessionId, startingId);
+        ElsewhereNote.Visibility = elsewhere is null ? Visibility.Collapsed : Visibility.Visible;
+        if (elsewhere is not null)
+        {
+            var title = string.IsNullOrEmpty(elsewhere.Title) ? "a session" : elsewhere.Title;
+            ElsewhereText.Text = $"Recording on another device: {title}";
+        }
+
+        var card = MinimalShellSelection.SelectCard(
+            appointments,
+            now,
+            activeSessionId,
+            startingId,
+            isLoading: _sessionVm.IsLoadingAppointments,
+            hasError: _sessionVm.AppointmentsErrorMessage is not null);
+
+        Card.Visibility = card.Kind is ShellCardKind.Appointment or ShellCardKind.UntrackedRecording
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        LoadingCard.Visibility = Show(card.Kind == ShellCardKind.Loading);
+        ErrorCard.Visibility = Show(card.Kind == ShellCardKind.Error);
+        NoUpcomingCard.Visibility = Show(card.Kind == ShellCardKind.NoUpcoming);
+
+        if (card.Kind == ShellCardKind.Appointment && card.Appointment is { } appointment)
+            Card.ShowAppointment(appointment, card.Action, now);
+        else if (card.Kind == ShellCardKind.UntrackedRecording)
+            Card.ShowUntrackedRecording();
+    }
+
+    private static Visibility Show(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
+
+    private async void Card_StartRequested(object? sender, string appointmentId)
+    {
+        try
+        {
+            // Guarded in the view model: a double-click starts one session.
+            await _sessionVm.StartAppointmentSessionAsync(appointmentId);
+        }
+        catch (Exception ex)
+        {
+            App.LogException("MinimalShell.StartAppointmentSession", ex);
+        }
+    }
+
+    private async void TryAgain_Click(object sender, RoutedEventArgs e)
+    {
+        await _sessionVm.LoadTodayAppointmentsAsync();
     }
 
     private async Task RefreshMicStatusAsync()

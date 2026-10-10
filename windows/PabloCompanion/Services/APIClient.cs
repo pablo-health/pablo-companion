@@ -290,10 +290,10 @@ public class APIClient
 
     // ── Appointments ───────────────────────────────────────────────────────
 
-    public async Task<Appointment[]> FetchTodayAppointmentsAsync()
+    public virtual async Task<Appointment[]> FetchTodayAppointmentsAsync()
     {
-        var start = DateTime.UtcNow.Date;
-        var end = start.AddDays(1);
+        // Local midnight to local midnight, sent as UTC instants.
+        var (start, end) = Helpers.LocalDayRange.Today();
         var startStr = Uri.EscapeDataString(start.ToString("O"));
         var endStr = Uri.EscapeDataString(end.ToString("O"));
         using var request = CreateRequest(HttpMethod.Get,
@@ -302,7 +302,7 @@ public class APIClient
         return result.Data;
     }
 
-    public async Task<Session> StartSessionFromAppointmentAsync(string appointmentId)
+    public virtual async Task<Session> StartSessionFromAppointmentAsync(string appointmentId)
     {
         using var request = CreateRequest(HttpMethod.Post,
             $"/api/appointments/{appointmentId}/start-session");

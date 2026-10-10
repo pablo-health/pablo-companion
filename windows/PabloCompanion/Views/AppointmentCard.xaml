@@ -1,0 +1,81 @@
+<UserControl
+    x:Class="PabloCompanion.Views.AppointmentCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PabloCompanion.Views">
+
+    <!-- The minimal window's hero: the next appointment and its one action
+         (Start Session / Starting session... / the live recording controls), or
+         an in-flight recording whose appointment isn't in today's list. -->
+    <Border Background="#1FD4922E"
+            BorderBrush="#4DD4922E"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="16">
+        <StackPanel Spacing="14">
+
+            <!-- Appointment summary: timing / time, title, duration -->
+            <Grid x:Name="SummaryRow" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Grid.Column="0"
+                          Glyph="&#xE787;"
+                          FontSize="22"
+                          Foreground="{StaticResource PabloHoney}"
+                          VerticalAlignment="Center"
+                          AutomationProperties.AccessibilityView="Raw" />
+                <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock x:Name="TimingText"
+                               Style="{StaticResource PabloBodySmall}"
+                               FontWeight="SemiBold" />
+                    <TextBlock x:Name="TitleText"
+                               FontFamily="{StaticResource PabloDisplayFont}"
+                               FontSize="16"
+                               Foreground="{StaticResource PabloBrownDeep}"
+                               TextTrimming="CharacterEllipsis"
+                               MaxLines="1" />
+                </StackPanel>
+                <TextBlock Grid.Column="2"
+                           x:Name="DurationText"
+                           Style="{StaticResource PabloBodySmall}"
+                           VerticalAlignment="Center" />
+            </Grid>
+
+            <!-- Recording with no matching appointment -->
+            <StackPanel x:Name="UntrackedRow"
+                        Orientation="Horizontal"
+                        Spacing="12"
+                        Visibility="Collapsed">
+                <FontIcon Glyph="&#xE720;"
+                          FontSize="22"
+                          Foreground="{StaticResource PabloHoney}"
+                          VerticalAlignment="Center"
+                          AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock Text="Session in progress"
+                           FontFamily="{StaticResource PabloDisplayFont}"
+                           FontSize="16"
+                           Foreground="{StaticResource PabloBrownDeep}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <Button x:Name="StartButton"
+                    Content="Start Session"
+                    Click="StartButton_Click"
+                    Style="{StaticResource PabloPrimaryButton}"
+                    HorizontalAlignment="Stretch" />
+
+            <Button x:Name="StartingButton"
+                    Content="Starting session..."
+                    Style="{StaticResource PabloPrimaryButton}"
+                    HorizontalAlignment="Stretch"
+                    IsEnabled="False"
+                    Visibility="Collapsed" />
+
+            <local:RecordingBanner x:Name="RecordingPanel"
+                                   Visibility="Collapsed" />
+        </StackPanel>
+    </Border>
+</UserControl>

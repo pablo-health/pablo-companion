@@ -142,7 +142,11 @@ public sealed record Appointment(
     [property: JsonPropertyName("ehr_appointment_url")] string? EhrAppointmentUrl = null,
     [property: JsonPropertyName("session_id")] string? SessionId = null,
     [property: JsonPropertyName("created_at")] string? CreatedAt = null,
-    [property: JsonPropertyName("updated_at")] string? UpdatedAt = null
+    [property: JsonPropertyName("updated_at")] string? UpdatedAt = null,
+    // Lifecycle of the linked session, decoded raw so a status a newer backend
+    // adds reads as null (see AppointmentExtensions.ParsedSessionStatus) instead of
+    // failing the whole list. Older backends omit it.
+    [property: JsonPropertyName("session_status")] string? SessionStatusRaw = null
 );
 
 public sealed record AppointmentListResponse(
