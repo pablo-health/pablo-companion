@@ -1,0 +1,163 @@
+name: Release Windows
+
+# Released together with macOS from the same `v*` tag (see release-mac.yml).
+#
+# A tag push builds the Store package (.msixupload, x64 + arm64) with the same
+# steps as windows/scripts/store-build.ps1 (it runs that script), attaches it
+# to the GitHub Release for the tag, and, when the Partner Center secrets are
+# configured, STAGES a Store submission with it: the package is uploaded to a
+# draft submission that is left uncommitted, for a person to review the listing
+# and press Submit in Partner Center. Without the secrets, upload the
+# .msixupload from the release by hand.
+#
+# A manual dispatch builds with version 0.0.<run_number> and never uploads that
+# build anywhere but the workflow artifacts (as release-mac.yml's dispatch never
+# releases). Its one publishing action is opt-in: `publish: true` commits the
+# submission an earlier tag staged, the same as pressing Submit.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Commit the staged Partner Center submission (sends it to certification)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-windows
+  cancel-in-progress: false
+
+env:
+  # Pablo Companion's Store product id.
+  STORE_PRODUCT_ID: 9N0260HFX1JC
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      # Secrets cannot be read in `if:` directly; expose whether they exist.
+      HAS_MSSTORE_SECRETS: ${{ secrets.MSSTORE_TENANT_ID != '' && secrets.MSSTORE_SELLER_ID != '' && secrets.MSSTORE_CLIENT_ID != '' && secrets.MSSTORE_CLIENT_SECRET != '' }}
+    steps:
+      - name: Configure git line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout AudioCaptureKit (sibling repo for project reference)
+        run: git clone --depth 1 https://github.com/pablo-health/AudioCaptureKit.git ../AudioCaptureKit
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v5.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set version from tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          else
+            # Dispatch runs never publish their build, so the version only has to be valid.
+            VERSION=0.0.${{ github.run_number }}
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag must be vMAJOR.MINOR.PATCH (got $GITHUB_REF_NAME)"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "UPLOAD_NAME=PabloCompanion_${VERSION}.0_x64_arm64_bundle.msixupload" >> "$GITHUB_ENV"
+
+      - name: Restore NuGet packages (with vulnerability audit)
+        run: dotnet restore windows/PabloCompanion.sln /p:NuGetAudit=true /p:NuGetAuditLevel=moderate
+
+      - name: Run tests
+        # Same build + test as windows.yml, so a release never ships a red tree.
+        run: |
+          dotnet build windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj -c Debug -p:Platform=x64 -p:WindowsAppSDKSelfContained=true --no-restore
+          dotnet test windows/PabloCompanion.Tests/PabloCompanion.Tests.csproj --no-build -c Debug -p:Platform=x64
+
+      - name: Build Store package
+        # store-build.ps1 stamps ${VERSION}.0 into Package.appxmanifest's Identity
+        # Version in this checkout only (the Store rejects a non-zero revision and
+        # a re-upload of a version it has seen), publishes Release x64 + arm64
+        # self-contained, bundles them with makeappx and wraps the .msixupload.
+        shell: pwsh
+        run: pwsh windows/scripts/store-build.ps1 -Version $env:VERSION
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PabloCompanion-${{ env.VERSION }}-msixupload
+          path: windows/PabloCompanion/AppPackages/${{ env.UPLOAD_NAME }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          FILE="windows/PabloCompanion/AppPackages/$UPLOAD_NAME"
+          # The macOS job races this one for the same tag; whichever runs first
+          # creates the release, and a lost race to create is not a failure.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes \
+              || gh release view "$TAG" >/dev/null
+          fi
+          gh release upload "$TAG" "$FILE" --clobber
+
+      - name: Set up Microsoft Store CLI
+        if: github.event_name == 'push' && env.HAS_MSSTORE_SECRETS == 'true'
+        uses: microsoft/setup-msstore-cli@v1
+
+      - name: Stage Partner Center submission (not committed)
+        # Uploads the package into the app's draft submission and stops there:
+        # --noCommit leaves it for review in Partner Center. `msstore publish`
+        # is the CLI command that uploads a package; `submission update` alone
+        # only edits submission metadata and cannot carry the binary.
+        if: github.event_name == 'push' && env.HAS_MSSTORE_SECRETS == 'true'
+        shell: pwsh
+        env:
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+        run: |
+          msstore reconfigure --tenantId $env:MSSTORE_TENANT_ID --sellerId $env:MSSTORE_SELLER_ID --clientId $env:MSSTORE_CLIENT_ID --clientSecret $env:MSSTORE_CLIENT_SECRET
+          msstore publish "windows/PabloCompanion/AppPackages/$env:UPLOAD_NAME" --appId $env:STORE_PRODUCT_ID --noCommit
+          msstore submission status $env:STORE_PRODUCT_ID
+
+  publish:
+    # Opt-in commit of the submission a tag staged. Never runs on its own.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    runs-on: windows-latest
+    env:
+      HAS_MSSTORE_SECRETS: ${{ secrets.MSSTORE_TENANT_ID != '' && secrets.MSSTORE_SELLER_ID != '' && secrets.MSSTORE_CLIENT_ID != '' && secrets.MSSTORE_CLIENT_SECRET != '' }}
+    steps:
+      - name: Require Partner Center secrets
+        if: env.HAS_MSSTORE_SECRETS != 'true'
+        shell: bash
+        run: |
+          echo "::error::publish needs MSSTORE_TENANT_ID, MSSTORE_SELLER_ID, MSSTORE_CLIENT_ID and MSSTORE_CLIENT_SECRET"
+          exit 1
+
+      - name: Set up Microsoft Store CLI
+        uses: microsoft/setup-msstore-cli@v1
+
+      - name: Commit the staged submission
+        shell: pwsh
+        env:
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+        run: |
+          msstore reconfigure --tenantId $env:MSSTORE_TENANT_ID --sellerId $env:MSSTORE_SELLER_ID --clientId $env:MSSTORE_CLIENT_ID --clientSecret $env:MSSTORE_CLIENT_SECRET
+          msstore submission publish $env:STORE_PRODUCT_ID
+          msstore submission poll $env:STORE_PRODUCT_ID
