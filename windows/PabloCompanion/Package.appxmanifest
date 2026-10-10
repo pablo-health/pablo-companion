@@ -12,7 +12,7 @@
   <Identity
     Name="PabloHealthLLC.PabloHealth"
     Publisher="CN=42DEB728-5FF9-4489-A5D8-F80DC15B972F"
-    Version="1.0.0.0" />
+    Version="1.1.0.0" />
 
   <Properties>
     <!-- Must match a name reserved in Partner Center -->
