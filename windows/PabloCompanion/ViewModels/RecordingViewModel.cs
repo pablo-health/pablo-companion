@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using PabloCompanion.Helpers;
+using PabloCompanion.Core;
 using PabloCompanion.Models;
 using PabloCompanion.Services;
 
@@ -22,6 +23,7 @@ public partial class RecordingViewModel : ObservableObject
     private DispatcherTimer? _durationTimer;
     private bool _starting;
     private int _liveCapture = -1;
+    private readonly ClientAudioMonitor _clientAudioMonitor = new();
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Trouble))]
@@ -101,6 +103,27 @@ public partial class RecordingViewModel : ObservableObject
     /// <summary>System audio has stopped reaching the recording; the mic is still recording.</summary>
     [ObservableProperty]
     public partial bool SystemAudioInterrupted { get; set; }
+
+    /// <summary>
+    /// Whether the client's side of the call is actually arriving; see
+    /// <see cref="ClientAudioMonitor"/>. Published only when it changes; the
+    /// monitor itself sees every level tick.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsClientAudioWarning))]
+    public partial ClientAudioStatus ClientAudioStatus { get; private set; } = ClientAudioStatus.Listening;
+
+    /// <summary>
+    /// Set when the therapist closes the warning; cleared whenever the status
+    /// changes, so a client lost again later warns again.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsClientAudioWarning))]
+    public partial bool ClientAudioWarningDismissed { get; private set; }
+
+    /// <summary>True when the "can't hear your client" banner should show.</summary>
+    public bool ShowsClientAudioWarning =>
+        ClientAudioStatus == ClientAudioStatus.NoClientAudio && !ClientAudioWarningDismissed;
 
     /// <summary>What the session card has to say about capture; null when recording is fine or no session is open.</summary>
     public RecordingTrouble? Trouble => RecordingTrouble.Evaluate(
@@ -187,6 +210,7 @@ public partial class RecordingViewModel : ObservableObject
         MicDisconnected = false;
         RecordingStalled = false;
         SystemAudioInterrupted = false;
+        ResetClientAudio();
 
         try
         {
@@ -241,6 +265,7 @@ public partial class RecordingViewModel : ObservableObject
             MicDisconnected = false;
             PersistentError = null;
             SystemAudioInterrupted = false;
+            ResetClientAudio();
             MicLevel = 0;
             SystemLevel = 0;
             PeakMicLevel = 0;
@@ -263,6 +288,8 @@ public partial class RecordingViewModel : ObservableObject
         if (State != RecordingUIState.Paused) return;
         _recordingService.Resume();
         _durationTimer?.Start();
+        // A pause can be long; judge the resumed stretch on its own.
+        ResetClientAudio();
         State = RecordingUIState.Recording;
     }
 
@@ -313,6 +340,7 @@ public partial class RecordingViewModel : ObservableObject
         MicDisconnected = false;
         PersistentError = null;
         SystemAudioInterrupted = false;
+        ResetClientAudio();
         Duration = 0;
         MicLevel = 0;
         SystemLevel = 0;
@@ -339,6 +367,7 @@ public partial class RecordingViewModel : ObservableObject
         StopTimers();
         State = RecordingUIState.Idle;
         RecordingStalled = false;
+        ResetClientAudio();
         MicLevel = 0;
         SystemLevel = 0;
         PeakMicLevel = 0;
@@ -347,6 +376,32 @@ public partial class RecordingViewModel : ObservableObject
             MicDisconnected = true;
         else
             PersistentError = e.Message ?? RecordingTrouble.CaptureFailedMessage;
+    }
+
+    /// <summary>Hides the client audio warning until the status changes again.</summary>
+    public void DismissClientAudioWarning() => ClientAudioWarningDismissed = true;
+
+    /// <summary>
+    /// Feeds one level tick to the monitor while recording, and publishes the
+    /// status only when it changes. Internal so tests can drive it without a
+    /// dispatcher timer.
+    /// </summary>
+    internal void TrackClientAudio(float micRms, float systemRms, DateTimeOffset now)
+    {
+        if (State != RecordingUIState.Recording) return;
+        _clientAudioMonitor.Record(micRms, systemRms, now);
+        if (_clientAudioMonitor.Status != ClientAudioStatus)
+        {
+            ClientAudioStatus = _clientAudioMonitor.Status;
+            ClientAudioWarningDismissed = false;
+        }
+    }
+
+    private void ResetClientAudio()
+    {
+        _clientAudioMonitor.Reset();
+        ClientAudioStatus = ClientAudioStatus.Listening;
+        ClientAudioWarningDismissed = false;
     }
 
     private void OnUi(Action action)
@@ -373,6 +428,7 @@ public partial class RecordingViewModel : ObservableObject
             PeakMicLevel = levels.PeakMicLevel;
             PeakSystemLevel = levels.PeakSystemLevel;
             SystemAudioActive = levels.SystemLevel > 0.001f;
+            TrackClientAudio(levels.MicLevel, levels.SystemLevel, DateTimeOffset.UtcNow);
         };
         _levelTimer.Start();
 

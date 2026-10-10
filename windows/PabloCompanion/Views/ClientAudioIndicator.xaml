@@ -1,0 +1,24 @@
+<UserControl
+    x:Class="PabloCompanion.Views.ClientAudioIndicator"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Live "is the client reaching the recording?" status on the recording
+         banner. Mirrors ClientAudioIndicator.swift. The dot is decorative; the
+         label carries the state. -->
+    <StackPanel x:Name="Root"
+                Orientation="Horizontal"
+                Spacing="6"
+                VerticalAlignment="Center">
+        <Ellipse x:Name="Dot"
+                 Width="8" Height="8"
+                 Fill="#80FFFFFF"
+                 VerticalAlignment="Center"
+                 AutomationProperties.AccessibilityView="Raw" />
+        <TextBlock x:Name="LabelText"
+                   Text="Waiting for client audio"
+                   Foreground="#E0FFFFFF"
+                   FontSize="12"
+                   VerticalAlignment="Center" />
+    </StackPanel>
+</UserControl>

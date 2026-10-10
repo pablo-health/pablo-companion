@@ -29,6 +29,7 @@ public sealed partial class RecordingBanner : UserControl
         _vm = App.Services.GetRequiredService<RecordingViewModel>();
         _vm.PropertyChanged += Vm_PropertyChanged;
         TroubleNote.RestartRequested += TroubleNote_RestartRequested;
+        ClientAudioWarning.Dismissed += (_, _) => _vm.DismissClientAudioWarning();
         UpdateUI();
     }
 
@@ -78,13 +79,11 @@ public sealed partial class RecordingBanner : UserControl
         MicMeter.Level = _vm.MicLevel;
         SysMeter.Level = _vm.SystemLevel;
 
-        // System audio indicator
-        SystemAudioDot.Fill = _vm.SystemAudioInterrupted
-            ? (Brush)Application.Current.Resources["PabloError"]
-            : _vm.SystemAudioActive
-                ? new SolidColorBrush(Colors.LimeGreen)
-                : new SolidColorBrush(Windows.UI.Color.FromArgb(128, 255, 255, 255));
-        SystemAudioText.Text = _vm.SystemAudioInterrupted && !stopped ? "System audio isn't recording" : "System Audio";
+        // Whether the client's side of the call is reaching the recording. A
+        // stopped capture hears nothing; the trouble note says why.
+        ClientAudio.Visibility = stopped ? Visibility.Collapsed : Visibility.Visible;
+        ClientAudio.Show(ClientAudioIndicatorState.For(_vm.SystemAudioInterrupted, _vm.ClientAudioStatus));
+        ClientAudioWarning.SetShown(!stopped && _vm.ShowsClientAudioWarning);
 
         // A stalled or stopped capture in the open session.
         if (trouble is not null)
