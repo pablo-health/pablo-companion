@@ -175,10 +175,18 @@ public class UploadGateTests : IDisposable
     }
 
     [Fact]
-    public void CaptureChecks_FailOnDroppedSamples()
+    public void CaptureChecks_FailOnAFailedMixCycle()
     {
-        Assert.False(Capture(4000, trimmed: 10).Checks(380).Single(c => c.Name == "no dropped samples").Ok);
         Assert.False(Capture(4000, mixErrors: 1).Checks(380).Single(c => c.Name == "no dropped samples").Ok);
         Assert.True(Capture(4000).Checks(380).Single(c => c.Name == "no dropped samples").Ok);
+    }
+
+    [Fact]
+    public void CaptureChecks_BoundTimelineTrimsAtOnePercent()
+    {
+        const string name = "system timeline repair within 1%";
+        // 2 s of a 380 s capture: what a busy CI runner's file source produced.
+        Assert.True(Capture(4000, trimmed: 99840).Checks(380).Single(c => c.Name == name).Ok);
+        Assert.False(Capture(4000, trimmed: 48000 * 4).Checks(380).Single(c => c.Name == name).Ok);
     }
 }
