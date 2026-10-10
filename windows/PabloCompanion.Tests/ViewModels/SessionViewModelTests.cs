@@ -102,6 +102,43 @@ public sealed class SessionViewModelTests : IDisposable
         Assert.Equal("session-B", entry!.SessionId);
     }
 
+    [Fact]
+    public async Task StartAppointmentSessionAsync_DoubleClickCreatesExactlyOneSession()
+    {
+        var (sessionVm, api, _) = MakeSut();
+        api.HoldStartSession = new TaskCompletionSource<Session>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // The in-progress PATCH fails, so the start stops short of arming the mic:
+        // this test is about the guard, not capture.
+        api.FailNextPatch = true;
+
+        var first = sessionVm.StartAppointmentSessionAsync("appointment-1");
+        Assert.Equal("appointment-1", sessionVm.StartingAppointmentId);
+
+        var second = await sessionVm.StartAppointmentSessionAsync("appointment-1");
+        var otherAppointment = await sessionVm.StartAppointmentSessionAsync("appointment-2");
+
+        api.HoldStartSession.SetResult(StubApiClient.MakeSession("session-1", SessionStatus.Scheduled));
+        var firstResult = await first;
+
+        Assert.True(firstResult);
+        Assert.False(second);
+        Assert.False(otherAppointment);
+        Assert.Equal(1, api.StartSessionCallCount);
+        Assert.Null(sessionVm.StartingAppointmentId);
+    }
+
+    [Fact]
+    public async Task StartAppointmentSessionAsync_ClearsTheGuardSoALaterStartRuns()
+    {
+        var (sessionVm, api, _) = MakeSut();
+        api.FailStartSession = true;
+
+        Assert.True(await sessionVm.StartAppointmentSessionAsync("appointment-1"));
+        Assert.Null(sessionVm.StartingAppointmentId);
+        Assert.True(await sessionVm.StartAppointmentSessionAsync("appointment-1"));
+        Assert.Equal(2, api.StartSessionCallCount);
+    }
+
     public void Dispose()
     {
         _recordingStore.Clear();
@@ -141,6 +178,10 @@ public sealed class SessionViewModelTests : IDisposable
         public bool FailNextPatch { get; set; }
         public bool FailNextUpload { get; set; }
 
+        public int StartSessionCallCount { get; private set; }
+        public bool FailStartSession { get; set; }
+        public TaskCompletionSource<Session>? HoldStartSession { get; set; }
+
         public StubApiClient(CredentialManager credentials) : base(credentials) { }
 
         // Keep the pre-upload liveness probe off the real network in tests.
@@ -173,7 +214,18 @@ public sealed class SessionViewModelTests : IDisposable
         public override Task<Session[]> FetchTodaySessionsAsync(string timezone)
             => Task.FromResult(Array.Empty<Session>());
 
-        private static Session MakeSession(string id, SessionStatus status) => new(
+        public override Task<Appointment[]> FetchTodayAppointmentsAsync()
+            => Task.FromResult(Array.Empty<Appointment>());
+
+        public override Task<Session> StartSessionFromAppointmentAsync(string appointmentId)
+        {
+            StartSessionCallCount++;
+            if (FailStartSession)
+                throw new PabloException(500, "Simulated start failure");
+            return HoldStartSession?.Task ?? Task.FromResult(MakeSession("session-1", SessionStatus.Scheduled));
+        }
+
+        public static Session MakeSession(string id, SessionStatus status) => new(
             Id: id, PatientId: null, Patient: null, Status: status,
             ScheduledAt: null, StartedAt: null, EndedAt: null,
             DurationMinutes: null, VideoLink: null, VideoPlatform: null,

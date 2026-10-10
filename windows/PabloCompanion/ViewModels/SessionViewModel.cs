@@ -20,11 +20,35 @@ public partial class SessionViewModel : ObservableObject
     private readonly RecordingViewModel _recordingVm;
     private readonly TranscriptionViewModel _transcriptionVm;
     private DispatcherTimer? _pollingTimer;
+    private DispatcherTimer? _appointmentRefreshTimer;
+
+    /// <summary>How often the minimal window re-reads today's appointments while signed in.</summary>
+    public static readonly TimeSpan AppointmentRefreshInterval = TimeSpan.FromSeconds(60);
 
     // --- Today's appointments ---
 
     [ObservableProperty]
     public partial Appointment[] TodayAppointments { get; set; } = [];
+
+    /// <summary>True while today's appointments are being fetched.</summary>
+    [ObservableProperty]
+    public partial bool IsLoadingAppointments { get; set; }
+
+    /// <summary>
+    /// Set when the last appointments fetch failed. Kept apart from
+    /// <see cref="ErrorMessage"/>, which session start/end also write, so the
+    /// card's "couldn't load" state means exactly that.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? AppointmentsErrorMessage { get; set; }
+
+    /// <summary>
+    /// Appointment whose session is being created/started but isn't recording
+    /// yet. Pins the card (see <c>MinimalShellSelection.NextAppointment</c>) and
+    /// doubles as the in-flight guard: a second Start while this is set is a no-op.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? StartingAppointmentId { get; set; }
 
     // --- Today's sessions ---
 
@@ -85,6 +109,10 @@ public partial class SessionViewModel : ObservableObject
     public void ClearAllData()
     {
         StopPolling();
+        StopAppointmentRefresh();
+        TodayAppointments = [];
+        AppointmentsErrorMessage = null;
+        StartingAppointmentId = null;
         TodaySessions = [];
         Sessions = [];
         ActiveSession = null;
@@ -101,24 +129,75 @@ public partial class SessionViewModel : ObservableObject
     public async Task LoadTodayAppointmentsAsync()
     {
         IsLoading = true;
+        IsLoadingAppointments = true;
         ErrorMessage = null;
 
         try
         {
             TodayAppointments = await _apiClient.FetchTodayAppointmentsAsync();
+            AppointmentsErrorMessage = null;
         }
         catch (PabloException)
         {
             ErrorMessage = "Failed to load today's appointments.";
+            AppointmentsErrorMessage = ErrorMessage;
         }
         catch (HttpRequestException)
         {
             ErrorMessage = "Failed to load appointments. Check your connection.";
+            AppointmentsErrorMessage = ErrorMessage;
+        }
+        catch (Exception ex)
+        {
+            // Timeouts, malformed bodies: this runs from a timer, so nothing may
+            // escape. Log the type only; a response body could carry PHI.
+            System.Diagnostics.Debug.WriteLine($"LoadTodayAppointmentsAsync failed: {ex.GetType().Name}");
+            ErrorMessage = "Failed to load appointments. Check your connection.";
+            AppointmentsErrorMessage = ErrorMessage;
         }
         finally
         {
             IsLoading = false;
+            IsLoadingAppointments = false;
         }
+    }
+
+    /// <summary>
+    /// Start Session from the minimal window's card (or a confirmed handoff):
+    /// create the session for the appointment, mark it in progress, arm the mic
+    /// and open the video call. Guarded so a double-click (or a handoff landing
+    /// while one start is in flight or a recording is live) creates exactly one
+    /// session. Returns whether this call did the start.
+    /// </summary>
+    public async Task<bool> StartAppointmentSessionAsync(string appointmentId)
+    {
+        if (StartingAppointmentId is not null) return false;
+        if (_recordingVm.State != RecordingUIState.Idle || _recordingVm.ActiveSessionId is not null) return false;
+
+        StartingAppointmentId = appointmentId;
+        try
+        {
+            var session = await StartSessionFromAppointmentAsync(appointmentId);
+            if (session is null) return true;
+            await StartSessionAsync(session.Id);
+            return true;
+        }
+        finally
+        {
+            StartingAppointmentId = null;
+            // Pick up the session link and its in-progress status.
+            await LoadTodayAppointmentsAsync();
+        }
+    }
+
+    /// <summary>
+    /// End Session from the minimal window: stop, mark complete, upload (all in
+    /// <see cref="EndSessionAsync"/>), then refresh the card so it advances.
+    /// </summary>
+    public async Task EndSessionAndRefreshAsync(string sessionId)
+    {
+        await EndSessionAsync(sessionId);
+        await LoadTodayAppointmentsAsync();
     }
 
     [RelayCommand]
@@ -357,5 +436,29 @@ public partial class SessionViewModel : ObservableObject
     {
         _pollingTimer?.Stop();
         _pollingTimer = null;
+    }
+
+    /// <summary>
+    /// Loads today's appointments now and every <see cref="AppointmentRefreshInterval"/>
+    /// until <see cref="StopAppointmentRefresh"/> (sign-out). Must be called on
+    /// the UI thread.
+    /// </summary>
+    public void StartAppointmentRefresh()
+    {
+        StopAppointmentRefresh();
+        _appointmentRefreshTimer = new DispatcherTimer { Interval = AppointmentRefreshInterval };
+        _appointmentRefreshTimer.Tick += async (_, _) =>
+        {
+            if (IsLoadingAppointments) return;
+            await LoadTodayAppointmentsAsync();
+        };
+        _appointmentRefreshTimer.Start();
+        _ = LoadTodayAppointmentsAsync();
+    }
+
+    public void StopAppointmentRefresh()
+    {
+        _appointmentRefreshTimer?.Stop();
+        _appointmentRefreshTimer = null;
     }
 }

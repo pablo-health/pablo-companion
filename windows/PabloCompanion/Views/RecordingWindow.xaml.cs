@@ -7,12 +7,15 @@ using PabloCompanion.ViewModels;
 namespace PabloCompanion.Views;
 
 /// <summary>
+/// No longer opened by the shell: a confirmed handoff now lands in the main
+/// window's appointment card (see <see cref="MinimalShellView"/>). Kept for now.
+///
 /// Ephemeral window that surfaces the live recording controls (duration, levels,
-/// Stop / End Session) after the user confirms a handoff. In minimal-shell mode the
+/// Pause / End Session) after the user confirms a handoff. In minimal-shell mode the
 /// day view is never shown, so without this window a redeemed session would arm the
 /// mic with no on-screen indicator and no way to stop short of signing out.
 ///
-/// Hosts the same <see cref="RecordingBanner"/> the day view uses, so Stop / End
+/// Hosts the same <see cref="RecordingBanner"/> the day view uses, so Pause / End
 /// Session behave identically. The window dismisses itself when the recording
 /// returns to <see cref="RecordingUIState.Idle"/> (session ended, or data cleared on
 /// sign-out), matching the design's "ephemeral window, closed when the session ends."
