@@ -61,21 +61,12 @@
             <local:RecordingTroubleNote x:Name="TroubleNote"
                                         Visibility="Collapsed" />
 
-            <!-- System audio indicator -->
-            <StackPanel Orientation="Horizontal"
-                        Spacing="4"
-                        VerticalAlignment="Center">
-                <Ellipse x:Name="SystemAudioDot"
-                         Width="8" Height="8"
-                         Fill="#80FFFFFF"
-                         VerticalAlignment="Center"
-                         AutomationProperties.AccessibilityView="Raw" />
-                <TextBlock x:Name="SystemAudioText"
-                           Text="System Audio"
-                           Foreground="#C0FFFFFF"
-                           FontSize="12"
-                           VerticalAlignment="Center" />
-            </StackPanel>
+            <!-- Can't hear the client: the call isn't reaching the recording -->
+            <local:ClientAudioWarningBanner x:Name="ClientAudioWarning"
+                                            Visibility="Collapsed" />
+
+            <!-- Whether the client's side of the call is reaching the recording -->
+            <local:ClientAudioIndicator x:Name="ClientAudio" />
 
             <!-- Pause / Resume + End Session -->
             <Grid ColumnSpacing="10">

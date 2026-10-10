@@ -1,0 +1,56 @@
+<UserControl
+    x:Class="PabloCompanion.Views.ClientAudioWarningBanner"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Shown in the recording card when the therapist is talking but nothing is
+         arriving from the call. Non-blocking: recording carries on either way.
+         Mirrors ClientAudioWarningBanner.swift. -->
+    <Border Background="{StaticResource PabloCream}"
+            BorderBrush="{StaticResource PabloError}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="12">
+        <Grid ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <!-- Mute speaker glyph (decorative) -->
+            <FontIcon Grid.Column="0"
+                      Glyph="&#xE74F;"
+                      FontSize="18"
+                      Foreground="{StaticResource PabloError}"
+                      VerticalAlignment="Top"
+                      AutomationProperties.AccessibilityView="Raw" />
+            <StackPanel Grid.Column="1" Spacing="6">
+                <TextBlock x:Name="TitleText"
+                           Text="Pablo can't hear your client yet"
+                           Style="{StaticResource PabloBodyMedium}"
+                           Foreground="{StaticResource PabloBrownDeep}"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="If your client is talking, make sure the call's audio is playing through this PC's speakers or headset."
+                           Style="{StaticResource PabloBodySmall}"
+                           Foreground="{StaticResource PabloBrownSoft}"
+                           TextWrapping="Wrap" />
+                <HyperlinkButton Content="Open sound settings"
+                                 Padding="0"
+                                 Click="OpenSoundSettings_Click"
+                                 AutomationProperties.Name="Open sound settings" />
+            </StackPanel>
+            <Button Grid.Column="2"
+                    VerticalAlignment="Top"
+                    Padding="6"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="Dismiss_Click"
+                    AutomationProperties.Name="Dismiss client audio warning">
+                <FontIcon Glyph="&#xE711;"
+                          FontSize="12"
+                          Foreground="{StaticResource PabloBrownSoft}" />
+            </Button>
+        </Grid>
+    </Border>
+</UserControl>
