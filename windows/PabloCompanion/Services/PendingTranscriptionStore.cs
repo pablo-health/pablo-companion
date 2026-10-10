@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AudioCapture.Storage;
 
 namespace PabloCompanion.Services;
@@ -39,7 +40,19 @@ public sealed class PendingTranscriptionStore
         _storePath = storePath;
     }
 
-    public void Add(string sessionId, string micPath, string? systemPath, bool isEncrypted)
+    /// <summary>
+    /// Failed attempts after which an entry stops being retried automatically and
+    /// reads as a permanent failure. Matches macOS
+    /// (<c>PendingAudioUploadCoordinator.Policy.maxAutoRetries</c>). The manual
+    /// "Retry now" still tries it.
+    /// </summary>
+    public const int MaxAutoRetries = 10;
+
+    /// <param name="sampleRate">
+    /// Rate the sidecars were captured at, stamped into the WAV header at upload.
+    /// Null falls back to 48 kHz when the upload runs.
+    /// </param>
+    public void Add(string sessionId, string micPath, string? systemPath, bool isEncrypted, int? sampleRate = null)
     {
         lock (_lock)
         {
@@ -50,19 +63,29 @@ public sealed class PendingTranscriptionStore
                 SystemPath: systemPath,
                 IsEncrypted: isEncrypted,
                 CreatedAt: DateTime.UtcNow,
-                RetryCount: 0);
+                RetryCount: 0,
+                SampleRate: sampleRate);
             Persist(store);
         }
     }
 
-    public void IncrementRetry(string sessionId)
+    /// <summary>
+    /// Record a failed attempt: increment the retry count and stamp
+    /// <see cref="PendingTranscription.LastAttemptAt"/>, which the backoff ladder
+    /// counts from. No-op if the entry is gone.
+    /// </summary>
+    public void IncrementRetry(string sessionId, DateTime? at = null)
     {
         lock (_lock)
         {
             var store = Load();
             if (store.TryGetValue(sessionId, out var existing))
             {
-                store[sessionId] = existing with { RetryCount = existing.RetryCount + 1 };
+                store[sessionId] = existing with
+                {
+                    RetryCount = existing.RetryCount + 1,
+                    LastAttemptAt = at ?? DateTime.UtcNow,
+                };
                 Persist(store);
             }
         }
@@ -202,4 +225,28 @@ public sealed record PendingTranscription(
     // Optional-with-default: entries written before this field existed have no
     // `state` in their JSON and decode as PendingUpload — the old behaviour —
     // rather than failing to deserialize and dropping a queued upload.
-    UploadLifecycleState State = UploadLifecycleState.PendingUpload);
+    UploadLifecycleState State = UploadLifecycleState.PendingUpload,
+    // When the last failed attempt happened; the backoff ladder counts from here.
+    // Optional so entries written before it existed still decode - those fall
+    // back to CreatedAt, the old anchor, which made every tick "due" once an
+    // entry was older than its backoff.
+    DateTime? LastAttemptAt = null,
+    // Capture rate of the sidecars, stamped into the WAV header at upload.
+    // Optional so older entries still decode; null falls back to 48 kHz, which
+    // is what every upload used before this field existed. Raw PCM carries no
+    // header to recover the true rate from.
+    int? SampleRate = null)
+{
+    /// <summary>The moment the backoff ladder counts from.</summary>
+    [JsonIgnore]
+    public DateTime BackoffAnchor => LastAttemptAt ?? CreatedAt;
+
+    /// <summary>
+    /// The entry has failed <see cref="PendingTranscriptionStore.MaxAutoRetries"/>
+    /// times and is no longer retried automatically - for example a queued entry
+    /// whose audio file is gone, which fails the same way on every attempt.
+    /// Derived from the retry count, so no new state is persisted.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsPermanentlyFailed => RetryCount >= PendingTranscriptionStore.MaxAutoRetries;
+}

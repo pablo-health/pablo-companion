@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using AudioCapture.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
+using PabloCompanion.Core;
 using PabloCompanion.Models;
 using PabloCompanion.Services;
 
@@ -39,7 +41,16 @@ public partial class TranscriptionViewModel : ObservableObject
     // Exponential backoff — matches macOS (PendingTranscriptStore behavior).
     private const int BaseBackoffSeconds = 300;    // 5 minutes
     private const int MaxBackoffSeconds = 14400;   // 4 hours
-    private const int MaxAutoRetries = 10;
+
+    // Sessions whose audio is being uploaded right now, shared by every upload
+    // entry point (end-of-session, launch/timer drain, "Retry now"). A queued
+    // entry stays PendingUpload for the whole time it is being sent, so without
+    // this a drain that ran while a slow upload was still going saw it as due and
+    // started a second full upload of the same session alongside the first; on a
+    // slow uplink the copies split the bandwidth and a long session never
+    // finished. The view model is an app-wide singleton, so one set covers all of
+    // them. Mirrors the Swift InFlightUploads actor.
+    private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
 
     [ObservableProperty]
     public partial TranscriptionState State { get; set; } = TranscriptionState.Idle;
@@ -79,7 +90,11 @@ public partial class TranscriptionViewModel : ObservableObject
     /// Enqueue a session for cloud transcription and kick off an immediate
     /// upload attempt. Called by <c>SessionViewModel.EndSessionAsync</c>.
     /// </summary>
-    public async Task UploadAudioAsync(string sessionId)
+    /// <param name="sampleRate">
+    /// Rate the sidecars were captured at; persisted with the queued entry so a
+    /// retry stamps the same rate into the WAV header. Null uploads as 48 kHz.
+    /// </param>
+    public async Task UploadAudioAsync(string sessionId, int? sampleRate = null)
     {
         if (State == TranscriptionState.Uploading) return;
 
@@ -91,12 +106,29 @@ public partial class TranscriptionViewModel : ObservableObject
             return;
         }
 
+        // Claimed before the entry is (re)written: Add resets the retry ladder,
+        // which must not happen under an upload of the same session that is
+        // still running.
+        if (!TryClaim(sessionId)) return;
+        try
+        {
+            await UploadClaimedAudioAsync(sessionId, recording, sampleRate);
+        }
+        finally
+        {
+            Release(sessionId);
+        }
+    }
+
+    private async Task UploadClaimedAudioAsync(string sessionId, LocalRecording recording, int? sampleRate)
+    {
         // Persist paths so retries survive sign-out (which wipes the recording store).
         _pendingStore.Add(
             sessionId: sessionId,
-            micPath: recording.MicPcmFilePath,
+            micPath: recording.MicPcmFilePath!,
             systemPath: recording.SystemPcmFilePath,
-            isEncrypted: recording.IsEncrypted);
+            isEncrypted: recording.IsEncrypted,
+            sampleRate: sampleRate);
         PendingUploadCount = _pendingStore.GetAll().Length;
 
         ActiveSessionId = sessionId;
@@ -118,13 +150,14 @@ public partial class TranscriptionViewModel : ObservableObject
         ProgressMessage = "Uploading audio to Pablo...";
         ErrorMessage = null;
 
-        var uploaded = await UploadFromPendingAsync(new PendingTranscription(
+        var uploaded = await UploadFromPendingAsync(_pendingStore.Get(sessionId) ?? new PendingTranscription(
             SessionId: sessionId,
-            MicPath: recording.MicPcmFilePath,
+            MicPath: recording.MicPcmFilePath!,
             SystemPath: recording.SystemPcmFilePath,
             IsEncrypted: recording.IsEncrypted,
             CreatedAt: DateTime.UtcNow,
-            RetryCount: 0));
+            RetryCount: 0,
+            SampleRate: sampleRate));
 
         if (uploaded)
         {
@@ -156,9 +189,9 @@ public partial class TranscriptionViewModel : ObservableObject
 
             foreach (var item in uploads)
             {
-                if (item.RetryCount >= MaxAutoRetries)
+                if (item.IsPermanentlyFailed)
                 {
-                    App.Log($"  skip session={item.SessionId} retry={item.RetryCount} (max retries exhausted)");
+                    App.Log($"  skip session={item.SessionId} retry={item.RetryCount} (max retries exhausted; permanent failure)");
                     continue;
                 }
                 if (item.RetryCount > 0)
@@ -166,14 +199,17 @@ public partial class TranscriptionViewModel : ObservableObject
                     var backoffSeconds = Math.Min(
                         BaseBackoffSeconds * Math.Pow(2, item.RetryCount - 1),
                         MaxBackoffSeconds);
-                    if ((DateTime.UtcNow - item.CreatedAt).TotalSeconds < backoffSeconds)
+                    // Counted from the last failed attempt, not from creation:
+                    // once an entry was older than its backoff, counting from
+                    // CreatedAt made every tick due however recently it failed.
+                    if ((DateTime.UtcNow - item.BackoffAnchor).TotalSeconds < backoffSeconds)
                     {
                         App.Log($"  skip session={item.SessionId} retry={item.RetryCount} (backoff)");
                         continue;
                     }
                 }
 
-                await UploadFromPendingAsync(item);
+                await UploadIfNotInFlightAsync(item);
             }
         }
 
@@ -297,7 +333,7 @@ public partial class TranscriptionViewModel : ObservableObject
             .ToArray();
         foreach (var item in uploads)
         {
-            await UploadFromPendingAsync(item);
+            await UploadIfNotInFlightAsync(item);
         }
     }
 
@@ -329,6 +365,33 @@ public partial class TranscriptionViewModel : ObservableObject
 
     // --- internal ---
 
+    /// <summary>
+    /// Marks the session as uploading. False if it already was, in which case the
+    /// caller must not start another upload. A skip is not a failed attempt, so
+    /// it never touches the retry count.
+    /// </summary>
+    private bool TryClaim(string sessionId)
+    {
+        if (_inFlight.TryAdd(sessionId, 0)) return true;
+        App.Log($"  skip session={sessionId} (upload already in flight)");
+        return false;
+    }
+
+    private void Release(string sessionId) => _inFlight.TryRemove(sessionId, out _);
+
+    private async Task UploadIfNotInFlightAsync(PendingTranscription item)
+    {
+        if (!TryClaim(item.SessionId)) return;
+        try
+        {
+            await UploadFromPendingAsync(item);
+        }
+        finally
+        {
+            Release(item.SessionId);
+        }
+    }
+
     private async Task<bool> UploadFromPendingAsync(PendingTranscription item)
     {
         try
@@ -354,7 +417,8 @@ public partial class TranscriptionViewModel : ObservableObject
             // finalizes once more; anything else lands here and takes the
             // retry/backoff path.
             await _apiClient.UploadAudioWithSelfHealAsync(
-                item.SessionId, item.MicPath, item.SystemPath, encryptor is null ? null : encryptor.Decrypt);
+                item.SessionId, item.MicPath, item.SystemPath, encryptor is null ? null : encryptor.Decrypt,
+                item.SampleRate ?? AudioUploadClient.DefaultSampleRate);
 
             // A 2xx means the backend has the audio and has queued it — but
             // acceptance is not completion. Transcription can still fail to

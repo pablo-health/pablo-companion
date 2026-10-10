@@ -485,6 +485,183 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.Equal(UploadLifecycleState.PendingUpload, entry.State);
     }
 
+    // --- in-flight guard, backoff anchor, persisted capture rate ---
+
+    /// <summary>
+    /// A slow upload still running when another drain starts (the timer tick, a
+    /// launch pass, "Retry now") must not get a second copy of the same session
+    /// started alongside it.
+    /// </summary>
+    [Fact]
+    public async Task ConcurrentDrains_UploadTheSameSessionOnlyOnce()
+    {
+        SeedRecording("session-40");
+        var store = MakePendingStore();
+        store.Add("session-40", _audioPath, null, isEncrypted: false);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var api = new StubApiClient(_credentials) { Gate = gate };
+        var vm = MakeVm(api, store);
+
+        var first = vm.ResumePendingUploadsAsync();
+        await api.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = vm.ResumePendingUploadsAsync();
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+        var forced = vm.ForceRetryPendingUploadsAsync();
+        await forced.WaitAsync(TimeSpan.FromSeconds(5));
+        var endOfSession = vm.UploadAudioAsync("session-40");
+        await endOfSession.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, api.CallCount);
+        gate.TrySetResult();
+        await first;
+        Assert.Equal(1, api.CallCount);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, MakePendingStore().Get("session-40")!.State);
+    }
+
+    /// <summary>A skipped (already in flight) upload is not a failed attempt.</summary>
+    [Fact]
+    public async Task InFlightSkip_DoesNotCountAsAFailedAttempt()
+    {
+        var store = MakePendingStore();
+        store.Add("session-41", _audioPath, null, isEncrypted: false);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var api = new StubApiClient(_credentials) { Gate = gate, FailNext = true };
+        var vm = MakeVm(api, store);
+
+        var first = vm.ForceRetryPendingUploadsAsync();
+        await api.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await vm.ForceRetryPendingUploadsAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await vm.ResumePendingUploadsAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Both skips left the entry exactly as it was.
+        Assert.Equal(0, MakePendingStore().Get("session-41")!.RetryCount);
+        Assert.Null(MakePendingStore().Get("session-41")!.LastAttemptAt);
+
+        gate.TrySetResult();
+        await first;
+        // Only the one real (failed) attempt counts.
+        var entry = MakePendingStore().Get("session-41")!;
+        Assert.Equal(1, entry.RetryCount);
+        Assert.NotNull(entry.LastAttemptAt);
+    }
+
+    /// <summary>
+    /// Backoff counts from the last failed attempt. An entry created a day ago
+    /// that failed its second attempt a minute ago is NOT due (retry 2 waits
+    /// 10 minutes); counting from CreatedAt would have made it due.
+    /// </summary>
+    [Fact]
+    public async Task Resume_BackoffCountsFromLastAttempt_NotCreation()
+    {
+        var now = DateTime.UtcNow;
+        WriteRawEntries(
+            $$$"""{"session-42":{"sessionId":"session-42","micPath":{{{JsonPath(_audioPath)}}},"systemPath":null,"isEncrypted":false,"createdAt":"{{{now.AddDays(-1):O}}}","retryCount":2,"lastAttemptAt":"{{{now.AddMinutes(-1):O}}}"}}""");
+        var api = new StubApiClient(_credentials);
+
+        await MakeVm(api, MakePendingStore()).ResumePendingUploadsAsync();
+
+        Assert.Equal(0, api.CallCount);
+        Assert.Equal(2, MakePendingStore().Get("session-42")!.RetryCount);
+    }
+
+    /// <summary>
+    /// An entry with no lastAttemptAt (written before the field existed) falls
+    /// back to CreatedAt, so a day-old entry is due.
+    /// </summary>
+    [Fact]
+    public async Task Resume_LegacyEntryWithoutLastAttempt_FallsBackToCreatedAt()
+    {
+        var now = DateTime.UtcNow;
+        WriteRawEntries(
+            $$$"""{"session-43":{"sessionId":"session-43","micPath":{{{JsonPath(_audioPath)}}},"systemPath":null,"isEncrypted":false,"createdAt":"{{{now.AddDays(-1):O}}}","retryCount":2}}""");
+        var api = new StubApiClient(_credentials);
+
+        await MakeVm(api, MakePendingStore()).ResumePendingUploadsAsync();
+
+        Assert.Equal(1, api.CallCount);
+    }
+
+    /// <summary>
+    /// An entry written before LastAttemptAt / SampleRate existed decodes with
+    /// the defaults rather than failing and dropping the queued upload.
+    /// </summary>
+    [Fact]
+    public void LegacyEntryWithoutNewFields_DecodesWithDefaults()
+    {
+        WriteRawEntries(
+            """{"session-44":{"sessionId":"session-44","micPath":"/tmp/x.pcm","systemPath":null,"isEncrypted":false,"createdAt":"2026-01-01T00:00:00Z","retryCount":3}}""");
+
+        var entry = MakePendingStore().Get("session-44");
+
+        Assert.NotNull(entry);
+        Assert.Null(entry!.LastAttemptAt);
+        Assert.Null(entry.SampleRate);
+        Assert.Equal(entry.CreatedAt, entry.BackoffAnchor);
+        Assert.Equal(3, entry.RetryCount);
+        Assert.False(entry.IsPermanentlyFailed);
+    }
+
+    /// <summary>
+    /// The capture rate persisted with the entry is what the upload stamps into
+    /// the WAV header (the header itself is covered against the wire in
+    /// <c>AudioUploadClientTests.Signed_StampsTheRecordingsSampleRateIntoTheHeader</c>).
+    /// </summary>
+    [Fact]
+    public async Task Resume_UploadsWithThePersistedSampleRate()
+    {
+        var store = MakePendingStore();
+        store.Add("session-45", _audioPath, null, isEncrypted: false, sampleRate: 16000);
+        Assert.Equal(16000, MakePendingStore().Get("session-45")!.SampleRate);
+        var api = new StubApiClient(_credentials);
+
+        await MakeVm(api, MakePendingStore()).ResumePendingUploadsAsync();
+
+        Assert.Equal(16000, api.LastSampleRate);
+    }
+
+    [Fact]
+    public async Task Resume_EntryWithoutSampleRate_UploadsAt48k()
+    {
+        MakePendingStore().Add("session-46", _audioPath, null, isEncrypted: false);
+        var api = new StubApiClient(_credentials);
+
+        await MakeVm(api, MakePendingStore()).ResumePendingUploadsAsync();
+
+        Assert.Equal(48000, api.LastSampleRate);
+    }
+
+    /// <summary>
+    /// An entry that fails the same way every time (its audio file is gone) stops
+    /// being retried automatically once it reaches the cap, and reads as a
+    /// permanent failure.
+    /// </summary>
+    [Fact]
+    public async Task Resume_EntryAtRetryCap_IsPermanentFailureAndNotRetried()
+    {
+        var store = MakePendingStore();
+        store.Add("session-47", Path.Join(_recordingsRoot, "missing_mic.pcm"), null, isEncrypted: false);
+        var longAgo = DateTime.UtcNow.AddDays(-30);
+        for (var i = 0; i < PendingTranscriptionStore.MaxAutoRetries; i++)
+            store.IncrementRetry("session-47", longAgo);
+        var api = new StubApiClient(_credentials);
+
+        await MakeVm(api, MakePendingStore()).ResumePendingUploadsAsync();
+
+        Assert.Equal(0, api.CallCount);
+        var entry = MakePendingStore().Get("session-47")!;
+        Assert.True(entry.IsPermanentlyFailed);
+        Assert.Equal(PendingTranscriptionStore.MaxAutoRetries, entry.RetryCount);
+    }
+
+    private void WriteRawEntries(string json)
+    {
+        var key = _credentials.GetOrCreateUserEncryptionKey()!;
+        using var enc = new AesGcmEncryptor(key, "device-key");
+        File.WriteAllBytes(_pendingPath, enc.Encrypt(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static string JsonPath(string path) => System.Text.Json.JsonSerializer.Serialize(path);
+
     public void Dispose()
     {
         _recordingStore.Clear();
@@ -526,7 +703,6 @@ public sealed class TranscriptionViewModelTests : IDisposable
 
     private sealed class StubApiClient : APIClient
     {
-        public int CallCount { get; private set; }
         public string? LastSessionId { get; private set; }
         public bool FailNext { get; set; }
 
@@ -567,21 +743,38 @@ public sealed class TranscriptionViewModelTests : IDisposable
         /// against the wire in <c>AudioUploadClientTests</c> — so from here it is a
         /// single call that either succeeds or throws.
         /// </summary>
-        public override Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
+        public override async Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
             string sessionId, string therapistAudioPath, string? clientAudioPath = null,
             Func<byte[], byte[]>? decryptChunk = null, int sampleRate = AudioUploadClient.DefaultSampleRate)
         {
-            CallCount++;
+            Interlocked.Increment(ref _callCount);
             LastSessionId = sessionId;
             LastTherapistPath = therapistAudioPath;
             LastClientPath = clientAudioPath;
             LastDecryptChunk = decryptChunk;
+            LastSampleRate = sampleRate;
+            Started.TrySetResult();
+            if (Gate is { } gate)
+            {
+                // A slow upload: holds until the test releases it, or 10 s.
+                await Task.WhenAny(gate.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+            }
             if (FailNext)
                 throw new InvalidOperationException("Simulated upload failure");
-            return Task.FromResult(new AudioUploadResponse(
-                Id: sessionId, Status: "recording_complete", Queue: "transcribe", Message: "ok"));
+            return new AudioUploadResponse(
+                Id: sessionId, Status: "recording_complete", Queue: "transcribe", Message: "ok");
         }
 
+        private int _callCount;
+        public int CallCount => Volatile.Read(ref _callCount);
+
+        /// <summary>When set, every upload blocks until it completes (or 10 s pass).</summary>
+        public TaskCompletionSource? Gate { get; set; }
+
+        /// <summary>Completes once the first upload has started.</summary>
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int? LastSampleRate { get; private set; }
         public string? LastTherapistPath { get; private set; }
         public string? LastClientPath { get; private set; }
         public Func<byte[], byte[]>? LastDecryptChunk { get; private set; }
