@@ -159,7 +159,8 @@ public sealed class SessionViewModelTests : IDisposable
         // The drain calls the self-healing entry point; the INVALID_STATUS heal it
         // wraps is covered against the wire in AudioUploadClientTests.
         public override Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
-            string sessionId, string therapistAudioPath, string? clientAudioPath = null)
+            string sessionId, string therapistAudioPath, string? clientAudioPath = null,
+            Func<byte[], byte[]>? decryptChunk = null, int sampleRate = AudioUploadClient.DefaultSampleRate)
         {
             UploadCallCount++;
             UploadOrder = ++_callSequence;
