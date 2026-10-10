@@ -52,6 +52,12 @@ public partial class TranscriptionViewModel : ObservableObject
     // them. Mirrors the Swift InFlightUploads actor.
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
 
+    // Sessions whose client declined AI-assisted notes on the recording. Never
+    // uploaded from this run on, whatever entry point asks. The files and records
+    // are deleted too (DiscardDeclined), so nothing brings one back after a
+    // restart; this set covers the window in between.
+    private readonly ConcurrentDictionary<string, byte> _discarded = new(StringComparer.Ordinal);
+
     [ObservableProperty]
     public partial TranscriptionState State { get; set; } = TranscriptionState.Idle;
 
@@ -372,12 +378,51 @@ public partial class TranscriptionViewModel : ObservableObject
     /// </summary>
     private bool TryClaim(string sessionId)
     {
+        if (_discarded.ContainsKey(sessionId))
+        {
+            App.Log($"  skip session={sessionId} (declined; audio discarded)");
+            return false;
+        }
         if (_inFlight.TryAdd(sessionId, 0)) return true;
         App.Log($"  skip session={sessionId} (upload already in flight)");
         return false;
     }
 
-    private void Release(string sessionId) => _inFlight.TryRemove(sessionId, out _);
+    private void Release(string sessionId)
+    {
+        _inFlight.TryRemove(sessionId, out _);
+        // A decline that landed while this upload was running could not delete
+        // what the upload held open; finish it now that the upload has let go.
+        if (_discarded.ContainsKey(sessionId))
+        {
+            _cleaner.DiscardDeclined(sessionId, _recordingStore, _pendingStore);
+            PendingUploadCount = _pendingStore.GetAll().Length;
+        }
+    }
+
+    /// <summary>
+    /// The client declined AI-assisted notes on the recording: nothing of this
+    /// session is uploaded, and its audio and every record pointing at it are
+    /// deleted (<see cref="RecordingCleaner.DiscardDeclined"/>). Call after capture
+    /// has stopped, so the last segment is on disk to delete.
+    ///
+    /// An upload of the session already running cannot be cancelled from here;
+    /// it is left to finish, its entry is gone so it records nothing, and the
+    /// delete is completed when it lets go. In the app this does not arise: a
+    /// decline is only taken while the session is still recording, and a
+    /// session's upload starts only once its recording has ended.
+    /// </summary>
+    /// <returns>True when no audio for the session is left on disk.</returns>
+    public bool DiscardDeclined(string sessionId)
+    {
+        _discarded[sessionId] = 0;
+        if (_inFlight.ContainsKey(sessionId))
+            App.Log($"  decline for session={sessionId} arrived during its upload; deleting once it finishes");
+
+        var gone = _cleaner.DiscardDeclined(sessionId, _recordingStore, _pendingStore);
+        PendingUploadCount = _pendingStore.GetAll().Length;
+        return gone;
+    }
 
     private async Task UploadIfNotInFlightAsync(PendingTranscription item)
     {

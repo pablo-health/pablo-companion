@@ -146,7 +146,11 @@ public sealed record Appointment(
     // Lifecycle of the linked session, decoded raw so a status a newer backend
     // adds reads as null (see AppointmentExtensions.ParsedSessionStatus) instead of
     // failing the whole list. Older backends omit it.
-    [property: JsonPropertyName("session_status")] string? SessionStatusRaw = null
+    [property: JsonPropertyName("session_status")] string? SessionStatusRaw = null,
+    // The video service and place of service, read with VideoLink to tell
+    // whether the visit is telehealth (Core.Telehealth). Older backends omit them.
+    [property: JsonPropertyName("provider")] string? Provider = null,
+    [property: JsonPropertyName("place_of_service")] string? PlaceOfService = null
 );
 
 public sealed record AppointmentListResponse(
@@ -334,7 +338,16 @@ public sealed record RedeemLaunchIntentResponse(
     [property: JsonPropertyName("appointment_id")] string AppointmentId,
     [property: JsonPropertyName("patient_name")] string? PatientName,
     [property: JsonPropertyName("video_url")] string? VideoUrl,
-    [property: JsonPropertyName("session_id")] string? SessionId
+    [property: JsonPropertyName("session_id")] string? SessionId,
+    // The web start already asked "No consent on file" and the clinician chose
+    // to record anyway. False from a server that predates the field.
+    [property: JsonPropertyName("ai_consent_prompted")] bool AiConsentPrompted = false,
+    // For a visit with no answer on file, the web start offered "Ask now" and
+    // the clinician took it. False from an older server.
+    [property: JsonPropertyName("ask_consent_on_recording")] bool AskConsentOnRecording = false,
+    // Where the visit is. Null from a server that predates the field; the
+    // consent check then reads it from the appointment.
+    [property: JsonPropertyName("telehealth")] bool? Telehealth = null
 );
 
 // ── Session liveness ─────────────────────────────────────────────────────────
@@ -366,9 +379,18 @@ public class PabloException : Exception
     /// </summary>
     public string? ErrorCode { get; }
 
-    public PabloException(ushort statusCode, string message, string? errorCode = null) : base(message)
+    /// <summary>
+    /// The string-valued entries of the envelope's <c>details</c> (for example
+    /// <c>declined_on</c> on a <c>CLIENT_DECLINED_AI_NOTES</c> refusal). Empty
+    /// when the body carried none.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ErrorDetails { get; }
+
+    public PabloException(ushort statusCode, string message, string? errorCode = null,
+        IReadOnlyDictionary<string, string>? errorDetails = null) : base(message)
     {
         StatusCode = statusCode;
         ErrorCode = errorCode;
+        ErrorDetails = errorDetails ?? new Dictionary<string, string>();
     }
 }

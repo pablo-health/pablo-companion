@@ -120,9 +120,9 @@ public sealed class SessionViewModelTests : IDisposable
         api.HoldStartSession.SetResult(StubApiClient.MakeSession("session-1", SessionStatus.Scheduled));
         var firstResult = await first;
 
-        Assert.True(firstResult);
-        Assert.False(second);
-        Assert.False(otherAppointment);
+        Assert.True(firstResult.Ran);
+        Assert.False(second.Ran);
+        Assert.False(otherAppointment.Ran);
         Assert.Equal(1, api.StartSessionCallCount);
         Assert.Null(sessionVm.StartingAppointmentId);
     }
@@ -133,9 +133,9 @@ public sealed class SessionViewModelTests : IDisposable
         var (sessionVm, api, _) = MakeSut();
         api.FailStartSession = true;
 
-        Assert.True(await sessionVm.StartAppointmentSessionAsync("appointment-1"));
+        Assert.True((await sessionVm.StartAppointmentSessionAsync("appointment-1")).Ran);
         Assert.Null(sessionVm.StartingAppointmentId);
-        Assert.True(await sessionVm.StartAppointmentSessionAsync("appointment-1"));
+        Assert.True((await sessionVm.StartAppointmentSessionAsync("appointment-1")).Ran);
         Assert.Equal(2, api.StartSessionCallCount);
     }
 
@@ -217,7 +217,8 @@ public sealed class SessionViewModelTests : IDisposable
         public override Task<Appointment[]> FetchTodayAppointmentsAsync()
             => Task.FromResult(Array.Empty<Appointment>());
 
-        public override Task<Session> StartSessionFromAppointmentAsync(string appointmentId)
+        public override Task<Session> StartSessionFromAppointmentAsync(
+            string appointmentId, bool askingConsentOnRecording = false)
         {
             StartSessionCallCount++;
             if (FailStartSession)
