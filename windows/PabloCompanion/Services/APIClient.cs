@@ -567,19 +567,26 @@ public class APIClient
     }
 
     /// <summary>
-    /// Uploads audio, healing a <c>400 INVALID_STATUS</c> rejection once by PATCHing
-    /// the session to <c>recording_complete</c> and retrying. Used by the pending-upload
-    /// drain, where a session from a build that uploaded before its status PATCH landed
-    /// would otherwise be stuck rejecting forever.
+    /// Uploads both channels straight to storage through signed URLs, healing a
+    /// <c>400 INVALID_STATUS</c> at finalize once by PATCHing the session to
+    /// <c>recording_complete</c> and finalizing again. Used by the pending-upload
+    /// drain, where a session from a build that uploaded before its status PATCH
+    /// landed would otherwise be stuck rejecting forever.
     /// </summary>
+    /// <param name="decryptChunk">Decrypts one sidecar chunk; required for encrypted sidecars,
+    /// which are decrypted on the fly into the upload and never written to disk in plaintext.</param>
+    /// <param name="sampleRate">Rate the recording was captured at, stamped into the WAV headers.</param>
     public virtual async Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
         string sessionId,
         string therapistAudioPath,
-        string? clientAudioPath = null)
+        string? clientAudioPath = null,
+        Func<byte[], byte[]>? decryptChunk = null,
+        int sampleRate = AudioUploadClient.DefaultSampleRate)
     {
         try
         {
-            return await _uploadClient.UploadWithSelfHealAsync(sessionId, therapistAudioPath, clientAudioPath);
+            return await _uploadClient.UploadWithSelfHealAsync(
+                sessionId, therapistAudioPath, clientAudioPath, sampleRate, decryptChunk: decryptChunk);
         }
         catch (SessionUploadException ex)
         {
