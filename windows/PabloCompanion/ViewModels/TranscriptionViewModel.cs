@@ -386,20 +386,20 @@ public partial class TranscriptionViewModel : ObservableObject
                     encryptor = new AesGcmEncryptor(keyBytes, "device-key");
             }
 
-            // Decryption runs inside the try on purpose: a missing key throws, and that
-            // has to land on the retry path below rather than escape. Neither caller of
-            // this method wraps it, so an escaping throw would abort the whole resume
-            // pass and strand every remaining item behind this one.
-            using var mic = await PcmDecryptor.PrepareForUploadAsync(item.MicPath, encryptor);
-            using DecryptedPcm? sys = item.SystemPath != null && File.Exists(item.SystemPath)
-                ? await PcmDecryptor.PrepareForUploadAsync(item.SystemPath, encryptor)
-                : null;
-
+            // The encrypted sidecars are decrypted chunk by chunk straight into the
+            // storage upload — no plaintext copy on disk, no whole-file read into
+            // memory. A missing key throws inside the upload call, inside this try on
+            // purpose: it has to land on the retry path below rather than escape.
+            // Neither caller of this method wraps it, so an escaping throw would abort
+            // the whole resume pass and strand every remaining item behind this one.
+            //
             // Self-healing upload: a session whose status PATCH never landed is
-            // still "recording" server-side and rejects its audio with 400
+            // still "recording" server-side and rejects finalize with 400
             // INVALID_STATUS. The core client PATCHes it to recording_complete and
-            // retries once; anything else lands here and takes the retry/backoff path.
-            await _apiClient.UploadAudioWithSelfHealAsync(item.SessionId, mic.Path, sys?.Path);
+            // finalizes once more; anything else lands here and takes the
+            // retry/backoff path.
+            await _apiClient.UploadAudioWithSelfHealAsync(
+                item.SessionId, item.MicPath, item.SystemPath, encryptor is null ? null : encryptor.Decrypt);
 
             // A 2xx means the backend has the audio and has queued it — but
             // acceptance is not completion. Transcription can still fail to

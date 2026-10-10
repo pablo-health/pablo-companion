@@ -159,6 +159,33 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.Equal(UploadLifecycleState.AwaitingNote, entry!.State);
     }
 
+    /// <summary>
+    /// Encrypted sidecars are handed to the uploader as they are, with a decryptor
+    /// for the user's key: no plaintext copy is staged in the temp directory first.
+    /// </summary>
+    [Fact]
+    public async Task ResumePendingUploadsAsync_EncryptedSidecars_UploadInPlaceWithADecryptor()
+    {
+        var plaintext = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        using var encryptor = new AesGcmEncryptor(_credentials.GetOrCreateUserEncryptionKey()!, "device-key");
+        var chunk = encryptor.Encrypt(plaintext);
+        var micPath = Path.Join(_recordingsRoot, "rec_mic.enc.pcm");
+        var systemPath = Path.Join(_recordingsRoot, "rec_system.enc.pcm");
+        File.WriteAllBytes(micPath, [.. BitConverter.GetBytes((uint)chunk.Length), .. chunk]);
+        File.WriteAllBytes(systemPath, [.. BitConverter.GetBytes((uint)chunk.Length), .. chunk]);
+        MakePendingStore().Add("session-enc", micPath, systemPath, isEncrypted: true);
+        var tempBefore = Directory.GetFiles(Path.GetTempPath(), "pablo-upload-*");
+
+        var api = new StubApiClient(_credentials);
+        await MakeVm(api, MakePendingStore()).ResumePendingUploadsAsync();
+
+        Assert.Equal(micPath, api.LastTherapistPath);
+        Assert.Equal(systemPath, api.LastClientPath);
+        Assert.NotNull(api.LastDecryptChunk);
+        Assert.Equal(plaintext, api.LastDecryptChunk!(chunk));
+        Assert.Equal(tempBefore, Directory.GetFiles(Path.GetTempPath(), "pablo-upload-*"));
+    }
+
     [Fact]
     public async Task ForceRetryPendingUploadsAsync_IgnoresBackoff()
     {
@@ -601,14 +628,22 @@ public sealed class TranscriptionViewModelTests : IDisposable
         /// single call that either succeeds or throws.
         /// </summary>
         public override Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
-            string sessionId, string therapistAudioPath, string? clientAudioPath = null)
+            string sessionId, string therapistAudioPath, string? clientAudioPath = null,
+            Func<byte[], byte[]>? decryptChunk = null, int sampleRate = AudioUploadClient.DefaultSampleRate)
         {
             CallCount++;
             LastSessionId = sessionId;
+            LastTherapistPath = therapistAudioPath;
+            LastClientPath = clientAudioPath;
+            LastDecryptChunk = decryptChunk;
             if (FailNext)
                 throw new InvalidOperationException("Simulated upload failure");
             return Task.FromResult(new AudioUploadResponse(
                 Id: sessionId, Status: "recording_complete", Queue: "transcribe", Message: "ok"));
         }
+
+        public string? LastTherapistPath { get; private set; }
+        public string? LastClientPath { get; private set; }
+        public Func<byte[], byte[]>? LastDecryptChunk { get; private set; }
     }
 }
