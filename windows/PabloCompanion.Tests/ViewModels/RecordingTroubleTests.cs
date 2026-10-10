@@ -185,6 +185,41 @@ public sealed class RecordingTroubleTests : IDisposable
     }
 
     [Fact]
+    public async Task ASystemSourceErrorShowsSystemAudioAsInterrupted_AndTheReopenClearsIt()
+    {
+        var viewModel = await RecordingSessionAsync();
+        var seen = new List<bool>();
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(RecordingViewModel.SystemAudioInterrupted))
+                lock (seen) seen.Add(viewModel.SystemAudioInterrupted);
+        };
+        await Task.Delay(200);
+
+        _rig.Systems[^1].Fail(new InvalidOperationException("endpoint invalidated"));
+
+        await Eventually.TrueAsync(() => { lock (seen) return seen.Contains(true); }, OneSecond, "system audio to show as interrupted");
+        await Eventually.TrueAsync(() => !viewModel.SystemAudioInterrupted, TimeSpan.FromSeconds(3), "the re-open to clear it");
+        // System audio is not the capture's clock: the mic carried on throughout.
+        Assert.Equal(RecordingUIState.Recording, viewModel.State);
+        Assert.Null(viewModel.Trouble);
+        await viewModel.StopRecordingAsync();
+    }
+
+    [Fact]
+    public async Task LoadingTheMicListLeavesNoMicPicked_SoCaptureRecordsTheDefault()
+    {
+        var viewModel = MakeViewModel();
+
+        await viewModel.LoadAudioDevicesAsync();
+        Assert.Null(viewModel.SelectedMicId);
+
+        Assert.True(await viewModel.StartRecordingForSessionAsync("session-1"));
+        Assert.Null(_rig.Service.LastConfiguration!.MicDeviceId);
+        await viewModel.StopRecordingAsync();
+    }
+
+    [Fact]
     public async Task ARestartThatFailsKeepsTheSessionAndShowsWhy()
     {
         var viewModel = await RecordingSessionAsync();

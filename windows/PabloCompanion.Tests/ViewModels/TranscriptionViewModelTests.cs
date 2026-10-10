@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using AudioCapture.Models;
@@ -5,6 +6,7 @@ using AudioCapture.Storage;
 using PabloCompanion.Core;
 using PabloCompanion.Models;
 using PabloCompanion.Services;
+using PabloCompanion.Tests.Helpers;
 using PabloCompanion.ViewModels;
 
 namespace PabloCompanion.Tests.ViewModels;
@@ -619,6 +621,39 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.Equal(16000, api.LastSampleRate);
     }
 
+    /// <summary>
+    /// End to end over a real capture: the rate the capture reports goes onto the
+    /// saved recording, from there onto the queued entry when the session ends
+    /// (<c>SessionViewModel.EndSessionAsync</c> passes no rate of its own), and into
+    /// the header of the WAV built from the encrypted sidecar, which it describes. A
+    /// 16 kHz mic makes a wrong 48 kHz header visible as a third of the byte rate.
+    /// </summary>
+    [Fact]
+    public async Task EndSession_QueuesTheCaptureRate_AndTheUploadedHeaderCarriesIt()
+    {
+        using var rig = new CaptureRig(StubCredentialManager.Key) { MicSource = () => FailableWaveIn.Mic(16000) };
+        var recordingVm = new RecordingViewModel(rig.Service, _recordingStore);
+        Assert.True(await recordingVm.StartRecordingForSessionAsync("session-rate"));
+        await Task.Delay(TimeSpan.FromSeconds(1.2));
+        await recordingVm.StopRecordingAsync();
+        var recording = _recordingStore.Get("session-rate")!;
+        Assert.Equal(16000, recording.SampleRate);
+
+        var api = new StubApiClient(_credentials);
+        var store = MakePendingStore();
+        await MakeVm(api, store).UploadAudioAsync("session-rate");
+
+        Assert.Equal(16000, store.Get("session-rate")!.SampleRate);
+        Assert.Equal(16000, api.LastSampleRate);
+
+        using var encryptor = new AesGcmEncryptor(StubCredentialManager.Key, "device-key");
+        using var content = new EncryptedPcmWavContent(api.LastTherapistPath!, api.LastSampleRate!.Value, channels: 1, encryptor.Decrypt);
+        var wav = await content.ReadAsByteArrayAsync();
+        Assert.Equal(16000u, BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24, 4)));
+        var bytesPerSecond = (wav.Length - 44) / recording.Duration;
+        Assert.InRange(bytesPerSecond, 16000 * 2 * 0.75, 16000 * 2 * 1.25);
+    }
+
     [Fact]
     public async Task Resume_EntryWithoutSampleRate_UploadsAt48k()
     {
@@ -758,6 +793,7 @@ public sealed class TranscriptionViewModelTests : IDisposable
     {
         private static readonly byte[] FixedKey = NewKey();
         private static byte[] NewKey() { var k = new byte[32]; RandomNumberGenerator.Fill(k); return k; }
+        public static byte[] Key => FixedKey;
         public override byte[]? GetOrCreateUserEncryptionKey() => FixedKey;
     }
 
