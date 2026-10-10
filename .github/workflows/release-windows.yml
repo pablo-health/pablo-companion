@@ -1,6 +1,10 @@
 name: Release Windows
 
-# Released together with macOS from the same `v*` tag (see release-mac.yml).
+# Tags: `vX.Y.Z` builds and publishes both platforms (this workflow and
+# release-mac.yml). `win-vX.Y.Z` builds Windows only, for a fix that touches
+# only this client, so macOS users do not get a no-op update. Version numbers
+# may then differ per platform. The GitHub Release is keyed by the tag as-is,
+# so a `win-v*` release holds only the Windows package.
 #
 # A tag push builds the Store package (.msixupload, x64 + arm64) with the same
 # steps as windows/scripts/store-build.ps1 (it runs that script), attaches it
@@ -16,7 +20,7 @@ name: Release Windows
 # submission an earlier tag staged, the same as pressing Submit.
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'win-v*']
   workflow_dispatch:
     inputs:
       publish:
@@ -59,13 +63,13 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            VERSION=${GITHUB_REF_NAME#v}
+            VERSION=$(echo "$GITHUB_REF_NAME" | sed -E 's/^(win-)?v//')
           else
             # Dispatch runs never publish their build, so the version only has to be valid.
             VERSION=0.0.${{ github.run_number }}
           fi
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Tag must be vMAJOR.MINOR.PATCH (got $GITHUB_REF_NAME)"
+            echo "::error::Tag must be vMAJOR.MINOR.PATCH or win-vMAJOR.MINOR.PATCH (got $GITHUB_REF_NAME)"
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -104,7 +108,7 @@ jobs:
         run: |
           TAG="$GITHUB_REF_NAME"
           FILE="windows/PabloCompanion/AppPackages/$UPLOAD_NAME"
-          # The macOS job races this one for the same tag; whichever runs first
+          # On a shared v* tag the macOS job races this one; whichever runs first
           # creates the release, and a lost race to create is not a failure.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --title "$TAG" --generate-notes \
