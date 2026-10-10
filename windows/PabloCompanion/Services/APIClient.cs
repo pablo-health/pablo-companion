@@ -20,7 +20,6 @@ public class APIClient
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
     };
 
-    private const string ClientVersion = "1.0.0";
     private const string MinServerVersion = "0.9.0";
     private const string ClientPlatform = "windows";
     private const string ClientTypeHeader = "pablo-companion-windows/1.0";
@@ -29,6 +28,13 @@ public class APIClient
 
     private readonly CredentialManager _credentials;
     private readonly DeviceKeyService _deviceKey;
+
+    /// <summary>
+    /// The version sent as <c>X-Client-Version</c> and compared against the
+    /// backend's minimum. Read from the package, never a constant: see
+    /// <see cref="IAppVersionProvider"/>.
+    /// </summary>
+    public string ClientVersion { get; }
 
     /// <summary>
     /// The session audio-upload wire path, shared with the headless end-to-end
@@ -59,9 +65,19 @@ public class APIClient
     /// </summary>
     public event Action<string?>? UnauthenticatedDetected;
 
-    public APIClient(CredentialManager credentials, DeviceKeyService? deviceKey = null)
+    /// <summary>
+    /// Raised when any request comes back 426: the backend no longer supports this
+    /// app version. The update gate listens and shows the update-required screen
+    /// (deferred while a recording is active). The argument is the server's message
+    /// when it sent one.
+    /// </summary>
+    public event Action<string?>? UpdateRequiredDetected;
+
+    public APIClient(CredentialManager credentials, DeviceKeyService? deviceKey = null,
+        IAppVersionProvider? versionProvider = null)
     {
         _credentials = credentials;
+        ClientVersion = (versionProvider ?? new PackageAppVersionProvider()).Version;
         // Default-construct from the same credential vault when DI doesn't supply one
         // (keeps the single-arg signature the tests use working). The device key only
         // signs DPoP proofs; it touches the vault lazily, so this is cheap.
@@ -107,7 +123,11 @@ public class APIClient
 
     // ── Private helpers ─────────────────────────────────────────────────────
 
-    private HttpRequestMessage CreateRequest(HttpMethod method, string path, bool authenticated = true)
+    /// <summary>
+    /// Builds a request with the client headers. Internal so the
+    /// <c>X-Client-Version</c> header is unit-testable without a live server.
+    /// </summary>
+    internal HttpRequestMessage CreateRequest(HttpMethod method, string path, bool authenticated = true)
     {
         var request = new HttpRequestMessage(method, $"{BaseUrl}{path}");
         request.Headers.Add("X-Client-Type", ClientTypeHeader);
@@ -209,10 +229,24 @@ public class APIClient
         await HandleErrorResponse(response);
     }
 
-    private static async Task HandleErrorResponse(HttpResponseMessage response)
+    private async Task HandleErrorResponse(HttpResponseMessage response)
     {
         var body = await response.Content.ReadAsStringAsync();
-        throw MapError((ushort)response.StatusCode, body);
+        var error = MapError((ushort)response.StatusCode, body);
+        NotifyIfUpdateRequired(error);
+        throw error;
+    }
+
+    /// <summary>
+    /// Raises <see cref="UpdateRequiredDetected"/> when <paramref name="error"/> is
+    /// the backend refusing this app version (HTTP 426). Every route funnels its
+    /// errors through here, the unauthenticated health check included. Internal so
+    /// the 426-to-gate path is unit-testable without a live server.
+    /// </summary>
+    internal void NotifyIfUpdateRequired(PabloException error)
+    {
+        if (error.IsUpdateRequired)
+            UpdateRequiredDetected?.Invoke(error.Message);
     }
 
     /// <summary>
@@ -232,7 +266,10 @@ public class APIClient
             403 => new PabloException(statusCode, "Forbidden", errorCode, details),
             404 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Not found" : body), errorCode, details),
             409 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Conflict" : body), errorCode, details),
-            426 => new PabloException(statusCode, "Update required", errorCode, details),
+            // One typed code whatever the body says, so callers and the update
+            // gate branch on it rather than on the status number.
+            426 => new PabloException(statusCode, envelopeMessage ?? "Update required",
+                PabloException.UpdateRequiredCode, details),
             _ => new PabloException(statusCode, envelopeMessage ?? $"HTTP {statusCode}: {body}", errorCode, details),
         };
     }
@@ -285,7 +322,17 @@ public class APIClient
         }
 
         var body = await response.Content.ReadAsStringAsync();
+        return ParseHealth(body, ClientVersion);
+    }
 
+    /// <summary>
+    /// Reads a <c>/api/health</c> body and compares versions:
+    /// <c>min_client_versions.windows</c> against <paramref name="clientVersion"/>,
+    /// and the server's version against the minimum this app needs. Internal so the
+    /// comparison is unit-testable.
+    /// </summary>
+    internal static HealthStatus ParseHealth(string body, string clientVersion)
+    {
         // Parse as raw JSON to extract nested min_client_versions.windows.
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
@@ -300,7 +347,7 @@ public class APIClient
         }
 
         // Compare versions.
-        var clientUpdateRequired = ParseSemver(ClientVersion).CompareTo(ParseSemver(minClientVersion)) < 0;
+        var clientUpdateRequired = ParseSemver(clientVersion).CompareTo(ParseSemver(minClientVersion)) < 0;
 
         var serverUpdateRequired = !string.IsNullOrEmpty(serverVersion)
             && ParseSemver(serverVersion).CompareTo(ParseSemver(MinServerVersion)) < 0;
@@ -380,6 +427,11 @@ public class APIClient
         catch (ConsentRequestException ex) when (ex.StatusCode == 401)
         {
             UnauthenticatedDetected?.Invoke(ex.Code);
+            throw;
+        }
+        catch (ConsentRequestException ex) when (ex.StatusCode == 426)
+        {
+            UpdateRequiredDetected?.Invoke(null);
             throw;
         }
     }
@@ -680,6 +732,10 @@ public class APIClient
         if (ex.StatusCode == 401)
             UnauthenticatedDetected?.Invoke(ex.ErrorCode);
 
-        return new PabloException((ushort)ex.StatusCode, ex.Message, ex.ErrorCode);
+        var error = ex.StatusCode == 426
+            ? new PabloException(426, ex.Message, PabloException.UpdateRequiredCode)
+            : new PabloException((ushort)ex.StatusCode, ex.Message, ex.ErrorCode);
+        NotifyIfUpdateRequired(error);
+        return error;
     }
 }

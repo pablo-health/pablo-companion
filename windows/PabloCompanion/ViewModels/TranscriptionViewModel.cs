@@ -52,6 +52,12 @@ public partial class TranscriptionViewModel : ObservableObject
     // them. Mirrors the Swift InFlightUploads actor.
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// True while any session's audio is being sent, from any entry point. The
+    /// Store update check waits on this so an update never lands mid-upload.
+    /// </summary>
+    public bool HasUploadsInFlight => !_inFlight.IsEmpty || IsUploadingNow || State == TranscriptionState.Uploading;
+
     // Sessions whose client declined AI-assisted notes on the recording. Never
     // uploaded from this run on, whatever entry point asks. The files and records
     // are deleted too (DiscardDeclined), so nothing brings one back after a

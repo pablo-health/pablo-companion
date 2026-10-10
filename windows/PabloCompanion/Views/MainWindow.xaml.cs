@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window
         };
 
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        App.MainWindowHandle = hwnd;
 
         // WinUI 3 AppWindow.Resize uses physical pixels, so scale for DPI
         var dpi = GetDpiForWindow(hwnd);
@@ -100,11 +101,44 @@ public sealed partial class MainWindow : Window
             }
         };
 
+        // Version gate: the launch health check (and any later 426) can replace the
+        // whole window with the update-required screen. It never does so while a
+        // session is starting or recording; it re-checks whenever that changes.
+        _updateGate = App.Services.GetRequiredService<UpdateGateViewModel>();
+        _updateGate.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UpdateGateViewModel.Shown))
+                DispatcherQueue.TryEnqueue(ShowUpdateRequiredIfNeeded);
+        };
+        recordingVm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(RecordingViewModel.State) or nameof(RecordingViewModel.ActiveSessionId))
+                DispatcherQueue.TryEnqueue(_updateGate.Reevaluate);
+        };
+        sessionVm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SessionViewModel.StartingAppointmentId))
+                DispatcherQueue.TryEnqueue(_updateGate.Reevaluate);
+        };
+
+        // Store updates: checked at launch and every 6 h while idle. A ready
+        // update is offered as "Restart to update", never installed unasked.
+        _storeUpdates = App.Services.GetRequiredService<StoreUpdateService>();
+        _storeUpdates.UpdateReady += (_, _) => DispatcherQueue.TryEnqueue(() => _ = OfferRestartToUpdateAsync());
+
         _ = InitAsync();
     }
 
+    private readonly UpdateGateViewModel _updateGate;
+    private readonly StoreUpdateService _storeUpdates;
+
     private async Task InitAsync()
     {
+        // Runs alongside the session restore, as the macOS launch check does: an
+        // incompatible version blocks sign-in too, not only the signed-in shell.
+        _ = CheckVersionAtLaunchAsync();
+        _storeUpdates.Start();
+
         try
         {
             await _authVm.TryRestoreSessionAsync();
@@ -116,6 +150,69 @@ public sealed partial class MainWindow : Window
         }
 
         UpdateAuthUI();
+    }
+
+    /// <summary>
+    /// The launch version check (macOS <c>checkVersionCompatibility()</c>). A failed
+    /// health call blocks nothing: the app carries on, and a 426 from any later
+    /// request still reaches the gate.
+    /// </summary>
+    private async Task CheckVersionAtLaunchAsync()
+    {
+        try
+        {
+            var status = await _apiClient.HealthCheckAsync();
+            DispatcherQueue.TryEnqueue(() => _updateGate.ApplyHealth(status));
+        }
+        catch (Exception ex)
+        {
+            App.Log($"Launch version check skipped: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>Replaces the whole window content, sign-in included, with the update-required screen.</summary>
+    private void ShowUpdateRequiredIfNeeded()
+    {
+        if (_updateGate.Shown is not { } reason || Content is UpdateRequiredView) return;
+        Content = new UpdateRequiredView(reason);
+    }
+
+    private bool _restartPromptOpen;
+
+    /// <summary>"Restart to update": Restart installs (only when idle), Later waits for the next check.</summary>
+    private async Task OfferRestartToUpdateAsync()
+    {
+        if (_restartPromptOpen || _closeNoticeOpen || Content?.XamlRoot is null)
+        {
+            // Another dialog holds the window; offer it again on the next check.
+            _storeUpdates.Postpone();
+            return;
+        }
+        _restartPromptOpen = true;
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Restart to update",
+                Content = "A new version of Pablo is ready.",
+                PrimaryButtonText = "Restart",
+                CloseButtonText = "Later",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot,
+            };
+            var choice = await dialog.ShowAsync();
+            if (choice == ContentDialogResult.Primary && await _storeUpdates.InstallAsync())
+                return;
+            _storeUpdates.Postpone();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("MainWindow.OfferRestartToUpdate", ex);
+        }
+        finally
+        {
+            _restartPromptOpen = false;
+        }
     }
 
     private void AuthVm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -347,12 +444,7 @@ public sealed partial class MainWindow : Window
     private void AppWindow_Closing(Microsoft.UI.Windowing.AppWindow sender,
         Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
     {
-        var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
-        var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
-        var busy = recordingVm.State != Models.RecordingUIState.Idle
-            || recordingVm.ActiveSessionId is not null
-            || sessionVm.StartingAppointmentId is not null;
-        if (!busy) return;
+        if (!App.IsRecordingActive(App.Services)) return;
 
         args.Cancel = true;
         _ = ShowEndSessionFirstAsync();
