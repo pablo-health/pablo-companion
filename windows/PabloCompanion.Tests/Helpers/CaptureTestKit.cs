@@ -34,8 +34,11 @@ internal sealed class FailableWaveIn : IWaveIn
         _inner.RecordingStopped += (s, e) => RecordingStopped?.Invoke(this, e);
     }
 
-    public static FailableWaveIn Mic() =>
-        new(SignalGeneratorWaveIn.Mono16(new SignalGeneratorWaveIn.MarkerTone(440, 880, 1.0)));
+    public static FailableWaveIn Mic() => Mic(48000);
+
+    /// <summary>A mono 16-bit mic delivering at <paramref name="sampleRate"/>, e.g. 16 kHz like a hands-free headset.</summary>
+    public static FailableWaveIn Mic(int sampleRate) =>
+        new(SignalGeneratorWaveIn.Mono16(new SignalGeneratorWaveIn.MarkerTone(440, 880, 1.0), sampleRate));
 
     public static FailableWaveIn System() =>
         new(SignalGeneratorWaveIn.StereoFloat(new SignalGeneratorWaveIn.MarkerTone(300, 600, 1.0)));
@@ -72,22 +75,49 @@ internal sealed class FailableWaveIn : IWaveIn
 
 /// <summary>
 /// A <see cref="RecordingService"/> over injected sources in a temp recordings
-/// root, keeping hold of every capture session and mic it builds.
+/// root, keeping hold of every capture session, mic and system source it builds.
 /// </summary>
 internal sealed class CaptureRig : IDisposable
 {
+    private readonly List<FailableWaveIn> _systems = [];
+
     public CaptureRig(byte[]? key)
     {
         Root = Path.Join(Path.GetTempPath(), $"pablo-rec-{Guid.NewGuid():N}");
         Credentials = new KeyCredentialManager(key);
         Service = new RecordingService(Credentials, Root, () =>
         {
-            var mic = FailableWaveIn.Mic();
+            var mic = MicSource();
             Mics.Add(mic);
-            var session = new WasapiCaptureSession(() => mic, FailableWaveIn.System);
+            var session = new WasapiCaptureSession(() => mic, NewSystem);
             Sessions.Add(session);
             return session;
         });
+    }
+
+    /// <summary>
+    /// Builds the mic for each new capture: the stand-in for whichever device is the
+    /// default when a capture starts. Swap it to change the default between captures.
+    /// </summary>
+    public Func<FailableWaveIn> MicSource { get; set; } = FailableWaveIn.Mic;
+
+    /// <summary>
+    /// Every system source handed out, in order. A capture following the default
+    /// output builds a new one each time it re-opens system audio, on its own thread.
+    /// </summary>
+    public FailableWaveIn[] Systems
+    {
+        get
+        {
+            lock (_systems) return [.. _systems];
+        }
+    }
+
+    private FailableWaveIn NewSystem()
+    {
+        var system = FailableWaveIn.System();
+        lock (_systems) _systems.Add(system);
+        return system;
     }
 
     public string Root { get; }

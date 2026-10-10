@@ -308,12 +308,9 @@ public partial class RecordingViewModel : ObservableObject
             var devices = await _recordingService.GetAvailableDevicesAsync();
             AvailableMics = devices.Where(d => d.SourceType == AudioTrackType.Mic).ToArray();
 
-            // Auto-select default if nothing selected
-            if (SelectedMicId == null)
-            {
-                var defaultMic = AvailableMics.FirstOrDefault(d => d.IsDefault);
-                SelectedMicId = defaultMic?.Id ?? AvailableMics.FirstOrDefault()?.Id;
-            }
+            // Nothing is selected on the therapist's behalf: no selection records the
+            // Windows default mic as it is at each start, where selecting the current
+            // default's id here would pin that device even after the default moves.
         }
         catch
         {

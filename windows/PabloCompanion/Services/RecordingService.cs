@@ -2,6 +2,7 @@ using AudioCapture.Capture;
 using AudioCapture.Interfaces;
 using AudioCapture.Models;
 using AudioCapture.Storage;
+using PabloCompanion.Core;
 using PabloCompanion.Models;
 
 namespace PabloCompanion.Services;
@@ -62,6 +63,14 @@ public sealed class CaptureStoppedEventArgs(
 /// the capture here, saving what was recorded, and then raises
 /// <see cref="CaptureStopped"/>. Callbacks arrive on capture threads; none of them
 /// does work inline.</para>
+///
+/// <para><b>Devices.</b> System audio follows the default output device: the capture
+/// re-opens it in place when the default changes or it errors, reporting
+/// <see cref="SystemAudioInterrupted"/> while it can't and
+/// <see cref="SystemAudioRestored"/> once it has. The mic is the one picked, or the
+/// default communications mic at capture start; a capture stays on that mic until it
+/// goes away, which stops the capture as <see cref="CaptureStopReason.MicDisconnected"/>,
+/// and Restart Recording then records whatever the default is by then.</para>
 /// </summary>
 public sealed class RecordingService : IDisposable
 {
@@ -152,12 +161,19 @@ public sealed class RecordingService : IDisposable
     /// <summary>Test seam: watchdog timings in place of the one-minute production ones.</summary>
     internal (TimeSpan FirstCheck, TimeSpan Interval)? WatchdogTimings { get; set; }
 
+    /// <summary>Test seam: the configuration the latest capture was started with.</summary>
+    internal CaptureConfiguration? LastConfiguration { get; private set; }
+
     /// <summary>
     /// Starts capture for the session and returns once it is capturing; a capture
     /// that can't start faults the task and leaves nothing running. Starting again
     /// for the same session appends to its sidecars. Without an encryption key it
     /// throws <see cref="RecordingEncryptionUnavailableException"/> before
     /// anything touches the disk or the audio devices.
+    /// <para>A null <paramref name="micDeviceId"/> records the Windows default
+    /// communications microphone as it is when the capture starts, so a restart
+    /// after the default changes records the new one. System audio follows the
+    /// default output device for the whole capture.</para>
     /// </summary>
     public Task StartAsync(string sessionId, string? micDeviceId = null,
         MixingStrategy mixingStrategy = MixingStrategy.Blended, bool exportRawPcm = false)
@@ -204,7 +220,12 @@ public sealed class RecordingService : IDisposable
                 // Always append: for a new session there is nothing to continue,
                 // and for a restart this is what keeps the earlier audio.
                 AppendToSidecars = true,
+                // A headset plugged in, Bluetooth connecting, or a call app moving
+                // its output re-opens system capture on the new default output in
+                // place, instead of losing the client's side until a restart.
+                FollowDefaultOutputDevice = true,
             };
+            LastConfiguration = config;
 
             var session = _sessionFactory();
             session.Delegate = new CaptureListener(this, session);
@@ -297,11 +318,12 @@ public sealed class RecordingService : IDisposable
         try
         {
             var result = await session.StopCaptureAsync().ConfigureAwait(false);
+            var sampleRate = SidecarSampleRate(session.Diagnostics);
             LocalRecording recording;
             lock (_gate)
             {
                 _priorRunsDuration += result.DurationSecs;
-                recording = ToLocalRecording(result, _priorRunsDuration);
+                recording = ToLocalRecording(result, _priorRunsDuration, sampleRate);
                 TearDown(session);
             }
             tcs.TrySetResult(recording);
@@ -465,7 +487,45 @@ public sealed class RecordingService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "PabloCompanion", "Recordings");
 
-    private static LocalRecording ToLocalRecording(RecordingResult result, double duration)
+    /// <summary>
+    /// The rate to stamp into the uploaded WAV headers: the frame rate of the bytes
+    /// in the mic sidecar.
+    ///
+    /// <para>The mic sidecar is the mic source's buffers written as delivered, so its
+    /// bytes are at the mic's delivered format (<see cref="CaptureDiagnostics.MicSampleRate"/>).
+    /// The system sidecar is resampled to <see cref="CaptureDiagnostics.SidecarSampleRate"/>.
+    /// For a real microphone the two agree: the capture asks Windows for the configured
+    /// format in shared mode with conversion on, so the engine resamples a 16 kHz
+    /// hands-free mic before the app sees it. If they ever disagree, one rate can't
+    /// describe both files; the therapist channel is the one a note can't be written
+    /// without, so it gets the right header and the mismatch is logged.</para>
+    ///
+    /// <para>The measured rate (<see cref="CaptureDiagnostics.MicMeasuredSampleRate"/>)
+    /// is not used: it is frames per wall-clock second, which runs a little under the
+    /// format rate in every healthy capture (start-up latency, scheduling), so stamping
+    /// it would mis-head good recordings. A large shortfall means frames went missing,
+    /// not that the bytes are at another rate; it is logged.</para>
+    /// </summary>
+    internal static int SidecarSampleRate(CaptureDiagnostics diagnostics)
+    {
+        var sidecarRate = diagnostics.SidecarSampleRate > 0 ? diagnostics.SidecarSampleRate : AudioUploadClient.DefaultSampleRate;
+        var micRate = diagnostics.MicSampleRate;
+        if (micRate <= 0) return sidecarRate;
+
+        if (micRate != sidecarRate || diagnostics.MicChannels != 1 || diagnostics.MicBitsPerSample != 16)
+        {
+            App.Log($"Capture: mic format {micRate} Hz {diagnostics.MicChannels} ch {diagnostics.MicBitsPerSample}-bit " +
+                $"{diagnostics.MicEncoding} does not match the {sidecarRate} Hz mono 16-bit sidecar format");
+        }
+
+        var measured = diagnostics.MicMeasuredSampleRate;
+        if (measured > 0 && Math.Abs(measured - micRate) > micRate * 0.1)
+            App.Log($"Capture: mic delivered {measured:F0} frames/s against a {micRate} Hz format");
+
+        return micRate;
+    }
+
+    private static LocalRecording ToLocalRecording(RecordingResult result, double duration, int sampleRate)
     {
         return new LocalRecording(
             Id: result.Metadata.Id,
@@ -477,6 +537,7 @@ public sealed class RecordingService : IDisposable
             ChannelLayout: result.Metadata.ChannelLayout,
             MicPcmFilePath: result.RawPcmFilePaths.Length > 0 ? result.RawPcmFilePaths[0] : null,
             SystemPcmFilePath: result.RawPcmFilePaths.Length > 1 ? result.RawPcmFilePaths[1] : null,
-            IsUploaded: false);
+            IsUploaded: false,
+            SampleRate: sampleRate);
     }
 }

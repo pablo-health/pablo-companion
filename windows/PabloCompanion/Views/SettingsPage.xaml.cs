@@ -89,6 +89,10 @@ public sealed partial class SettingsPage : Page
     private void PopulateMicDropdown()
     {
         MicDropdown.Items.Clear();
+
+        // No selection (a null id) records whichever mic Windows uses for calls
+        // when recording starts, so it keeps up with headsets coming and going.
+        MicDropdown.Items.Add(new ComboBoxItem { Content = "Windows default", Tag = null });
         foreach (var mic in _recordingVm.AvailableMics)
         {
             MicDropdown.Items.Add(new ComboBoxItem

@@ -139,7 +139,8 @@ public partial class TranscriptionViewModel : ObservableObject
     /// </summary>
     /// <param name="sampleRate">
     /// Rate the sidecars were captured at; persisted with the queued entry so a
-    /// retry stamps the same rate into the WAV header. Null uploads as 48 kHz.
+    /// retry stamps the same rate into the WAV header. Null takes the rate the
+    /// capture saved with the recording, and a recording without one uploads as 48 kHz.
     /// </param>
     public async Task UploadAudioAsync(string sessionId, int? sampleRate = null)
     {
@@ -159,7 +160,7 @@ public partial class TranscriptionViewModel : ObservableObject
         if (!TryClaim(sessionId)) return;
         try
         {
-            await UploadClaimedAudioAsync(sessionId, recording, sampleRate);
+            await UploadClaimedAudioAsync(sessionId, recording, sampleRate ?? recording.SampleRate);
         }
         finally
         {
