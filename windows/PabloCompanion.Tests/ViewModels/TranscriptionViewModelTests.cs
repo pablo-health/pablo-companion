@@ -4,6 +4,7 @@ using System.Text;
 using AudioCapture.Models;
 using AudioCapture.Storage;
 using PabloCompanion.Core;
+using PabloCompanion.Helpers;
 using PabloCompanion.Models;
 using PabloCompanion.Services;
 using PabloCompanion.Tests.Helpers;
@@ -815,6 +816,133 @@ public sealed class TranscriptionViewModelTests : IDisposable
 
         Assert.Equal(1, vm.UploadBacklogCount);
         Assert.True(vm.UploadBacklog.HasFailed);
+    }
+
+    // --- Dead entries (audio gone, or out of retries) ---
+
+    /// <summary>
+    /// An entry whose mic sidecar is gone can only fail: the resume pass marks it
+    /// FilesMissing without attempting it, and neither a later pass nor Upload Now
+    /// tries it either.
+    /// </summary>
+    [Fact]
+    public async Task Resume_MissingMicFile_IsFilesMissingAndNeverAttempted()
+    {
+        var store = MakePendingStore();
+        store.Add("session-gone", Path.Join(_recordingsRoot, "session-gone", "rec_mic.pcm"), null, isEncrypted: false);
+        var api = new StubApiClient(_credentials);
+        var vm = MakeVm(api, store);
+        var raised = new List<string>();
+        vm.UploadPhaseChanged += (_, id) => raised.Add(id);
+
+        await vm.ResumePendingUploadsAsync();
+        await vm.ResumePendingUploadsAsync();
+        await vm.UploadNowAsync();
+
+        Assert.Equal(0, api.CallCount);
+        var entry = MakePendingStore().Get("session-gone")!;
+        Assert.Equal(PermanentFailure.FilesMissing, entry.Failure);
+        Assert.Equal(0, entry.RetryCount);
+        Assert.Contains("session-gone", raised);
+        Assert.Equal(SessionUploadPhase.Unrecoverable, vm.UploadPhase("session-gone"));
+    }
+
+    /// <summary>
+    /// Decision: Upload Now retries live entries only. The Mac's forceDrain also
+    /// retries capped ones, but here a capped entry is offered for removal, so
+    /// retrying it would just fail into the same state.
+    /// </summary>
+    [Fact]
+    public async Task UploadNow_DoesNotRetryAnEntryPastTheCap_AndMarksItRetriesExhausted()
+    {
+        var store = MakePendingStore();
+        store.Add("session-capped", _audioPath, null, isEncrypted: false);
+        for (var i = 0; i < PendingTranscriptionStore.MaxAutoRetries; i++)
+            store.IncrementRetry("session-capped", DateTime.UtcNow.AddDays(-30));
+        store.Add("session-live", _audioPath, null, isEncrypted: false);
+        var api = new StubApiClient(_credentials);
+        var vm = MakeVm(api, store);
+
+        await vm.UploadNowAsync();
+
+        Assert.Equal(1, api.CallCount);
+        Assert.Equal("session-live", api.LastSessionId);
+        var capped = MakePendingStore().Get("session-capped")!;
+        Assert.Equal(PermanentFailure.RetriesExhausted, capped.PermanentFailure);
+        Assert.Equal(UploadLifecycleState.PendingUpload, capped.State);
+        Assert.Equal(0, vm.UploadBacklog.Waiting);
+        Assert.Equal(1, vm.UploadBacklog.Unrecoverable);
+    }
+
+    [Fact]
+    public void UploadBacklog_CountsDeadEntriesApartFromTheWaitingOnes()
+    {
+        var store = MakePendingStore();
+        store.Add("live", _audioPath, null, isEncrypted: false);
+        store.Add("missing", _audioPath, null, isEncrypted: false);
+        store.MarkPermanentlyFailed("missing", PermanentFailure.FilesMissing);
+        store.Add("capped", _audioPath, null, isEncrypted: false);
+        for (var i = 0; i < PendingTranscriptionStore.MaxAutoRetries; i++) store.IncrementRetry("capped");
+
+        var vm = MakeVm(new StubApiClient(_credentials), store);
+
+        Assert.Equal(1, vm.UploadBacklogCount);
+        Assert.False(vm.UploadBacklog.HasFailed);
+        Assert.Equal(2, vm.UploadBacklog.Unrecoverable);
+        Assert.Equal("Audio from 1 session hasn't uploaded yet.", vm.UploadBacklog.Message);
+        Assert.Equal("2 recordings couldn't be uploaded and won't be retried.", vm.UploadBacklog.UnrecoverableMessage);
+
+        var excluding = vm.UploadBacklogExcluding("live");
+        Assert.Equal(0, excluding.Waiting);
+        Assert.Null(excluding.Message);
+        Assert.Equal(2, excluding.Unrecoverable);
+
+        Assert.Equal(SessionUploadPhase.Unrecoverable, vm.UploadPhase("capped"));
+        Assert.Equal(
+            UploadStatusKind.None,
+            MinimalShellSelection.UploadStatus(vm.UploadPhase("missing"), ending: false, recordingOrStarting: false));
+    }
+
+    [Fact]
+    public void UploadBacklog_OneDeadEntry_ReadsInTheSingular()
+    {
+        var backlog = new UploadBacklog(Waiting: 0, Unrecoverable: 1);
+        Assert.Null(backlog.Message);
+        Assert.Equal("1 recording couldn't be uploaded and won't be retried.", backlog.UnrecoverableMessage);
+        Assert.Null(UploadBacklog.Empty.UnrecoverableMessage);
+    }
+
+    [Fact]
+    public void RemoveUnrecoverable_DeletesDeadEntriesAndTheirFolders_AndLeavesLiveOnes()
+    {
+        var store = MakePendingStore();
+        var cappedDir = SeedRecording("session-capped");
+        store.Add("session-capped", Path.Join(cappedDir, "rec_mic.pcm"), null, isEncrypted: false);
+        for (var i = 0; i < PendingTranscriptionStore.MaxAutoRetries; i++) store.IncrementRetry("session-capped");
+        store.Add("session-gone", Path.Join(_recordingsRoot, "session-gone", "rec_mic.pcm"), null, isEncrypted: false);
+        store.MarkPermanentlyFailed("session-gone", PermanentFailure.FilesMissing);
+        var liveDir = SeedRecording("session-live");
+        store.Add("session-live", Path.Join(liveDir, "rec_mic.pcm"), null, isEncrypted: false);
+        var vm = MakeVm(new StubApiClient(_credentials), store);
+        Assert.Equal(2, vm.UploadBacklog.Unrecoverable);
+
+        var removed = vm.RemoveUnrecoverableUploads();
+
+        Assert.Equal(2, removed);
+        var after = MakePendingStore();
+        Assert.Null(after.Get("session-capped"));
+        Assert.Null(after.Get("session-gone"));
+        Assert.NotNull(after.Get("session-live"));
+        Assert.False(Directory.Exists(cappedDir));
+        Assert.Null(_recordingStore.Get("session-capped"));
+        Assert.True(Directory.Exists(liveDir));
+        Assert.Equal(0, vm.UploadBacklog.Unrecoverable);
+        Assert.Equal(1, vm.UploadBacklog.Waiting);
+        Assert.Equal(SessionUploadPhase.None, vm.UploadPhase("session-capped"));
+
+        // The launch sweep has nothing left to bring back.
+        Assert.Equal(0, new RecordingDirectoryScanner(after, _recordingsRoot).AdoptOrphans());
+        Assert.Null(MakePendingStore().Get("session-capped"));
     }
 
     // --- UploadPhase (the main window's read model for one session) ---

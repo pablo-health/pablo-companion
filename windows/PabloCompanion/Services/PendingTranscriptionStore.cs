@@ -42,9 +42,10 @@ public sealed class PendingTranscriptionStore
 
     /// <summary>
     /// Failed attempts after which an entry stops being retried automatically and
-    /// reads as a permanent failure. Matches macOS
-    /// (<c>PendingAudioUploadCoordinator.Policy.maxAutoRetries</c>). The manual
-    /// "Retry now" still tries it.
+    /// reads as a permanent failure (<see cref="PermanentFailure.RetriesExhausted"/>).
+    /// Matches macOS (<c>PendingAudioUploadCoordinator.Policy.maxAutoRetries</c>).
+    /// Unlike the Mac, Upload Now does not retry it either: the main window offers
+    /// Remove for these instead, so Upload Now only ever sends live entries.
     /// </summary>
     public const int MaxAutoRetries = 10;
 
@@ -121,7 +122,33 @@ public sealed class PendingTranscriptionStore
             var store = Load();
             if (store.TryGetValue(sessionId, out var existing))
             {
-                store[sessionId] = existing with { RetryCount = 0 };
+                // A fresh ladder makes a capped entry live again; missing files stay missing.
+                store[sessionId] = existing with
+                {
+                    RetryCount = 0,
+                    PermanentFailure = existing.PermanentFailure == Services.PermanentFailure.RetriesExhausted
+                        ? null
+                        : existing.PermanentFailure,
+                };
+                Persist(store);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Record that an entry can never upload, and why. It stays in the store (so
+    /// the launch orphan scan, which skips ids the store holds, cannot re-queue
+    /// its folder) until the therapist removes it from the main window.
+    /// No-op if the entry is gone.
+    /// </summary>
+    public void MarkPermanentlyFailed(string sessionId, PermanentFailure reason)
+    {
+        lock (_lock)
+        {
+            var store = Load();
+            if (store.TryGetValue(sessionId, out var existing) && existing.PermanentFailure != reason)
+            {
+                store[sessionId] = existing with { PermanentFailure = reason };
                 Persist(store);
             }
         }
@@ -235,18 +262,44 @@ public sealed record PendingTranscription(
     // Optional so older entries still decode; null falls back to 48 kHz, which
     // is what every upload used before this field existed. Raw PCM carries no
     // header to recover the true rate from.
-    int? SampleRate = null)
+    int? SampleRate = null,
+    // Why the entry can never upload, once the resume pass has found out. Optional
+    // so older entries still decode; a legacy entry already at the retry cap reads
+    // as RetriesExhausted through Failure below until the next pass stamps it.
+    PermanentFailure? PermanentFailure = null)
 {
     /// <summary>The moment the backoff ladder counts from.</summary>
     [JsonIgnore]
     public DateTime BackoffAnchor => LastAttemptAt ?? CreatedAt;
 
     /// <summary>
-    /// The entry has failed <see cref="PendingTranscriptionStore.MaxAutoRetries"/>
-    /// times and is no longer retried automatically - for example a queued entry
-    /// whose audio file is gone, which fails the same way on every attempt.
-    /// Derived from the retry count, so no new state is persisted.
+    /// Why the entry will not be uploaded: its mic sidecar is gone
+    /// (<see cref="Services.PermanentFailure.FilesMissing"/>), or it has failed
+    /// <see cref="PendingTranscriptionStore.MaxAutoRetries"/> times
+    /// (<see cref="Services.PermanentFailure.RetriesExhausted"/>). Null for a live entry.
     /// </summary>
     [JsonIgnore]
-    public bool IsPermanentlyFailed => RetryCount >= PendingTranscriptionStore.MaxAutoRetries;
+    public PermanentFailure? Failure => PermanentFailure
+        ?? (RetryCount >= PendingTranscriptionStore.MaxAutoRetries
+            ? Services.PermanentFailure.RetriesExhausted
+            : null);
+
+    /// <summary>
+    /// The entry is dead: neither the scheduled pass nor Upload Now attempts it,
+    /// it does not count toward the upload backlog, and the main window offers to
+    /// remove it.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsPermanentlyFailed => Failure is not null;
+}
+
+/// <summary>Why a queued upload will never be attempted again.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<PermanentFailure>))]
+public enum PermanentFailure
+{
+    /// <summary>The mic sidecar the entry points at no longer exists.</summary>
+    FilesMissing,
+
+    /// <summary>It failed <see cref="PendingTranscriptionStore.MaxAutoRetries"/> times.</summary>
+    RetriesExhausted,
 }
