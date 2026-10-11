@@ -32,3 +32,26 @@ public enum UploadLifecycleState
     /// before the local audio can be deleted.
     AwaitingNote,
 }
+
+/// <summary>
+/// One session's upload as the main window reads it: a small read model over
+/// the pending entry and the in-flight set (see
+/// <c>TranscriptionViewModel.UploadPhase</c>).
+/// </summary>
+public enum SessionUploadPhase
+{
+    /// <summary>No entry: never queued, or the note exists and the audio is gone.</summary>
+    None,
+
+    /// <summary>The first attempt is being sent right now.</summary>
+    Uploading,
+
+    /// <summary>
+    /// Still waiting to upload after a failed attempt (or one that could not
+    /// start). The upload backlog note owns this state, with its retry.
+    /// </summary>
+    WaitingToRetry,
+
+    /// <summary>The server has the audio; the note is being written.</summary>
+    AwaitingNote,
+}

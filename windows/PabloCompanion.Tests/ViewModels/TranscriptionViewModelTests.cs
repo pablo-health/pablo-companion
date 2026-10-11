@@ -817,6 +817,105 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.True(vm.UploadBacklog.HasFailed);
     }
 
+    // --- UploadPhase (the main window's read model for one session) ---
+
+    [Fact]
+    public async Task UploadPhase_FollowsTheEntryFromFirstAttemptToNoteReady()
+    {
+        SeedRecording("session-50");
+        var store = MakePendingStore();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var api = new StubApiClient(_credentials) { Gate = gate };
+        var vm = MakeVm(api, store);
+        var raised = new List<string>();
+        vm.UploadPhaseChanged += (_, id) => { lock (raised) raised.Add(id); };
+
+        Assert.Equal(SessionUploadPhase.None, vm.UploadPhase("session-50"));
+
+        var upload = vm.UploadAudioAsync("session-50");
+        await api.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(SessionUploadPhase.Uploading, vm.UploadPhase("session-50"));
+        lock (raised) Assert.Contains("session-50", raised);
+        // While its first attempt is shown on its own card, the backlog note leaves it out.
+        vm.RefreshUploadBacklog();
+        Assert.Equal(1, vm.UploadBacklog.Waiting);
+        Assert.Equal(0, vm.UploadBacklogExcluding("session-50").Waiting);
+
+        int raisedBeforeAccept;
+        lock (raised) raisedBeforeAccept = raised.Count;
+        gate.TrySetResult();
+        await upload;
+        Assert.Equal(SessionUploadPhase.AwaitingNote, vm.UploadPhase("session-50"));
+        lock (raised) Assert.True(raised.Count > raisedBeforeAccept);
+
+        // Still transcribing: no change.
+        await vm.ReconcileAwaitingNotesAsync();
+        Assert.Equal(SessionUploadPhase.AwaitingNote, vm.UploadPhase("session-50"));
+
+        // Note exists, audio deleted: the card goes back to the next appointment.
+        int raisedBeforeNote;
+        lock (raised) raisedBeforeNote = raised.Count;
+        api.NoteStatus = SessionStatus.PendingReview;
+        await vm.ReconcileAwaitingNotesAsync();
+        Assert.Equal(SessionUploadPhase.None, vm.UploadPhase("session-50"));
+        lock (raised) Assert.True(raised.Count > raisedBeforeNote);
+    }
+
+    [Fact]
+    public async Task UploadPhase_AFailedFirstAttemptIsWaitingToRetry_AndARetryInFlightStaysThere()
+    {
+        SeedRecording("session-51");
+        var store = MakePendingStore();
+        var api = new StubApiClient(_credentials) { FailNext = true };
+        var vm = MakeVm(api, store);
+
+        await vm.UploadAudioAsync("session-51");
+        Assert.Equal(SessionUploadPhase.WaitingToRetry, vm.UploadPhase("session-51"));
+
+        // Upload Now on a failed entry: the backlog note shows its own spinner,
+        // so the upload card must not come back for it.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var retryApi = new StubApiClient(_credentials) { Gate = gate };
+        var retryVm = MakeVm(retryApi, MakePendingStore());
+        var retry = retryVm.UploadNowAsync();
+        await retryApi.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(SessionUploadPhase.WaitingToRetry, retryVm.UploadPhase("session-51"));
+        gate.TrySetResult();
+        await retry;
+        Assert.Equal(SessionUploadPhase.AwaitingNote, retryVm.UploadPhase("session-51"));
+    }
+
+    [Fact]
+    public async Task UploadPhase_AnUploadThatCouldNotStartIsWaitingToRetry()
+    {
+        // Server session expired: the entry is queued, nothing is in flight.
+        SeedRecording("session-52");
+        var api = new StubApiClient(_credentials) { SessionAlive = false };
+        var vm = MakeVm(api, MakePendingStore());
+
+        await vm.UploadAudioAsync("session-52");
+
+        Assert.Equal(SessionUploadPhase.WaitingToRetry, vm.UploadPhase("session-52"));
+        Assert.Equal(0, api.CallCount);
+    }
+
+    [Fact]
+    public async Task UploadPhase_ATranscriptionFailureReQueuesAsWaitingToRetry()
+    {
+        var store = MakePendingStore();
+        SeedAwaitingNote("session-53", store);
+        var api = new StubApiClient(_credentials) { NoteStatus = SessionStatus.Failed };
+        var vm = MakeVm(api, store);
+        var raised = new List<string>();
+        vm.UploadPhaseChanged += (_, id) => raised.Add(id);
+
+        await vm.ReconcileAwaitingNotesAsync();
+
+        Assert.Contains("session-53", raised);
+        // Back in the queue with a fresh ladder and nothing in flight: the backlog note's.
+        Assert.Equal(SessionUploadPhase.WaitingToRetry, vm.UploadPhase("session-53"));
+    }
+
     /// <summary>
     /// Stands in for a cleaner that can't do its job — a sidecar still locked by
     /// another handle, say. The real one swallows its own failures; this proves

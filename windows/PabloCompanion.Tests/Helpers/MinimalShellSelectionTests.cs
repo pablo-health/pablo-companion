@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PabloCompanion.Helpers;
 using PabloCompanion.Models;
+using PabloCompanion.Services;
 
 namespace PabloCompanion.Tests.Helpers;
 
@@ -192,6 +193,68 @@ public class MinimalShellSelectionTests
         Assert.Equal(expected, MinimalShellSelection.TimingLabel(appointment, At(now)));
     }
 
+    /// <summary>
+    /// Regression: a session started before its slot read "NEXT UP" above its own
+    /// live recording. The appointment being recorded here, or being started, is
+    /// "IN SESSION" whatever the clock says; every other appointment keeps the
+    /// clock labels.
+    /// </summary>
+    [Theory]
+    // Recording here (paused too: the active session id is kept while paused).
+    [InlineData("2026-09-03T14:45:00Z", "session-1", null, "IN SESSION")]
+    [InlineData("2026-09-03T15:10:00Z", "session-1", null, "IN SESSION")]
+    [InlineData("2026-09-03T16:05:00Z", "session-1", null, "IN SESSION")]
+    // Being started.
+    [InlineData("2026-09-03T14:45:00Z", null, "appointment", "IN SESSION")]
+    [InlineData("2026-09-03T15:10:00Z", null, "appointment", "IN SESSION")]
+    [InlineData("2026-09-03T16:05:00Z", null, "appointment", "IN SESSION")]
+    // Another session recording, or another appointment starting: the clock.
+    [InlineData("2026-09-03T14:45:00Z", "session-2", null, "NEXT UP")]
+    [InlineData("2026-09-03T15:10:00Z", "session-2", null, "IN PROGRESS")]
+    [InlineData("2026-09-03T16:05:00Z", "session-2", null, "RUNNING OVER")]
+    [InlineData("2026-09-03T14:45:00Z", null, "other", "NEXT UP")]
+    [InlineData("2026-09-03T15:10:00Z", null, "other", "IN PROGRESS")]
+    [InlineData("2026-09-03T16:05:00Z", null, "other", "RUNNING OVER")]
+    // Nothing recording or starting: the clock.
+    [InlineData("2026-09-03T14:45:00Z", null, null, "NEXT UP")]
+    [InlineData("2026-09-03T15:10:00Z", null, null, "IN PROGRESS")]
+    [InlineData("2026-09-03T16:05:00Z", null, null, "RUNNING OVER")]
+    public void LabelsTheSessionBeingRecordedHereAsInSession(
+        string now, string? activeSessionId, string? startingAppointmentId, string expected)
+    {
+        var appointment = MakeAppointment("2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z", sessionId: "session-1");
+        Assert.Equal(expected, MinimalShellSelection.TimingLabel(
+            appointment, At(now), activeSessionId, startingAppointmentId));
+    }
+
+    [Fact]
+    public void AnAppointmentWithNoSessionIsNeverInSessionBecauseNothingIsRecording()
+    {
+        // Both session ids null must not read as "this one is recording".
+        var appointment = MakeAppointment("2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z");
+        Assert.Equal("NEXT UP", MinimalShellSelection.TimingLabel(
+            appointment, At("2026-09-03T14:45:00Z"), activeSessionId: null));
+    }
+
+    [Theory]
+    [InlineData(AppointmentAction.StopRecording, "IN SESSION")]
+    [InlineData(AppointmentAction.Starting, "IN SESSION")]
+    [InlineData(AppointmentAction.Start, "NEXT UP")]
+    public void TheCardsActionDecidesInSession(AppointmentAction action, string expected)
+    {
+        var appointment = MakeAppointment("2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z", sessionId: "session-1");
+        Assert.Equal(expected, MinimalShellSelection.TimingLabel(appointment, At("2026-09-03T14:45:00Z"), action));
+    }
+
+    [Fact]
+    public void AnInSessionAppointmentWithoutAStartTimeIsStillInSession()
+    {
+        var appointment = MakeAppointment("", "2026-09-03T15:50:00Z", sessionId: "session-1");
+        Assert.Equal("IN SESSION", MinimalShellSelection.TimingLabel(
+            appointment, At("2026-09-03T14:45:00Z"), activeSessionId: "session-1"));
+        Assert.Equal("UPCOMING", MinimalShellSelection.TimingLabel(appointment, At("2026-09-03T14:45:00Z")));
+    }
+
     // --- Action ---
 
     [Fact]
@@ -310,6 +373,81 @@ public class MinimalShellSelectionTests
 
         Assert.Null(MinimalShellSelection.InProgressElsewhere([recording], now, activeSessionId: "session-1"));
         Assert.Null(MinimalShellSelection.InProgressElsewhere([recording], now, startingAppointmentId: recording.Id));
+    }
+
+    /// <summary>
+    /// Regression: right after End Session the server still reports the session
+    /// in progress until its upload finalizes, and the card said "Recording on
+    /// another device" about the session this PC had just ended.
+    /// </summary>
+    [Fact]
+    public void ASessionEndedHereIsNotElsewhereWhileTheServerStillReportsItInProgress()
+    {
+        var now = At("2026-09-03T15:20:00Z");
+        var endedHere = MakeAppointment(
+            "2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z", sessionId: "session-1", sessionStatus: "in_progress");
+        var later = MakeAppointment("2026-09-03T16:00:00Z", "2026-09-03T16:50:00Z", id: "later");
+        string[] ended = ["session-1"];
+
+        Assert.Null(MinimalShellSelection.InProgressElsewhere(
+            [endedHere, later], now, endedHereSessionIds: ended));
+
+        // Nor does it pin the card: the next appointment is offered.
+        var card = MinimalShellSelection.SelectCard(
+            [endedHere, later], now, activeSessionId: null, startingAppointmentId: null,
+            isLoading: false, hasError: false);
+        Assert.Equal("later", card.Appointment?.Id);
+        Assert.Equal(AppointmentAction.Start, card.Action);
+    }
+
+    [Fact]
+    public void AForeignSessionIsStillElsewhereWhenAnotherWasEndedHere()
+    {
+        var now = At("2026-09-03T15:20:00Z");
+        var endedHere = MakeAppointment(
+            "2026-09-03T15:00:00Z", "2026-09-03T15:50:00Z", id: "mine", sessionId: "session-1", sessionStatus: "in_progress");
+        var foreign = MakeAppointment(
+            "2026-09-03T15:05:00Z", "2026-09-03T15:55:00Z", id: "foreign", sessionId: "session-9", sessionStatus: "in_progress");
+
+        Assert.Equal("foreign", MinimalShellSelection.InProgressElsewhere(
+            [endedHere, foreign], now, endedHereSessionIds: ["session-1"])?.Id);
+        Assert.Equal("mine", MinimalShellSelection.InProgressElsewhere(
+            [endedHere, foreign], now, endedHereSessionIds: [])?.Id);
+    }
+
+    // --- Upload status after End Session ---
+
+    [Theory]
+    [InlineData(SessionUploadPhase.Uploading, false, false, UploadStatusKind.Uploading)]
+    [InlineData(SessionUploadPhase.AwaitingNote, false, false, UploadStatusKind.DraftingNote)]
+    // A failed attempt belongs to the backlog note, with its retry.
+    [InlineData(SessionUploadPhase.WaitingToRetry, false, false, UploadStatusKind.None)]
+    [InlineData(SessionUploadPhase.WaitingToRetry, true, false, UploadStatusKind.None)]
+    // Note written, audio deleted: back to the next appointment.
+    [InlineData(SessionUploadPhase.None, false, false, UploadStatusKind.None)]
+    // Between End Session and the upload being queued.
+    [InlineData(SessionUploadPhase.None, true, false, UploadStatusKind.Uploading)]
+    // A live recording or a start in flight owns the card.
+    [InlineData(SessionUploadPhase.Uploading, false, true, UploadStatusKind.None)]
+    [InlineData(SessionUploadPhase.AwaitingNote, false, true, UploadStatusKind.None)]
+    [InlineData(SessionUploadPhase.None, true, true, UploadStatusKind.None)]
+    public void SaysWhatTheEndedSessionsUploadIsDoing(
+        SessionUploadPhase phase, bool ending, bool recordingOrStarting, UploadStatusKind expected)
+    {
+        Assert.Equal(expected, MinimalShellSelection.UploadStatus(phase, ending, recordingOrStarting));
+    }
+
+    [Fact]
+    public void UploadStatusCopy()
+    {
+        Assert.Equal("Uploading your session...", MinimalShellSelection.UploadStatusTitle(UploadStatusKind.Uploading));
+        Assert.Equal("You can close Pablo once the upload finishes.",
+            MinimalShellSelection.UploadStatusSubtitle(UploadStatusKind.Uploading));
+        Assert.Equal("Drafting your note...", MinimalShellSelection.UploadStatusTitle(UploadStatusKind.DraftingNote));
+        Assert.Equal("Your note will be ready in the web dashboard.",
+            MinimalShellSelection.UploadStatusSubtitle(UploadStatusKind.DraftingNote));
+        Assert.Null(MinimalShellSelection.UploadStatusTitle(UploadStatusKind.None));
+        Assert.Null(MinimalShellSelection.UploadStatusSubtitle(UploadStatusKind.None));
     }
 
     [Fact]
