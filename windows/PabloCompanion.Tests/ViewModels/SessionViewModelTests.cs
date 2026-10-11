@@ -45,6 +45,13 @@ public sealed class SessionViewModelTests : IDisposable
     private (SessionViewModel session, StubApiClient api, PendingTranscriptionStore store)
         MakeSut()
     {
+        var (sessionVm, api, store, _) = MakeSutWithTranscription();
+        return (sessionVm, api, store);
+    }
+
+    private (SessionViewModel session, StubApiClient api, PendingTranscriptionStore store, TranscriptionViewModel transcription)
+        MakeSutWithTranscription()
+    {
         var api = new StubApiClient(_credentials);
         var store = MakePendingStore();
         var transcriptionVm = new TranscriptionViewModel(
@@ -53,7 +60,7 @@ public sealed class SessionViewModelTests : IDisposable
         var recordingVm = new RecordingViewModel(recordingService, _recordingStore);
         var videoLaunch = new VideoLaunchService();
         var sessionVm = new SessionViewModel(api, videoLaunch, recordingVm, transcriptionVm);
-        return (sessionVm, api, store);
+        return (sessionVm, api, store, transcriptionVm);
     }
 
     /// <summary>
@@ -229,6 +236,152 @@ public sealed class SessionViewModelTests : IDisposable
         Assert.Equal(2, api.StartSessionCallCount);
     }
 
+    // --- Sessions this PC ended (never "Recording on another device") ---
+
+    private static Appointment WithSession(Appointment appointment, string sessionId, string status) =>
+        appointment with { SessionId = sessionId, SessionStatusRaw = status };
+
+    /// <summary>
+    /// Regression: after End Session the server keeps the session in progress
+    /// until the upload finalizes, and the next refresh showed "Recording on
+    /// another device" for the session this PC had just ended.
+    /// </summary>
+    [Fact]
+    public async Task EndSession_ServerStillInProgress_IsNotRecordingOnAnotherDevice()
+    {
+        SeedRecording("session-1");
+        var (sessionVm, api, _) = MakeSut();
+        var now = DateTimeOffset.UtcNow;
+        var mine = WithSession(MakeAppointment("mine", now), "session-1", "in_progress");
+        api.Appointments = [mine];
+
+        await sessionVm.EndSessionAndRefreshAsync("session-1");
+
+        Assert.Contains("session-1", sessionVm.EndedHereSessionIds);
+        Assert.Equal("session-1", sessionVm.LastEndedSessionId);
+        Assert.Null(MinimalShellSelection.InProgressElsewhere(
+            sessionVm.TodayAppointments, now, endedHereSessionIds: sessionVm.EndedHereSessionIds));
+        var card = MinimalShellSelection.SelectCard(
+            sessionVm.TodayAppointments, now, activeSessionId: null, startingAppointmentId: null,
+            isLoading: false, hasError: false);
+        Assert.NotEqual(ShellCardKind.Appointment, card.Kind);
+
+        // A session genuinely recording elsewhere is still reported.
+        var foreign = WithSession(MakeAppointment("foreign", now), "session-9", "in_progress");
+        api.Appointments = [mine, foreign];
+        await sessionVm.LoadTodayAppointmentsAsync();
+        Assert.Equal("foreign", MinimalShellSelection.InProgressElsewhere(
+            sessionVm.TodayAppointments, now, endedHereSessionIds: sessionVm.EndedHereSessionIds)?.Id);
+    }
+
+    [Fact]
+    public async Task EndedHere_IsForgottenOnceTheServerNoLongerReportsItInProgress()
+    {
+        SeedRecording("session-1");
+        var (sessionVm, api, _) = MakeSut();
+        var now = DateTimeOffset.UtcNow;
+        var mine = WithSession(MakeAppointment("mine", now), "session-1", "in_progress");
+        api.Appointments = [mine];
+        await sessionVm.EndSessionAndRefreshAsync("session-1");
+        Assert.Contains("session-1", sessionVm.EndedHereSessionIds);
+
+        api.Appointments = [mine with { SessionStatusRaw = "transcribing" }];
+        await sessionVm.LoadTodayAppointmentsAsync();
+
+        Assert.Empty(sessionVm.EndedHereSessionIds);
+        // The card still follows its upload until the note exists.
+        Assert.Equal("session-1", sessionVm.LastEndedSessionId);
+    }
+
+    [Fact]
+    public async Task EndedHere_IsForgottenAfterThirtyMinutesEvenIfStillInProgress()
+    {
+        SeedRecording("session-1");
+        var (sessionVm, api, _) = MakeSut();
+        var start = DateTimeOffset.UtcNow;
+        sessionVm.Clock = () => start;
+        api.Appointments = [WithSession(MakeAppointment("mine", start), "session-1", "in_progress")];
+        await sessionVm.EndSessionAndRefreshAsync("session-1");
+
+        sessionVm.Clock = () => start + TimeSpan.FromMinutes(29);
+        await sessionVm.LoadTodayAppointmentsAsync();
+        Assert.Contains("session-1", sessionVm.EndedHereSessionIds);
+
+        sessionVm.Clock = () => start + SessionViewModel.EndedSessionMemory + TimeSpan.FromSeconds(1);
+        await sessionVm.LoadTodayAppointmentsAsync();
+        Assert.Empty(sessionVm.EndedHereSessionIds);
+    }
+
+    [Fact]
+    public async Task ClearAllData_ForgetsSessionsEndedHere()
+    {
+        SeedRecording("session-1");
+        var (sessionVm, api, _) = MakeSut();
+        api.Appointments = [WithSession(MakeAppointment("mine", DateTimeOffset.UtcNow), "session-1", "in_progress")];
+        await sessionVm.EndSessionAndRefreshAsync("session-1");
+
+        sessionVm.ClearAllData();
+
+        Assert.Empty(sessionVm.EndedHereSessionIds);
+        Assert.Null(sessionVm.LastEndedSessionId);
+        Assert.Null(sessionVm.EndingSessionId);
+    }
+
+    // --- The card's upload status after End Session ---
+
+    /// <summary>
+    /// End Session -> "Uploading your session..." from the click (before the
+    /// upload is even queued) and through the first attempt -> "Drafting your
+    /// note..." once the server has the audio. Each phase change refreshes the
+    /// appointments once, so the card catches up without waiting a minute.
+    /// </summary>
+    [Fact]
+    public async Task EndSession_UploadingThenDraftingTheNote_RefreshesOnEachChange()
+    {
+        SeedRecording("session-1");
+        var (sessionVm, api, _, transcriptionVm) = MakeSutWithTranscription();
+        api.UploadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fetchesAtStart = api.AppointmentFetchCount;
+
+        var end = sessionVm.EndSessionAsync("session-1");
+        await api.UploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("session-1", sessionVm.EndingSessionId);
+        Assert.Equal(SessionUploadPhase.Uploading, transcriptionVm.UploadPhase("session-1"));
+        Assert.Equal(UploadStatusKind.Uploading, MinimalShellSelection.UploadStatus(
+            transcriptionVm.UploadPhase("session-1"), ending: true, recordingOrStarting: false));
+        var fetchesWhileUploading = api.AppointmentFetchCount;
+        Assert.True(fetchesWhileUploading > fetchesAtStart, "Uploading should refresh the appointments once.");
+
+        api.UploadGate.TrySetResult();
+        await end.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Null(sessionVm.EndingSessionId);
+        Assert.Equal(SessionUploadPhase.AwaitingNote, transcriptionVm.UploadPhase("session-1"));
+        Assert.Equal(UploadStatusKind.DraftingNote, MinimalShellSelection.UploadStatus(
+            transcriptionVm.UploadPhase("session-1"), ending: false, recordingOrStarting: false));
+        Assert.True(api.AppointmentFetchCount > fetchesWhileUploading, "Drafting should refresh the appointments once.");
+    }
+
+    /// <summary>A failed first upload is the backlog note's, not the upload card's.</summary>
+    [Fact]
+    public async Task EndSession_FailedUpload_HandsOverToTheBacklogNote()
+    {
+        SeedRecording("session-1");
+        var (sessionVm, api, _, transcriptionVm) = MakeSutWithTranscription();
+        api.FailNextUpload = true;
+
+        await sessionVm.EndSessionAsync("session-1");
+
+        Assert.Equal(SessionUploadPhase.WaitingToRetry, transcriptionVm.UploadPhase("session-1"));
+        Assert.Equal(UploadStatusKind.None, MinimalShellSelection.UploadStatus(
+            transcriptionVm.UploadPhase("session-1"),
+            ending: sessionVm.EndingSessionId == "session-1",
+            recordingOrStarting: false));
+        Assert.Equal(1, transcriptionVm.UploadBacklog.Waiting);
+        Assert.True(transcriptionVm.UploadBacklog.HasFailed);
+    }
+
     public void Dispose()
     {
         _recordingStore.Clear();
@@ -292,23 +445,39 @@ public sealed class SessionViewModelTests : IDisposable
 
         // The drain calls the self-healing entry point; the INVALID_STATUS heal it
         // wraps is covered against the wire in AudioUploadClientTests.
-        public override Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
+        public override async Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
             string sessionId, string therapistAudioPath, string? clientAudioPath = null,
             Func<byte[], byte[]>? decryptChunk = null, int sampleRate = AudioUploadClient.DefaultSampleRate)
         {
             UploadCallCount++;
             UploadOrder = ++_callSequence;
+            UploadStarted.TrySetResult();
+            // A slow upload: holds until the test releases it, or 10 s.
+            if (UploadGate is { } gate)
+                await Task.WhenAny(gate.Task, Task.Delay(TimeSpan.FromSeconds(10)));
             if (FailNextUpload)
                 throw new InvalidOperationException("Simulated upload failure");
-            return Task.FromResult(new AudioUploadResponse(
-                Id: sessionId, Status: "recording_complete", Queue: "transcribe", Message: "ok"));
+            return new AudioUploadResponse(
+                Id: sessionId, Status: "recording_complete", Queue: "transcribe", Message: "ok");
         }
+
+        /// <summary>When set, the upload blocks until it completes (or 10 s pass).</summary>
+        public TaskCompletionSource? UploadGate { get; set; }
+
+        /// <summary>Completes once an upload has started.</summary>
+        public TaskCompletionSource UploadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public override Task<Session[]> FetchTodaySessionsAsync(string timezone)
             => Task.FromResult(Array.Empty<Session>());
 
+        private int _appointmentFetchCount;
+        public int AppointmentFetchCount => Volatile.Read(ref _appointmentFetchCount);
+
         public override Task<Appointment[]> FetchTodayAppointmentsAsync()
-            => Task.FromResult(Appointments);
+        {
+            Interlocked.Increment(ref _appointmentFetchCount);
+            return Task.FromResult(Appointments);
+        }
 
         public override Task<Session> StartSessionFromAppointmentAsync(
             string appointmentId, bool askingConsentOnRecording = false)
