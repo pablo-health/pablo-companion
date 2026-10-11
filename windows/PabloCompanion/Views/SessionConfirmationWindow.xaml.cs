@@ -18,9 +18,20 @@ public sealed partial class SessionConfirmationWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
+    private static int s_pendingLaunches;
+
     private readonly string? _appointmentId;
     private readonly Action<string>? _onConfirm;
     private bool _confirmed;
+
+    /// <summary>
+    /// True while a launch is waiting for Start Recording. The first-use audio
+    /// check is not offered then: the clinician is about to record.
+    /// </summary>
+    public static bool HasPendingLaunch => s_pendingLaunches > 0;
+
+    /// <summary>Raised on the UI thread when <see cref="HasPendingLaunch"/> may have changed.</summary>
+    public static event EventHandler? PendingLaunchChanged;
 
     /// <param name="appointmentId">The redeemed appointment id to start a session for.</param>
     /// <param name="patientName">
@@ -46,6 +57,14 @@ public sealed partial class SessionConfirmationWindow : Window
             : $"Start session with {patientName}?";
 
         ConfigureWindowChrome();
+
+        s_pendingLaunches++;
+        PendingLaunchChanged?.Invoke(null, EventArgs.Empty);
+        Closed += (_, _) =>
+        {
+            s_pendingLaunches--;
+            PendingLaunchChanged?.Invoke(null, EventArgs.Empty);
+        };
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using PabloCompanion.Models;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
 
@@ -36,6 +37,9 @@ public sealed partial class SettingsPage : Page
         UpdatePendingUploadsPanel();
         _transcriptionVm.PropertyChanged += TranscriptionVm_PropertyChanged;
 
+        UpdateCheckAudioButton();
+        _recordingVm.PropertyChanged += RecordingVm_PropertyChanged;
+
         VersionText.Text = AppVersion.Label(App.Services.GetRequiredService<IAppVersionProvider>());
     }
 
@@ -43,6 +47,37 @@ public sealed partial class SettingsPage : Page
     {
         base.OnNavigatedFrom(e);
         _transcriptionVm.PropertyChanged -= TranscriptionVm_PropertyChanged;
+        _recordingVm.PropertyChanged -= RecordingVm_PropertyChanged;
+    }
+
+    private void RecordingVm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(RecordingViewModel.State) or nameof(RecordingViewModel.ActiveSessionId))
+            DispatcherQueue.TryEnqueue(UpdateCheckAudioButton);
+    }
+
+    /// <summary>
+    /// The check runs its own capture, and two captures can't share the
+    /// devices, so it is only offered while nothing is recording.
+    /// </summary>
+    private void UpdateCheckAudioButton()
+    {
+        var idle = _recordingVm.State == RecordingUIState.Idle && _recordingVm.ActiveSessionId is null;
+        CheckAudioButton.IsEnabled = idle;
+        ToolTipService.SetToolTip(CheckAudioButton, idle ? "Takes less than a minute" : "Available when not recording");
+    }
+
+    private async void CheckAudio_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var dialog = new AudioCheckDialog(_recordingVm.SelectedMicId) { XamlRoot = XamlRoot };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("Settings.CheckAudio", ex);
+        }
     }
 
     private void TranscriptionVm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
