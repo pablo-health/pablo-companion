@@ -70,24 +70,148 @@ public sealed class SubscriptionViewModelTests
         Assert.Null(vm.TrialDaysRemaining);
     }
 
+    // --- BannerKind ---
+
+    [Theory]
+    [InlineData("active", "hidden")]
+    [InlineData("trial", "trial")]
+    [InlineData("trial_expired", "trial_expired")]
+    [InlineData("past_due", "past_due")]
+    [InlineData("canceled", "canceled")]
+    [InlineData("paused", "subscription_needed")]
+    [InlineData("", "subscription_needed")]
+    public void BannerKind_MapsEachStatus(string status, string expected)
+    {
+        var vm = MakeVm(status: status);
+        Assert.Equal(expected, vm.BannerKind);
+    }
+
+    [Fact]
+    public void BannerKind_NoInfo_IsHidden()
+    {
+        var vm = new SubscriptionViewModel(null!);
+        Assert.Equal("hidden", vm.BannerKind);
+        Assert.False(vm.ShouldShowBanner);
+    }
+
+    [Theory]
+    [InlineData("active")]
+    [InlineData("canceled")]
+    [InlineData("trial_expired")]
+    public void BannerKind_UnexpiredGrace_IsGraceActive(string status)
+    {
+        // A grace extension reports the status as active server-side; either way
+        // an unexpired grace window shows the "you're covered" banner.
+        var vm = MakeVm(status: status,
+            graceExpiresAt: DateTimeOffset.UtcNow.AddHours(12).ToString("O"));
+        Assert.Equal("grace_active", vm.BannerKind);
+        Assert.False(vm.IsLapsed);
+    }
+
+    [Fact]
+    public void BannerKind_ExpiredGrace_FallsBackToStatus()
+    {
+        var vm = MakeVm(status: "trial_expired",
+            graceExpiresAt: DateTimeOffset.UtcNow.AddHours(-1).ToString("O"));
+        Assert.Equal("trial_expired", vm.BannerKind);
+    }
+
+    [Theory]
+    [InlineData("trial_expired", true)]
+    [InlineData("past_due", true)]
+    [InlineData("canceled", true)]
+    [InlineData("paused", true)]
+    [InlineData("trial", false)]
+    [InlineData("active", false)]
+    public void IsLapsed_CoversEveryStateThatBlocksSessions(string status, bool expected)
+    {
+        Assert.Equal(expected, MakeVm(status: status).IsLapsed);
+        Assert.Equal(expected, MakeVm(status: status).LapsedHeading != null);
+    }
+
+    // --- Copy ---
+
+    [Theory]
+    [InlineData("trial_expired", "Your free trial has ended. Subscribe to keep recording sessions.")]
+    [InlineData("canceled", "Your subscription has ended. Resubscribe to keep recording sessions.")]
+    [InlineData("past_due", "Your payment needs attention")]
+    [InlineData("paused", "Subscribe to keep recording sessions.")]
+    public void LapsedHeading_PerState(string status, string expected)
+    {
+        Assert.Equal(expected, MakeVm(status: status).LapsedHeading);
+    }
+
+    [Fact]
+    public void TrialText_NoLimits_SaysFreeTrial()
+    {
+        Assert.Equal("You're on a free trial", MakeVm().TrialText);
+    }
+
+    [Fact]
+    public void TrialText_SessionsOnly()
+    {
+        Assert.Equal("Free trial \u2014 12 sessions remaining",
+            MakeVm(sessionsUsed: 8, sessionsLimit: 20).TrialText);
+    }
+
+    [Fact]
+    public void TrialText_OneSession_IsSingular()
+    {
+        Assert.Equal("Free trial \u2014 1 session remaining",
+            MakeVm(sessionsUsed: 19, sessionsLimit: 20).TrialText);
+    }
+
+    [Fact]
+    public void TrialText_SessionsAndDays()
+    {
+        var start = DateTimeOffset.UtcNow.AddDays(-10).AddHours(-1).ToString("O");
+        Assert.Equal("Free trial \u2014 12 sessions remaining, 20 days left",
+            MakeVm(sessionsUsed: 8, sessionsLimit: 20, daysLimit: 30, trialStart: start).TrialText);
+    }
+
+    [Fact]
+    public void TrialText_UnlimitedSessions_ShowsDaysOnly()
+    {
+        var start = DateTimeOffset.UtcNow.AddDays(-29).AddHours(-1).ToString("O");
+        Assert.Equal("Free trial \u2014 1 day left",
+            MakeVm(sessionsUsed: 5, sessionsLimit: 0, daysLimit: 30, trialStart: start).TrialText);
+    }
+
+    // --- Billing link ---
+
+    [Fact]
+    public void ManageSubscriptionUrl_DefaultsToTheHostedBillingPage()
+    {
+        var vm = new SubscriptionViewModel(null!);
+        Assert.Equal(new Uri("https://app.pablo.health/dashboard/billing"), vm.ManageSubscriptionUrl);
+    }
+
+    [Fact]
+    public void StartBlockedMessage_IsTheSubscribeCopy()
+    {
+        Assert.Equal("Subscribe to start sessions.", SubscriptionViewModel.StartBlockedMessage);
+    }
+
     // --- Helpers ---
 
     private static SubscriptionViewModel MakeVm(
         int? sessionsUsed = null,
         int? sessionsLimit = null,
         int? daysLimit = null,
-        string? trialStart = null)
+        string? trialStart = null,
+        string status = "trial",
+        string? graceExpiresAt = null)
     {
         var vm = new SubscriptionViewModel(null!);
         vm.Info = new SubscriptionInfo(
-            Status: "trial",
+            Status: status,
             Plan: "solo",
             TrialSessionsUsed: sessionsUsed,
             TrialSessionsLimit: sessionsLimit,
             TrialDaysLimit: daysLimit,
             TrialStart: trialStart,
             GraceExtensionAvailable: false,
-            GraceExtensionExpiresAt: null);
+            GraceExtensionExpiresAt: graceExpiresAt);
         return vm;
     }
 }
