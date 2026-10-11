@@ -30,7 +30,7 @@ public sealed partial class AppointmentCard : UserControl
 
         var title = string.IsNullOrEmpty(appointment.Title) ? "Upcoming appointment" : appointment.Title;
         var time = MinimalShellSelection.FormattedTime(appointment.StartAt);
-        TimingText.Text = $"{MinimalShellSelection.TimingLabel(appointment, now)} - {time}";
+        TimingText.Text = $"{MinimalShellSelection.TimingLabel(appointment, now, action)} - {time}";
         TitleText.Text = title;
         DurationText.Text = $"{appointment.DurationMinutes} min";
         AutomationProperties.SetName(SummaryRow, $"Next appointment, {title}, at {time}");

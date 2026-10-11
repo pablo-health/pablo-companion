@@ -51,6 +51,7 @@ public sealed partial class MinimalShellView : UserControl
         _sessionVm.PropertyChanged += ViewModel_PropertyChanged;
         _recordingVm.PropertyChanged += RecordingVm_PropertyChanged;
         _transcriptionVm.PropertyChanged += TranscriptionVm_PropertyChanged;
+        _transcriptionVm.UploadPhaseChanged += TranscriptionVm_UploadPhaseChanged;
         _consentVm.PropertyChanged += ConsentVm_PropertyChanged;
         AskPanel.Bind(_consentVm);
     }
@@ -88,6 +89,9 @@ public sealed partial class MinimalShellView : UserControl
             case nameof(SessionViewModel.AppointmentsErrorMessage):
             case nameof(SessionViewModel.StartingAppointmentId):
             case nameof(SessionViewModel.UnrecordedAppointmentId):
+            case nameof(SessionViewModel.EndedHereSessionIds):
+            case nameof(SessionViewModel.LastEndedSessionId):
+            case nameof(SessionViewModel.EndingSessionId):
                 DispatcherQueue.TryEnqueue(UpdateCard);
                 break;
             case nameof(SessionViewModel.StartErrorMessage):
@@ -100,6 +104,12 @@ public sealed partial class MinimalShellView : UserControl
     {
         if (e.PropertyName is nameof(TranscriptionViewModel.UploadBacklog) or nameof(TranscriptionViewModel.IsUploadingNow))
             DispatcherQueue.TryEnqueue(UpdateBacklog);
+    }
+
+    // Raised from upload continuations, which may not be on the UI thread.
+    private void TranscriptionVm_UploadPhaseChanged(object? sender, string sessionId)
+    {
+        if (sessionId == _sessionVm.LastEndedSessionId) DispatcherQueue.TryEnqueue(UpdateCard);
     }
 
     private void RecordingVm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -144,8 +154,19 @@ public sealed partial class MinimalShellView : UserControl
         await Windows.System.Launcher.LaunchUriAsync(new Uri(RecordingStartFailure.MicrophoneSettingsUri));
     }
 
-    private void UpdateBacklog() =>
-        BacklogNote.Show(_transcriptionVm.UploadBacklog, _transcriptionVm.IsUploadingNow);
+    /// <summary>
+    /// The session whose first upload the status card is showing, if any. Its
+    /// entry is left out of the backlog note so the two don't say the same thing.
+    /// </summary>
+    private string? _uploadStatusSessionId;
+
+    private void UpdateBacklog()
+    {
+        var backlog = _uploadStatusSessionId is { } shown
+            ? _transcriptionVm.UploadBacklogExcluding(shown)
+            : _transcriptionVm.UploadBacklog;
+        BacklogNote.Show(backlog, _transcriptionVm.IsUploadingNow);
+    }
 
     private async void BacklogNote_UploadNowRequested(object? sender, EventArgs e)
     {
@@ -165,7 +186,9 @@ public sealed partial class MinimalShellView : UserControl
     /// recording's trouble note sits inside that card), then loading, then error,
     /// then "No upcoming appointments for today". Around the slot, not in it: the
     /// start alert and the "Recording on another device" note above, the asking
-    /// panel above the recording card, the upload backlog note below.
+    /// panel above the recording card, the upload backlog note below. After End
+    /// Session, the upload status card sits above the next appointment (and takes
+    /// the place of loading / "No upcoming appointments") until the note exists.
     /// </summary>
     private void UpdateCard()
     {
@@ -175,7 +198,8 @@ public sealed partial class MinimalShellView : UserControl
         var startingId = _sessionVm.StartingAppointmentId;
         var unrecordedId = _sessionVm.UnrecordedAppointmentId;
 
-        var elsewhere = MinimalShellSelection.InProgressElsewhere(appointments, now, activeSessionId, startingId, unrecordedId);
+        var elsewhere = MinimalShellSelection.InProgressElsewhere(
+            appointments, now, activeSessionId, startingId, unrecordedId, _sessionVm.EndedHereSessionIds);
         ElsewhereNote.Visibility = elsewhere is null ? Visibility.Collapsed : Visibility.Visible;
         if (elsewhere is not null)
         {
@@ -193,15 +217,52 @@ public sealed partial class MinimalShellView : UserControl
             unrecordedAppointmentId: unrecordedId);
 
         var slotFree = _consentVm.Prompt == ConsentPromptKind.None;
+        var uploadStatus = UpdateUploadStatus(slotFree, activeSessionId is not null || startingId is not null);
         Card.Visibility = Show(slotFree && card.Kind is ShellCardKind.Appointment or ShellCardKind.UntrackedRecording);
-        LoadingCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.Loading);
+        LoadingCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.Loading && uploadStatus == UploadStatusKind.None);
         ErrorCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.Error);
-        NoUpcomingCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.NoUpcoming);
+        // "No upcoming appointments" under "Drafting your note..." says too much at once.
+        NoUpcomingCard.Visibility = Show(slotFree && card.Kind == ShellCardKind.NoUpcoming && uploadStatus == UploadStatusKind.None);
 
         if (card.Kind == ShellCardKind.Appointment && card.Appointment is { } appointment)
             Card.ShowAppointment(appointment, card.Action, now);
         else if (card.Kind == ShellCardKind.UntrackedRecording)
             Card.ShowUntrackedRecording();
+    }
+
+    /// <summary>
+    /// The status card for the session this PC last ended: "Uploading your
+    /// session..." during its first upload attempt, "Drafting your note..." once
+    /// the server has the audio, gone once the note exists. Re-renders the
+    /// backlog note, which leaves out the session shown here while it uploads.
+    /// </summary>
+    private UploadStatusKind UpdateUploadStatus(bool slotFree, bool recordingOrStarting)
+    {
+        var endedId = _sessionVm.LastEndedSessionId;
+        var kind = endedId is null
+            ? UploadStatusKind.None
+            : MinimalShellSelection.UploadStatus(
+                _transcriptionVm.UploadPhase(endedId),
+                ending: _sessionVm.EndingSessionId == endedId,
+                recordingOrStarting);
+        if (!slotFree) kind = UploadStatusKind.None;
+
+        _uploadStatusSessionId = kind == UploadStatusKind.Uploading ? endedId : null;
+        UploadStatusCard.Visibility = Show(kind != UploadStatusKind.None);
+        if (kind != UploadStatusKind.None)
+        {
+            UploadStatusTitle.Text = MinimalShellSelection.UploadStatusTitle(kind);
+            UploadStatusSubtitle.Text = MinimalShellSelection.UploadStatusSubtitle(kind);
+            UploadStatusRing.IsActive = true;
+            AutomationProperties.SetName(UploadStatusCard, UploadStatusTitle.Text);
+            AutomationProperties.SetLiveSetting(UploadStatusCard, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
+        }
+        else
+        {
+            UploadStatusRing.IsActive = false;
+        }
+        UpdateBacklog();
+        return kind;
     }
 
     private static Visibility Show(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
