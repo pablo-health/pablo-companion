@@ -65,6 +65,7 @@ public sealed partial class MainWindow : Window
 
         _authVm = App.Services.GetRequiredService<AuthViewModel>();
         _authVm.PropertyChanged += AuthVm_PropertyChanged;
+        DeviceLinkNoteControl.RetryRequested += (_, _) => _authVm.RetryDeviceLinkCommand.Execute(null);
 
         _subscriptionVm = App.Services.GetRequiredService<SubscriptionViewModel>();
         SubscriptionBannerControl.Bind(_subscriptionVm);
@@ -216,10 +217,26 @@ public sealed partial class MainWindow : Window
         {
             DispatcherQueue.TryEnqueue(UpdateAuthUI);
         }
+        else if (e.PropertyName is nameof(AuthViewModel.DeviceLinkFailed) or nameof(AuthViewModel.IsRelinkingDevice))
+        {
+            DispatcherQueue.TryEnqueue(UpdateDeviceLinkNote);
+        }
+    }
+
+    /// <summary>
+    /// Shows the device link note while signed in and this PC is not registered.
+    /// The Mac puts it beside the subscription banner in both shells.
+    /// </summary>
+    private void UpdateDeviceLinkNote()
+    {
+        var show = _authVm.AuthState == AuthState.Authenticated && _authVm.DeviceLinkFailed;
+        DeviceLinkNoteControl.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        DeviceLinkNoteControl.SetRetrying(_authVm.IsRelinkingDevice);
     }
 
     private void UpdateAuthUI()
     {
+        UpdateDeviceLinkNote();
         if (_authVm.AuthState == AuthState.Authenticated)
         {
             LoginPage.Visibility = Visibility.Collapsed;
