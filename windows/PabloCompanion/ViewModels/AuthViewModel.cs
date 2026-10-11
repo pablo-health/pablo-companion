@@ -72,6 +72,26 @@ public partial class AuthViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsAdvancedVisible { get; set; }
 
+    /// <summary>
+    /// True when the last sign-in could not register this PC with the server.
+    /// Until it is registered the web dashboard cannot tell the app is installed
+    /// and keeps offering the download, so the main window shows a note with a
+    /// retry. Mirrors <c>deviceLinkFailed</c> on macOS.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool DeviceLinkFailed { get; set; }
+
+    /// <summary>A retry from <see cref="RetryDeviceLinkCommand"/> is in flight.</summary>
+    [ObservableProperty]
+    public partial bool IsRelinkingDevice { get; set; }
+
+    /// <summary>The client used for the code exchange and config discovery. Replaced in tests.</summary>
+    internal HttpClient Http { get; set; } = s_httpClient;
+
+    /// <summary>Opens the sign-in page in the browser. Replaced in tests.</summary>
+    internal Action<string> OpenBrowser { get; set; } = url =>
+        Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+
     public AuthViewModel(
         CredentialManager credentials,
         DeviceKeyService deviceKey,
@@ -229,8 +249,13 @@ public partial class AuthViewModel : ObservableObject
         // Discover backend URL before opening browser
         await DiscoverServerConfigAsync();
 
-        AuthState = AuthState.Authenticating;
-        ErrorMessage = null;
+        // A device-link retry runs this flow while the clinician is already
+        // signed in; the authenticated UI stays up throughout.
+        if (!IsRelinkingDevice)
+        {
+            AuthState = AuthState.Authenticating;
+            ErrorMessage = null;
+        }
 
         try
         {
@@ -257,11 +282,7 @@ public partial class AuthViewModel : ObservableObject
             _oauthState = PkceHelper.GenerateState();
             loginUrl += $"&state={Uri.EscapeDataString(_oauthState)}";
 
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = loginUrl,
-                UseShellExecute = true,
-            });
+            OpenBrowser(loginUrl);
 
             var callbackUri = await listenerTask;
 
@@ -271,8 +292,7 @@ public partial class AuthViewModel : ObservableObject
 
             if (string.IsNullOrEmpty(code) || !Regex.IsMatch(code, @"^[a-zA-Z0-9_\-\.]{10,2000}$"))
             {
-                ErrorMessage = "Invalid authorization code.";
-                AuthState = AuthState.Unauthenticated;
+                FailSignIn("Invalid authorization code.");
                 return;
             }
 
@@ -283,8 +303,7 @@ public partial class AuthViewModel : ObservableObject
             if (expectedState == null || returnedState == null ||
                 !PkceHelper.ConstantTimeEquals(expectedState, returnedState))
             {
-                ErrorMessage = "Sign-in failed. Please try again.";
-                AuthState = AuthState.Unauthenticated;
+                FailSignIn("Sign-in failed. Please try again.");
                 return;
             }
 
@@ -292,14 +311,45 @@ public partial class AuthViewModel : ObservableObject
         }
         catch (TimeoutException)
         {
-            ErrorMessage = "Sign-in timed out. Please try again.";
-            AuthState = AuthState.Unauthenticated;
+            FailSignIn("Sign-in timed out. Please try again.");
         }
         catch (Exception)
         {
-            ErrorMessage = "Sign-in failed. Please try again.";
-            AuthState = AuthState.Unauthenticated;
+            FailSignIn("Sign-in failed. Please try again.");
         }
+    }
+
+    /// <summary>
+    /// Registers this PC again by repeating the browser sign-in (same PKCE flow).
+    /// Enrollment only happens in the code exchange; the server has no separate
+    /// endpoint for it. The clinician stays signed in here whatever happens: a
+    /// failed or abandoned retry leaves the note up rather than signing them out.
+    /// Mirrors <c>retryDeviceLink()</c> on macOS.
+    /// </summary>
+    [RelayCommand]
+    private async Task RetryDeviceLinkAsync()
+    {
+        if (IsRelinkingDevice) return;
+        IsRelinkingDevice = true;
+        try
+        {
+            await SignInAsync();
+        }
+        finally
+        {
+            IsRelinkingDevice = false;
+        }
+    }
+
+    /// <summary>
+    /// Records a failed sign-in step. During a device-link retry the clinician
+    /// is already signed in, so nothing changes.
+    /// </summary>
+    internal void FailSignIn(string? message)
+    {
+        if (IsRelinkingDevice) return;
+        ErrorMessage = message;
+        AuthState = AuthState.Unauthenticated;
     }
 
     [RelayCommand]
@@ -348,6 +398,7 @@ public partial class AuthViewModel : ObservableObject
         _credentials.ClearAuthTokens();
         _credentials.ActiveUserEmail = null;
         UserEmail = null;
+        DeviceLinkFailed = false;
         AuthState = AuthState.Unauthenticated;
 
         // Clear all singleton ViewModels that hold PHI
@@ -370,8 +421,7 @@ public partial class AuthViewModel : ObservableObject
         var authUrl = _credentials.AuthServerUrl;
         if (string.IsNullOrWhiteSpace(authUrl))
         {
-            ErrorMessage = "Auth server URL not configured.";
-            AuthState = AuthState.Unauthenticated;
+            FailSignIn("Auth server URL not configured.");
             return;
         }
 
@@ -392,13 +442,16 @@ public partial class AuthViewModel : ObservableObject
         // Enrollment is optional server-side and the payload, when present, must be
         // schema-complete (the backend requires the JWK + key_storage). Best-effort:
         // if key generation fails we omit enrollment entirely rather than block
-        // sign-in — the companion re-enrolls on a later launch.
+        // sign-in. An omitted payload still counts as a failed enrollment (see
+        // DeviceEnrollment.Outcome), so the clinician hears about it.
+        var sentEnrollment = false;
         try
         {
             bodyObj["enrollment"] = DeviceEnrollment.BuildPayload(
                 _credentials.GetOrCreateInstallId(),
                 _deviceKey.GetOrCreatePublicJwk(),
                 DeviceKeyService.KeyStorage);
+            sentEnrollment = true;
         }
         catch (Exception ex)
         {
@@ -408,11 +461,10 @@ public partial class AuthViewModel : ObservableObject
         var payload = JsonSerializer.Serialize(bodyObj);
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-        var response = await s_httpClient.PostAsync(exchangeUrl, content);
+        var response = await Http.PostAsync(exchangeUrl, content);
         if (!response.IsSuccessStatusCode)
         {
-            ErrorMessage = $"Token exchange failed (HTTP {(int)response.StatusCode}).";
-            AuthState = AuthState.Unauthenticated;
+            FailSignIn($"Token exchange failed (HTTP {(int)response.StatusCode}).");
             return;
         }
 
@@ -428,8 +480,7 @@ public partial class AuthViewModel : ObservableObject
 
         if (idToken == null || refreshToken == null)
         {
-            ErrorMessage = "Invalid token exchange response — missing tokens.";
-            AuthState = AuthState.Unauthenticated;
+            FailSignIn("Invalid token exchange response — missing tokens.");
             return;
         }
 
@@ -447,6 +498,14 @@ public partial class AuthViewModel : ObservableObject
         // Fetch server config to discover backend URL + Firebase API key (if not already set)
         await DiscoverServerConfigAsync();
 
+        switch (DeviceEnrollment.Outcome(sentEnrollment, doc.RootElement))
+        {
+            case EnrollmentOutcome.Enrolled: DeviceLinkFailed = false; break;
+            case EnrollmentOutcome.Failed: DeviceLinkFailed = true; break;
+            case EnrollmentOutcome.Unreported: break;
+        }
+        if (DeviceLinkFailed) App.Log("Device enrollment did not complete");
+
         AuthState = AuthState.Authenticated;
         ErrorMessage = null;
     }
@@ -463,7 +522,7 @@ public partial class AuthViewModel : ObservableObject
         try
         {
             var configUrl = $"{authUrl.TrimEnd('/')}/api/config";
-            var response = await s_httpClient.GetStringAsync(configUrl);
+            var response = await Http.GetStringAsync(configUrl);
             using var doc = JsonDocument.Parse(response);
 
             if (doc.RootElement.TryGetProperty("apiUrl", out var apiUrl))
