@@ -121,7 +121,8 @@ public partial class SessionViewModel : ObservableObject
 
     /// <summary>
     /// Set when a 403 indicates the subscription has lapsed.
-    /// MainWindow observes this to trigger a subscription status refresh.
+    /// <see cref="SubscriptionViewModel.WatchForSubscriptionRefusals"/> observes this
+    /// to refresh the subscription banner.
     /// </summary>
     [ObservableProperty]
     public partial bool SubscriptionBlocked { get; set; }
@@ -411,7 +412,7 @@ public partial class SessionViewModel : ObservableObject
         catch (PabloException ex) when (IsSubscriptionRefusal(ex))
         {
             SubscriptionBlocked = true;
-            ErrorMessage = "Subscription required to start sessions.";
+            ErrorMessage = SubscriptionViewModel.StartBlockedMessage;
             return new AppointmentStartOutcome(AppointmentStartKind.Failed);
         }
         catch (Exception ex) when (ex is PabloException or HttpRequestException or InvalidOperationException)
@@ -443,7 +444,7 @@ public partial class SessionViewModel : ObservableObject
         catch (PabloException ex) when (IsSubscriptionRefusal(ex))
         {
             SubscriptionBlocked = true;
-            ErrorMessage = "Subscription required to start sessions.";
+            ErrorMessage = SubscriptionViewModel.StartBlockedMessage;
             return null;
         }
         catch (PabloException)
@@ -533,7 +534,7 @@ public partial class SessionViewModel : ObservableObject
         catch (PabloException ex) when (IsSubscriptionRefusal(ex))
         {
             SubscriptionBlocked = true;
-            ErrorMessage = "Your subscription needs attention. Please update your billing.";
+            ErrorMessage = SubscriptionViewModel.StartBlockedMessage;
             return null;
         }
         catch (PabloException)
@@ -641,7 +642,7 @@ public partial class SessionViewModel : ObservableObject
         catch (PabloException ex) when (IsSubscriptionRefusal(ex))
         {
             SubscriptionBlocked = true;
-            ErrorMessage = "Your subscription needs attention. Please update your billing.";
+            ErrorMessage = SubscriptionViewModel.StartBlockedMessage;
         }
         catch (PabloException)
         {

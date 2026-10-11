@@ -25,9 +25,12 @@ public partial class SubscriptionViewModel : ObservableObject
     [ObservableProperty]
     public partial string? ExtensionError { get; set; }
 
-    public SubscriptionViewModel(APIClient apiClient)
+    private readonly CredentialManager? _credentials;
+
+    public SubscriptionViewModel(APIClient apiClient, CredentialManager? credentials = null)
     {
         _apiClient = apiClient;
+        _credentials = credentials;
     }
 
     // --- Fetch ---
@@ -85,8 +88,14 @@ public partial class SubscriptionViewModel : ObservableObject
     public bool ShouldShowBanner => Info != null && BannerKind != "hidden";
 
     /// <summary>
-    /// Banner kind: "trial", "past_due", "canceled", "grace_active", or "hidden".
+    /// Banner kind: "trial", "trial_expired", "past_due", "canceled",
+    /// "subscription_needed", "grace_active", or "hidden".
     /// </summary>
+    /// <remarks>
+    /// Only "active" hides the banner. A status this build does not know is not
+    /// active, and the server will refuse new sessions on it, so it shows the
+    /// generic "subscription_needed" banner rather than nothing.
+    /// </remarks>
     public string BannerKind
     {
         get
@@ -104,11 +113,80 @@ public partial class SubscriptionViewModel : ObservableObject
             {
                 "active" => "hidden",
                 "trial" => "trial",
+                "trial_expired" => "trial_expired",
                 "past_due" => "past_due",
                 "canceled" => "canceled",
-                _ => "hidden",
+                _ => "subscription_needed",
             };
         }
+    }
+
+    /// <summary>
+    /// The kinds that mean new sessions are refused until billing is sorted out.
+    /// These carry the Manage subscription button.
+    /// </summary>
+    public bool IsLapsed => BannerKind is "trial_expired" or "past_due" or "canceled" or "subscription_needed";
+
+    /// <summary>Copy for the trial banner.</summary>
+    public string TrialText
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (TrialSessionsRemaining is { } sessions)
+                parts.Add($"{sessions} session{(sessions == 1 ? "" : "s")} remaining");
+            if (TrialDaysRemaining is { } days)
+                parts.Add($"{days} day{(days == 1 ? "" : "s")} left");
+            return parts.Count > 0
+                ? $"Free trial \u2014 {string.Join(", ", parts)}"
+                : "You're on a free trial";
+        }
+    }
+
+    /// <summary>Copy for the lapsed banner; null when the banner is not lapsed.</summary>
+    public string? LapsedHeading => BannerKind switch
+    {
+        "trial_expired" => "Your free trial has ended. Subscribe to keep recording sessions.",
+        "canceled" => "Your subscription has ended. Resubscribe to keep recording sessions.",
+        "past_due" => "Your payment needs attention",
+        "subscription_needed" => "Subscribe to keep recording sessions.",
+        _ => null,
+    };
+
+    /// <summary>
+    /// Shown when the server refuses to start a session on the subscription.
+    /// </summary>
+    public const string StartBlockedMessage = "Subscribe to start sessions.";
+
+    /// <summary>
+    /// The web billing page the Manage subscription button opens, on the server
+    /// this device signed in to.
+    /// </summary>
+    public Uri ManageSubscriptionUrl
+    {
+        get
+        {
+            var server = _credentials?.AuthServerUrl;
+            if (string.IsNullOrWhiteSpace(server)) server = AppConstants.DefaultAuthServerUrl;
+            return new Uri($"{server.TrimEnd('/')}/dashboard/billing");
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the banner whenever <paramref name="sessionVm"/> reports that the
+    /// server refused a session on the subscription, so the clinician sees why
+    /// without restarting. The flag is reset so the next refusal fires again.
+    /// </summary>
+    public void WatchForSubscriptionRefusals(SessionViewModel sessionVm)
+    {
+        sessionVm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SessionViewModel.SubscriptionBlocked) && sessionVm.SubscriptionBlocked)
+            {
+                sessionVm.SubscriptionBlocked = false;
+                _ = RefreshStatusAsync();
+            }
+        };
     }
 
     // 0 = no session cap (unlimited); treat as nil so the banner omits the counter.
@@ -169,6 +247,9 @@ public partial class SubscriptionViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(ShouldShowBanner));
         OnPropertyChanged(nameof(BannerKind));
+        OnPropertyChanged(nameof(IsLapsed));
+        OnPropertyChanged(nameof(TrialText));
+        OnPropertyChanged(nameof(LapsedHeading));
         OnPropertyChanged(nameof(TrialSessionsRemaining));
         OnPropertyChanged(nameof(TrialDaysRemaining));
         OnPropertyChanged(nameof(GraceExpiresAt));

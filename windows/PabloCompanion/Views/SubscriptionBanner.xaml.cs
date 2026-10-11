@@ -35,34 +35,23 @@ public sealed partial class SubscriptionBanner : UserControl
         BannerPanel.Visibility = kind == "hidden" ? Visibility.Collapsed : Visibility.Visible;
 
         TrialBanner.Visibility = kind == "trial" ? Visibility.Visible : Visibility.Collapsed;
-        LapsedBanner.Visibility = kind is "past_due" or "canceled" ? Visibility.Visible : Visibility.Collapsed;
+        LapsedBanner.Visibility = _vm.IsLapsed ? Visibility.Visible : Visibility.Collapsed;
         GraceActiveBanner.Visibility = kind == "grace_active" ? Visibility.Visible : Visibility.Collapsed;
 
         BannerPanel.Background = kind switch
         {
             "trial" => new SolidColorBrush(ColorHelper.FromArgb(30, 212, 146, 46)),       // Honey 12%
-            "past_due" or "canceled" => new SolidColorBrush(ColorHelper.FromArgb(38, 232, 180, 162)), // Blush 15%
             "grace_active" => new SolidColorBrush(ColorHelper.FromArgb(25, 122, 158, 126)),  // Sage 10%
+            _ when _vm.IsLapsed => new SolidColorBrush(ColorHelper.FromArgb(38, 232, 180, 162)), // Blush 15%
             _ => null,
         };
 
         if (kind == "trial")
-        {
-            var parts = new List<string>();
-            if (_vm.TrialSessionsRemaining is { } sessions)
-                parts.Add($"{sessions} session{(sessions == 1 ? "" : "s")} remaining");
-            if (_vm.TrialDaysRemaining is { } days)
-                parts.Add($"{days} day{(days == 1 ? "" : "s")} left");
-            TrialText.Text = parts.Count > 0
-                ? $"Free trial \u2014 {string.Join(", ", parts)}"
-                : "You're on a free trial";
-        }
+            TrialText.Text = _vm.TrialText;
 
-        if (kind is "past_due" or "canceled")
+        if (_vm.IsLapsed)
         {
-            LapsedHeading.Text = kind == "past_due"
-                ? "Your payment needs attention"
-                : "Your subscription has ended";
+            LapsedHeading.Text = _vm.LapsedHeading;
             ExtensionButton.Visibility = _vm.Info?.GraceExtensionAvailable == true
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -90,6 +79,12 @@ public sealed partial class SubscriptionBanner : UserControl
                 ? $"You're covered for the next {hours} hour{(hours == 1 ? "" : "s")} \u2014 take care of your sessions today"
                 : "You're covered \u2014 take care of your sessions today";
         }
+    }
+
+    private async void ManageSubscriptionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm != null)
+            await Windows.System.Launcher.LaunchUriAsync(_vm.ManageSubscriptionUrl);
     }
 
     private async void ExtensionButton_Click(object sender, RoutedEventArgs e)
