@@ -12,8 +12,8 @@ namespace PabloCompanion.Views;
 
 /// <summary>
 /// Live recording controls: capture state, duration, levels, Pause / Resume and
-/// End Session. Hosted by the minimal window's appointment card (and the day
-/// view in the native dashboard). Mirrors the recording panel in
+/// End Session. Hosted by the minimal window's appointment card. Mirrors the
+/// recording panel in
 /// <c>MinimalMainView.swift</c>.
 /// </summary>
 public sealed partial class RecordingBanner : UserControl

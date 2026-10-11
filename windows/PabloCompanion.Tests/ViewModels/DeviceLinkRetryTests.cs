@@ -32,7 +32,6 @@ public sealed class DeviceLinkRetryTests : IDisposable
             deviceKey,
             new TokenRefresher(),
             new APIClient(_credentials, deviceKey),
-            new PracticeApiClient(_credentials),
             _inactivity,
             _listener)
         {

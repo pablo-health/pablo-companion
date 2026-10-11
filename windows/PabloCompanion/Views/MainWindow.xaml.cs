@@ -13,17 +13,6 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
-    /// <summary>
-    /// Gates the full native dashboard (four-tab nav shell). Default <c>false</c>:
-    /// the companion shows only the minimal handoff window. Flip to <c>true</c> to
-    /// restore the legacy in-app dashboard verbatim. No view code is deleted either
-    /// way — the nav shell stays in the tree, just collapsed when this is false.
-    ///
-    /// <c>static readonly</c> (not <c>const</c>) so neither shell branch compiles to
-    /// unreachable code — both are kept live and one flag flip away.
-    /// </summary>
-    private static readonly bool EnableNativeDashboard = false;
-
     private readonly AuthViewModel _authVm;
     private readonly SubscriptionViewModel _subscriptionVm;
     private readonly DeepLinkRouter _deepLinks;
@@ -33,14 +22,6 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
-        ContentFrame.NavigationFailed += (_, e) =>
-        {
-            App.LogException(
-                $"Frame.NavigationFailed → {e.SourcePageType?.FullName}",
-                e.Exception);
-            e.Handled = true; // prevent app crash so we can see the log
-        };
-
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         App.MainWindowHandle = hwnd;
 
@@ -48,12 +29,10 @@ public sealed partial class MainWindow : Window
         var dpi = GetDpiForWindow(hwnd);
         var scale = dpi / 96.0;
         var appWindow = this.AppWindow;
-        // The session-first window is compact (it matches the Mac minimal
-        // window); the native dashboard keeps its original size.
-        var (width, height) = EnableNativeDashboard ? (1000, 750) : (520, 560);
+        // The session-first window is compact (it matches the Mac minimal window).
         appWindow.Resize(new Windows.Graphics.SizeInt32(
-            (int)(width * scale),
-            (int)(height * scale)));
+            (int)(520 * scale),
+            (int)(560 * scale)));
 
         // Ensure window is resizable
         if (appWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter)
@@ -69,8 +48,8 @@ public sealed partial class MainWindow : Window
 
         _subscriptionVm = App.Services.GetRequiredService<SubscriptionViewModel>();
         SubscriptionBannerControl.Bind(_subscriptionVm);
-        // Shown in the session-first window too: a clinician on a trial should
-        // see it wherever they are. (The Mac shows it only in its dashboard shell.)
+        // Shown in the session-first window: a clinician on a trial should see it
+        // there. (The Mac shows it only in its dashboard shell.)
 
         _deepLinks = App.Services.GetRequiredService<DeepLinkRouter>();
         _deepLinks.UriReceived += OnDeepLinkReceived;
@@ -241,59 +220,24 @@ public sealed partial class MainWindow : Window
         {
             LoginPage.Visibility = Visibility.Collapsed;
 
-            // Fetch subscription status and start polling (banner shows in both shells).
+            // Fetch subscription status and start polling for the banner.
             _ = _subscriptionVm.RefreshStatusAsync();
             _subscriptionVm.StartPolling();
 
-            if (EnableNativeDashboard)
-            {
-                MinimalShell.Visibility = Visibility.Collapsed;
-                NavView.Visibility = Visibility.Visible;
+            MinimalShell.Visibility = Visibility.Visible;
+            MinimalShell.Refresh();
 
-                // Pre-load patient cache (matching macOS pattern)
-                var patientVm = App.Services.GetRequiredService<PatientViewModel>();
-                _ = PreloadPatientsAsync(patientVm);
-
-                if (ContentFrame.Content == null)
-                {
-                    ContentFrame.Navigate(typeof(DayPage));
-                    NavView.SelectedItem = NavView.MenuItems[0];
-                }
-            }
-            else
-            {
-                NavView.Visibility = Visibility.Collapsed;
-                MinimalShell.Visibility = Visibility.Visible;
-                MinimalShell.Refresh();
-
-                // Today's appointments now and every 60 s while signed in.
-                App.Services.GetRequiredService<SessionViewModel>().StartAppointmentRefresh();
-            }
+            // Today's appointments now and every 60 s while signed in.
+            App.Services.GetRequiredService<SessionViewModel>().StartAppointmentRefresh();
 
             TryDrainDeepLink();
         }
         else
         {
             LoginPage.Visibility = Visibility.Visible;
-            NavView.Visibility = Visibility.Collapsed;
             MinimalShell.Visibility = Visibility.Collapsed;
             _subscriptionVm.ClearAllData();
             App.Services.GetRequiredService<SessionViewModel>().StopAppointmentRefresh();
-        }
-    }
-
-    private async Task PreloadPatientsAsync(PatientViewModel patientVm)
-    {
-        try
-        {
-            await patientVm.LoadPatientsAsync();
-        }
-        catch (Exception ex)
-        {
-            // Debug-only diagnostic — not a support log. Log only the exception type
-            // to avoid any risk of PHI appearing in log output (e.g. from HTTP response
-            // bodies embedded in inner exception messages).
-            System.Diagnostics.Debug.WriteLine($"Failed to preload patients: {ex.GetType().Name}");
         }
     }
 
@@ -361,12 +305,6 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (EnableNativeDashboard)
-        {
-            ShowConfirmation(redeemed.AppointmentId, redeemed.PatientName);
-            return;
-        }
-
         // The client's answer about AI-assisted notes, read with what the web
         // start already chose. A declined client, or one nobody has asked yet,
         // gets the prompt in the minimal window in place of the confirmation:
@@ -409,23 +347,14 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Invoked from the confirmation window's Start Recording tap — the consent gate.
-    /// Starts the session via the same path the in-app day view uses, so the mic
-    /// arms only here. In native-dashboard mode we also surface the day view so the
-    /// recording banner is visible.
+    /// Starts the session via the same path the appointment card uses, so the mic
+    /// arms only here.
     /// </summary>
     private void StartSessionFromConfirmation(string appointmentId)
     {
-        if (EnableNativeDashboard)
-        {
-            ContentFrame.Navigate(typeof(DayPage), new DayPage.StartFromAppointmentArgs(appointmentId));
-            NavView.SelectedItem = NavView.MenuItems[0];
-            return;
-        }
-
-        // Minimal shell: the handoff lands in the appointment card, which pins
-        // the appointment through "Starting session..." and then shows the live
-        // recording controls (Pause / Resume, End Session). RecordingWindow is no
-        // longer opened from here.
+        // The handoff lands in the appointment card, which pins the appointment
+        // through "Starting session..." and then shows the live recording
+        // controls (Pause / Resume, End Session).
         Activate();
         _ = StartSessionDirectAsync(appointmentId);
     }
@@ -484,28 +413,6 @@ public sealed partial class MainWindow : Window
         finally
         {
             _closeNoticeOpen = false;
-        }
-    }
-
-    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
-    {
-        if (args.SelectedItem is NavigationViewItem item)
-        {
-            var tag = item.Tag?.ToString();
-            var pageType = tag switch
-            {
-                "DayPage" => typeof(DayPage),
-                "SessionHistoryPage" => typeof(SessionHistoryPage),
-                "PatientListPage" => typeof(PatientListPage),
-                "PracticeTopicPage" => typeof(PracticeTopicPage),
-                "SettingsPage" => typeof(SettingsPage),
-                _ => null,
-            };
-
-            if (pageType != null)
-            {
-                ContentFrame.Navigate(pageType);
-            }
         }
     }
 }

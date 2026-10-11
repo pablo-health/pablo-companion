@@ -19,8 +19,7 @@ namespace PabloCompanion.Views;
 /// Mirrors <c>MinimalMainView.swift</c>; the selection rules live in
 /// <see cref="MinimalShellSelection"/>.
 ///
-/// Shown when <c>ENABLE_NATIVE_DASHBOARD</c> is false (the default). The full
-/// four-tab nav shell still exists and is shown verbatim when the flag is true.
+/// The only signed-in surface: the web app is the dashboard.
 /// </summary>
 public sealed partial class MinimalShellView : UserControl
 {

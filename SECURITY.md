@@ -64,7 +64,7 @@ This project handles sensitive audio data and follows these security practices:
 
 - `print()` / `Console.WriteLine` are forbidden in production code; logging uses `os.Logger` (Swift) and structured logging (C#).
 - SwiftLint enforces this via a custom `no_print_statements` rule with severity `error`.
-- All DOM / prompt content sent to the backend LLM is run through `PHISanitizer` (Swift) / `PhiSanitizer` (C#) to strip names, phones, emails, DOBs, SSNs, MRNs, and ICD-10 codes.
+- All DOM / prompt content sent to the backend LLM is run through `PHISanitizer` (Swift; the Windows app has no EHR navigation) to strip names, phones, emails, DOBs, SSNs, MRNs, and ICD-10 codes.
 - CSS selectors driven by the LLM are validated by `SelectorValidator` before being executed in a browser context.
 - 15-minute inactivity timer (+ screen-lock hook) signs the user out when not actively recording.
 

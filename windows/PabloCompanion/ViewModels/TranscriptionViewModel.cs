@@ -500,20 +500,6 @@ public partial class TranscriptionViewModel : ObservableObject
         return dead.Length;
     }
 
-    /// <summary>
-    /// Current transcription state for a specific session, used by UI badges.
-    /// </summary>
-    public TranscriptionState GetSessionTranscriptionState(string sessionId)
-    {
-        var entry = _pendingStore.Get(sessionId);
-        if (entry == null) return TranscriptionState.Complete;
-        // An AwaitingNote entry has already uploaded — the audio is only being
-        // kept until the note lands — so the badge reads Complete, not "pending".
-        return entry.State == UploadLifecycleState.AwaitingNote
-            ? TranscriptionState.Complete
-            : TranscriptionState.PendingUpload;
-    }
-
     /// <summary>Signed-out cleanup. PendingTranscriptions stay intact so
     /// uploads can resume on sign-in; they are already encrypted at rest.
     /// </summary>

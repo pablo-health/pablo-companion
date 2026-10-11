@@ -41,7 +41,6 @@ public partial class AuthViewModel : ObservableObject
     private readonly DeviceKeyService _deviceKey;
     private readonly TokenRefresher _tokenRefresher;
     private readonly APIClient _apiClient;
-    private readonly PracticeApiClient _practiceApiClient;
     private readonly InactivityMonitor _inactivityMonitor;
     private readonly ProtocolActivationListener _protocolListener;
     private System.Threading.Timer? _refreshTimer;
@@ -97,7 +96,6 @@ public partial class AuthViewModel : ObservableObject
         DeviceKeyService deviceKey,
         TokenRefresher tokenRefresher,
         APIClient apiClient,
-        PracticeApiClient practiceApiClient,
         InactivityMonitor inactivityMonitor,
         ProtocolActivationListener protocolListener)
     {
@@ -105,7 +103,6 @@ public partial class AuthViewModel : ObservableObject
         _deviceKey = deviceKey;
         _tokenRefresher = tokenRefresher;
         _apiClient = apiClient;
-        _practiceApiClient = practiceApiClient;
         _inactivityMonitor = inactivityMonitor;
         _protocolListener = protocolListener;
         _inactivityMonitor.OnTimeout += OnInactivityTimeout;
@@ -114,7 +111,6 @@ public partial class AuthViewModel : ObservableObject
         // UI back to the login screen instead of leaving the user on a page
         // that can no longer load data. Mirrors macOS getValidToken → signOut.
         _apiClient.UnauthenticatedDetected += OnApiUnauthenticated;
-        _practiceApiClient.UnauthenticatedDetected += OnApiUnauthenticated;
 
         // Restore saved server URL if non-empty; otherwise stay on the default.
         // Show the "Connect to a different server" panel only when the saved URL
@@ -209,7 +205,6 @@ public partial class AuthViewModel : ObservableObject
         if (!string.IsNullOrEmpty(backendUrl))
         {
             _apiClient.BaseUrl = backendUrl;
-            _practiceApiClient.BaseUrl = backendUrl;
         }
 
         var expiry = JwtDecoder.GetExpiry(token);
@@ -532,7 +527,6 @@ public partial class AuthViewModel : ObservableObject
                 {
                     _credentials.BackendApiUrl = url;
                     _apiClient.BaseUrl = url;
-                    _practiceApiClient.BaseUrl = url;
                 }
             }
             if (doc.RootElement.TryGetProperty("firebaseApiKey", out var fbKey))
