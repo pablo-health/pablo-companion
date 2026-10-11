@@ -11,7 +11,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Subscription banner: shown with the native dashboard only, as on the Mac -->
+        <!-- Subscription banner: visible across all pages when authenticated -->
         <local:SubscriptionBanner x:Name="SubscriptionBannerControl"
                                   Grid.Row="0" />
 

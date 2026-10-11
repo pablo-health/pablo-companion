@@ -21,7 +21,7 @@
                        Style="{StaticResource PabloBodyMedium}" />
         </StackPanel>
 
-        <!-- Lapsed (past_due / canceled) banner -->
+        <!-- Lapsed banner: trial ended, past due, canceled, or any other non-active status -->
         <StackPanel x:Name="LapsedBanner"
                     Visibility="Collapsed"
                     Spacing="8">
@@ -40,6 +40,7 @@
                                Style="{StaticResource PabloBodyMedium}"
                                FontWeight="Medium" />
                     <TextBlock x:Name="LapsedHeading"
+                               TextWrapping="Wrap"
                                Foreground="{StaticResource PabloBrownSoft}"
                                Style="{StaticResource PabloBodyMedium}"
                                FontSize="12" />
@@ -47,12 +48,16 @@
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button x:Name="ManageSubscriptionButton"
+                        Content="Manage subscription"
+                        Style="{StaticResource PabloPrimaryButton}"
+                        Click="ManageSubscriptionButton_Click"
+                        AutomationProperties.Name="Manage subscription in your browser" />
                 <HyperlinkButton Content="Contact Support"
                                  NavigateUri="mailto:support@pablo.health"
                                  AutomationProperties.Name="Email Pablo support at support@pablo.health" />
                 <Button x:Name="ExtensionButton"
                         Content="Get 1 More Day"
-                        Style="{StaticResource PabloPrimaryButton}"
                         Click="ExtensionButton_Click"
                         Visibility="Collapsed"
                         AutomationProperties.Name="Request one-day billing extension" />

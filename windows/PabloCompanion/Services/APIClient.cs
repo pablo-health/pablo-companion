@@ -590,7 +590,7 @@ public class APIClient
 
     // ── Subscription ──────────────────────────────────────────────────────
 
-    public async Task<SubscriptionInfo> FetchSubscriptionStatusAsync()
+    public virtual async Task<SubscriptionInfo> FetchSubscriptionStatusAsync()
     {
         using var request = CreateRequest(HttpMethod.Get, "/api/users/me/status");
         var wrapper = await SendAsync<SubscriptionResponse>(request);

@@ -68,11 +68,8 @@ public sealed partial class MainWindow : Window
 
         _subscriptionVm = App.Services.GetRequiredService<SubscriptionViewModel>();
         SubscriptionBannerControl.Bind(_subscriptionVm);
-        // The Mac shows the subscription banner only in its full dashboard shell;
-        // the session-first window stays free of it.
-        SubscriptionBannerControl.Visibility = EnableNativeDashboard
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        // Shown in the session-first window too: a clinician on a trial should
+        // see it wherever they are. (The Mac shows it only in its dashboard shell.)
 
         _deepLinks = App.Services.GetRequiredService<DeepLinkRouter>();
         _deepLinks.UriReceived += OnDeepLinkReceived;
@@ -97,14 +94,7 @@ public sealed partial class MainWindow : Window
 
         // Refresh subscription status when a 403 is detected
         var sessionVm = App.Services.GetRequiredService<SessionViewModel>();
-        sessionVm.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(SessionViewModel.SubscriptionBlocked) && sessionVm.SubscriptionBlocked)
-            {
-                sessionVm.SubscriptionBlocked = false;
-                _ = _subscriptionVm.RefreshStatusAsync();
-            }
-        };
+        _subscriptionVm.WatchForSubscriptionRefusals(sessionVm);
 
         // Version gate: the launch health check (and any later 426) can replace the
         // whole window with the update-required screen. It never does so while a
