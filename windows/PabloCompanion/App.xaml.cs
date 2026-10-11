@@ -173,6 +173,7 @@ public partial class App : Application
         services.AddSingleton<Services.VideoLaunchService>();
 
         services.AddSingleton<Services.RecordingService>();
+        services.AddSingleton<Services.ISystemSleepGuard, Services.SystemSleepGuard>();
         services.AddSingleton<Services.SessionRecordingStore>();
 
         services.AddSingleton<Services.PendingTranscriptionStore>();
