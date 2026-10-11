@@ -386,6 +386,15 @@ public class PabloException : Exception
     /// </summary>
     public IReadOnlyDictionary<string, string> ErrorDetails { get; }
 
+    /// <summary>
+    /// <see cref="ErrorCode"/> of every HTTP 426: the backend no longer supports
+    /// this app version. Mirrors <c>PabloError.updateRequired</c> on macOS.
+    /// </summary>
+    public const string UpdateRequiredCode = "CLIENT_UPDATE_REQUIRED";
+
+    /// <summary>True when the backend refused this app version (HTTP 426).</summary>
+    public bool IsUpdateRequired => StatusCode == 426 || ErrorCode == UpdateRequiredCode;
+
     public PabloException(ushort statusCode, string message, string? errorCode = null,
         IReadOnlyDictionary<string, string>? errorDetails = null) : base(message)
     {

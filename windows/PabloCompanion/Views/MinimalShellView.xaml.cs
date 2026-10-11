@@ -24,8 +24,6 @@ namespace PabloCompanion.Views;
 /// </summary>
 public sealed partial class MinimalShellView : UserControl
 {
-    private const string ClientVersion = "1.0.0";
-
     private readonly AuthViewModel _authVm;
     private readonly CredentialManager _credentials;
     private readonly RecordingViewModel _recordingVm;
@@ -46,7 +44,7 @@ public sealed partial class MinimalShellView : UserControl
 
         InitializeComponent();
 
-        VersionText.Text = $"Pablo Companion (Windows) v{ClientVersion}";
+        VersionText.Text = AppVersion.Label(App.Services.GetRequiredService<IAppVersionProvider>());
         Card.StartRequested += Card_StartRequested;
         BacklogNote.UploadNowRequested += BacklogNote_UploadNowRequested;
 

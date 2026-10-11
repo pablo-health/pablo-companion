@@ -196,6 +196,37 @@ public partial class App : Application
         services.AddSingleton<ViewModels.RecordingConsentViewModel>();
         services.AddSingleton<ViewModels.SubscriptionViewModel>();
         services.AddSingleton<ViewModels.PracticeViewModel>();
+
+        services.AddSingleton<Services.IAppVersionProvider, Services.PackageAppVersionProvider>();
+        services.AddSingleton(sp =>
+        {
+            var gate = new ViewModels.UpdateGateViewModel(
+                sp.GetRequiredService<Services.IAppVersionProvider>(),
+                () => IsRecordingActive(sp));
+            gate.Attach(sp.GetRequiredService<Services.APIClient>());
+            return gate;
+        });
+        services.AddSingleton(sp => new Services.StoreUpdateService(
+            new Services.StoreUpdateClient(() => MainWindowHandle),
+            () => IsRecordingActive(sp)
+                || sp.GetRequiredService<ViewModels.TranscriptionViewModel>().HasUploadsInFlight));
+    }
+
+    /// <summary>The main window's handle, owner of any Store dialog. Set by the window as it is built.</summary>
+    internal static IntPtr MainWindowHandle { get; set; }
+
+    /// <summary>
+    /// A session is being started or is recording. Neither the update-required
+    /// screen nor a Store update may interrupt it; the same test that keeps the
+    /// window from closing mid-session.
+    /// </summary>
+    internal static bool IsRecordingActive(IServiceProvider sp)
+    {
+        var recordingVm = sp.GetRequiredService<ViewModels.RecordingViewModel>();
+        var sessionVm = sp.GetRequiredService<ViewModels.SessionViewModel>();
+        return recordingVm.State != Models.RecordingUIState.Idle
+            || recordingVm.ActiveSessionId is not null
+            || sessionVm.StartingAppointmentId is not null;
     }
 
     private static async Task ResumePendingUploadsAsync()

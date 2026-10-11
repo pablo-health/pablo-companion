@@ -36,7 +36,7 @@ public sealed partial class SettingsPage : Page
         UpdatePendingUploadsPanel();
         _transcriptionVm.PropertyChanged += TranscriptionVm_PropertyChanged;
 
-        VersionText.Text = "Pablo Companion (Windows) v1.0.0";
+        VersionText.Text = AppVersion.Label(App.Services.GetRequiredService<IAppVersionProvider>());
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)

@@ -1,8 +1,12 @@
 name: Release macOS
 
+# Tags: `vX.Y.Z` builds and publishes both platforms (this workflow and
+# release-windows.yml). `mac-vX.Y.Z` builds macOS only, for a fix that touches
+# only this client, so Windows users do not get a no-op update. Version numbers
+# may then differ per platform. The GitHub Release is keyed by the tag as-is.
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'mac-v*']
   # Build + sign + verify without publishing, so the signing path can be
   # exercised without burning a version tag. Publishing steps are gated on
   # `github.event_name == 'push'`, so a dispatch run never releases.
@@ -25,7 +29,7 @@ jobs:
       - name: Set version from tag
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            VERSION=${GITHUB_REF_NAME#v}
+            VERSION=$(echo "$GITHUB_REF_NAME" | sed -E 's/^(mac-)?v//')
           else
             # Dispatch runs never publish, so the version only has to be valid.
             VERSION=0.0.${{ github.run_number }}
@@ -303,7 +307,7 @@ jobs:
           cp $RUNNER_TEMP/$DMG_NAME $RUNNER_TEMP/releases/
           echo "$SPARKLE_KEY" | $SPARKLE_TOOLS/generate_appcast \
             --ed-key-file /dev/stdin \
-            --download-url-prefix "https://github.com/pablo-health/pablo-companion/releases/download/v${VERSION}/" \
+            --download-url-prefix "https://github.com/pablo-health/pablo-companion/releases/download/${GITHUB_REF_NAME}/" \
             $RUNNER_TEMP/releases
 
       - name: Create GitHub Release

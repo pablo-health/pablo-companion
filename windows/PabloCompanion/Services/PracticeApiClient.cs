@@ -34,9 +34,12 @@ public sealed class PracticeApiClient
     /// </summary>
     public event Action<string?>? UnauthenticatedDetected;
 
-    public PracticeApiClient(CredentialManager credentials)
+    private readonly string _clientVersion;
+
+    public PracticeApiClient(CredentialManager credentials, IAppVersionProvider? versionProvider = null)
     {
         _credentials = credentials;
+        _clientVersion = (versionProvider ?? new PackageAppVersionProvider()).Version;
         // Seed from the previously discovered backend URL so practice-mode requests
         // route to the same env as APIClient on app launch / restored session.
         BaseUrl = credentials.BackendApiUrl ?? DefaultBaseUrl;
@@ -53,7 +56,7 @@ public sealed class PracticeApiClient
         var request = new HttpRequestMessage(method, $"{BaseUrl}{path}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GetToken());
         request.Headers.Add("X-Client-Type", "pablo-companion-windows/1.0");
-        request.Headers.Add("X-Client-Version", "1.0.0");
+        request.Headers.Add("X-Client-Version", _clientVersion);
         request.Headers.Add("X-Client-Platform", "windows");
         return request;
     }
