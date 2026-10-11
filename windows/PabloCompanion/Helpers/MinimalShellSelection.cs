@@ -1,5 +1,6 @@
 using System.Globalization;
 using PabloCompanion.Models;
+using PabloCompanion.Services;
 
 namespace PabloCompanion.Helpers;
 
@@ -23,6 +24,18 @@ public enum ShellCardKind
     Loading,
     Error,
     NoUpcoming,
+}
+
+/// <summary>
+/// What the main window says about the session this PC just ended, while its
+/// audio uploads and its note is written. Never shown over a live recording or
+/// a start in flight.
+/// </summary>
+public enum UploadStatusKind
+{
+    None,
+    Uploading,
+    DraftingNote,
 }
 
 public sealed record ShellCard(
@@ -122,18 +135,24 @@ public static class MinimalShellSelection
     /// can't stand between the therapist and the next Start Session. Only while
     /// the slot is still current, so a session someone forgot to end doesn't
     /// linger all day. Without <c>session_status</c>, nothing is reported.
+    ///
+    /// A session this PC ended (<paramref name="endedHereSessionIds"/>) is never
+    /// "elsewhere": the server keeps it in progress until its upload finalizes,
+    /// which for a long session outlasts the next refresh.
     /// </summary>
     public static Appointment? InProgressElsewhere(
         IReadOnlyList<Appointment> appointments,
         DateTimeOffset now,
         string? activeSessionId = null,
         string? startingAppointmentId = null,
-        string? unrecordedAppointmentId = null)
+        string? unrecordedAppointmentId = null,
+        IReadOnlyCollection<string>? endedHereSessionIds = null)
     {
         return appointments.FirstOrDefault(appointment =>
             appointment.ParsedSessionStatus() == SessionStatus.InProgress
             && appointment.SessionId is { } sessionId
             && sessionId != activeSessionId
+            && endedHereSessionIds?.Contains(sessionId) != true
             && appointment.Id != startingAppointmentId
             && appointment.Id != unrecordedAppointmentId
             && ParseDate(appointment.EndAt) is { } end
@@ -167,12 +186,64 @@ public static class MinimalShellSelection
         return new ShellCard(ShellCardKind.NoUpcoming);
     }
 
-    public static string TimingLabel(Appointment appointment, DateTimeOffset now)
+    /// <summary>
+    /// The card's timing label. The appointment being recorded here, or being
+    /// started, is "IN SESSION" whatever the clock says (paused included): a
+    /// session started before its slot otherwise read "NEXT UP" above its own
+    /// live recording. Everything else is labelled from the clock.
+    /// </summary>
+    public static string TimingLabel(
+        Appointment appointment,
+        DateTimeOffset now,
+        string? activeSessionId,
+        string? startingAppointmentId = null)
+        => TimingLabel(appointment, now, Action(appointment, activeSessionId, startingAppointmentId));
+
+    /// <summary>The timing label for the action the card already picked (see <see cref="Action"/>).</summary>
+    public static string TimingLabel(
+        Appointment appointment,
+        DateTimeOffset now,
+        AppointmentAction action = AppointmentAction.Start)
     {
+        if (action is AppointmentAction.StopRecording or AppointmentAction.Starting) return "IN SESSION";
         if (ParseDate(appointment.StartAt) is not { } start) return "UPCOMING";
         if (ParseDate(appointment.EndAt) is { } end && end < now) return "RUNNING OVER";
         return start <= now ? "IN PROGRESS" : "NEXT UP";
     }
+
+    /// <summary>
+    /// What to say about the session this PC last ended. Only its first upload
+    /// attempt reads as uploading: once an attempt failed, the upload backlog note
+    /// owns it (with its retry), so the two never say the same thing. In the
+    /// moment between End Session and the upload being queued
+    /// (<paramref name="ending"/>), it is uploading too. Nothing while a recording
+    /// is live or a start is in flight: the card belongs to that session.
+    /// </summary>
+    public static UploadStatusKind UploadStatus(SessionUploadPhase phase, bool ending, bool recordingOrStarting)
+    {
+        if (recordingOrStarting) return UploadStatusKind.None;
+        return phase switch
+        {
+            SessionUploadPhase.Uploading => UploadStatusKind.Uploading,
+            SessionUploadPhase.AwaitingNote => UploadStatusKind.DraftingNote,
+            SessionUploadPhase.None when ending => UploadStatusKind.Uploading,
+            _ => UploadStatusKind.None,
+        };
+    }
+
+    public static string? UploadStatusTitle(UploadStatusKind kind) => kind switch
+    {
+        UploadStatusKind.Uploading => "Uploading your session...",
+        UploadStatusKind.DraftingNote => "Drafting your note...",
+        _ => null,
+    };
+
+    public static string? UploadStatusSubtitle(UploadStatusKind kind) => kind switch
+    {
+        UploadStatusKind.Uploading => "You can close Pablo once the upload finishes.",
+        UploadStatusKind.DraftingNote => "Your note will be ready in the web dashboard.",
+        _ => null,
+    };
 
     /// <summary>Read from the capture's real state, so the card never says "Recording" once capture stopped.</summary>
     public static string CaptureStateLabel(RecordingUIState state) => state switch

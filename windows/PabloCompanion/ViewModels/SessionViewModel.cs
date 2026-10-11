@@ -67,6 +67,47 @@ public partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     public partial string? StartErrorMessage { get; set; }
 
+    // --- Sessions this PC ended ---
+
+    /// <summary>How long an ended session is remembered when the server never reports it done.</summary>
+    public static readonly TimeSpan EndedSessionMemory = TimeSpan.FromMinutes(30);
+
+    // Session id -> when End Session ran here. The server keeps a session
+    // in_progress until its upload finalizes, which for a long session is well
+    // past the next appointment refresh; without this the card read our own
+    // session as "Recording on another device".
+    private readonly Dictionary<string, DateTimeOffset> _endedHere = new(StringComparer.Ordinal);
+
+    /// <summary>The clock for <see cref="EndedSessionMemory"/>; replaced in tests.</summary>
+    internal Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Sessions ended on this PC that the server may still report in progress.
+    /// <c>MinimalShellSelection.InProgressElsewhere</c> skips them. An id is
+    /// dropped once a refresh no longer reports it in progress, or after
+    /// <see cref="EndedSessionMemory"/>.
+    /// </summary>
+    public IReadOnlyCollection<string> EndedHereSessionIds => _endedHere.Keys.ToArray();
+
+    /// <summary>
+    /// The session most recently ended on this PC, whose upload the card follows
+    /// ("Uploading your session...", then "Drafting your note..."). Kept after its
+    /// id leaves <see cref="EndedHereSessionIds"/>: the server stops reporting it in
+    /// progress before the note exists.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? LastEndedSessionId { get; set; }
+
+    /// <summary>
+    /// Set while End Session runs, from the click until its upload attempt
+    /// returns. Covers the moment before the upload is queued, so the card says
+    /// it is uploading from the click on.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? EndingSessionId { get; set; }
+
+    private SessionUploadPhase _lastEndedPhase = SessionUploadPhase.None;
+
     // --- Today's sessions ---
 
     [ObservableProperty]
@@ -122,6 +163,51 @@ public partial class SessionViewModel : ObservableObject
         _recordingVm = recordingVm;
         _transcriptionVm = transcriptionVm;
         _recorder = recorder ?? new RecordingViewModelRecorder(recordingVm);
+        _transcriptionVm.UploadPhaseChanged += TranscriptionVm_UploadPhaseChanged;
+    }
+
+    /// <summary>
+    /// The card follows the last ended session's upload. When its phase moves
+    /// (uploading, drafting the note, done), refresh the appointments once
+    /// rather than waiting up to a minute, so the card and the server's view of
+    /// the session catch up together.
+    /// </summary>
+    private void TranscriptionVm_UploadPhaseChanged(object? sender, string sessionId)
+    {
+        if (sessionId != LastEndedSessionId) return;
+        var phase = _transcriptionVm.UploadPhase(sessionId);
+        if (phase == _lastEndedPhase) return;
+        _lastEndedPhase = phase;
+        if (!IsLoadingAppointments) _ = LoadTodayAppointmentsAsync();
+    }
+
+    private void RememberEndedHere(string sessionId)
+    {
+        _endedHere[sessionId] = Clock();
+        _lastEndedPhase = _transcriptionVm.UploadPhase(sessionId);
+        LastEndedSessionId = sessionId;
+        OnPropertyChanged(nameof(EndedHereSessionIds));
+    }
+
+    /// <summary>
+    /// Forgets ended sessions the server no longer reports in progress (or that
+    /// left today's list), and any older than <see cref="EndedSessionMemory"/>.
+    /// </summary>
+    private void PruneEndedHere(IReadOnlyList<Appointment> appointments)
+    {
+        if (_endedHere.Count == 0) return;
+        var now = Clock();
+        var stillInProgress = appointments
+            .Where(a => a.SessionId is not null && a.ParsedSessionStatus() == SessionStatus.InProgress)
+            .Select(a => a.SessionId!)
+            .ToHashSet(StringComparer.Ordinal);
+        var drop = _endedHere
+            .Where(e => !stillInProgress.Contains(e.Key) || now - e.Value > EndedSessionMemory)
+            .Select(e => e.Key)
+            .ToArray();
+        if (drop.Length == 0) return;
+        foreach (var id in drop) _endedHere.Remove(id);
+        OnPropertyChanged(nameof(EndedHereSessionIds));
     }
 
     /// <summary>The recorder session starts arm; shared with the consent flow.</summary>
@@ -147,6 +233,11 @@ public partial class SessionViewModel : ObservableObject
         StartingAppointmentId = null;
         UnrecordedAppointmentId = null;
         StartErrorMessage = null;
+        _endedHere.Clear();
+        OnPropertyChanged(nameof(EndedHereSessionIds));
+        LastEndedSessionId = null;
+        EndingSessionId = null;
+        _lastEndedPhase = SessionUploadPhase.None;
         TodaySessions = [];
         Sessions = [];
         ActiveSession = null;
@@ -168,7 +259,10 @@ public partial class SessionViewModel : ObservableObject
 
         try
         {
-            TodayAppointments = await _apiClient.FetchTodayAppointmentsAsync();
+            var appointments = await _apiClient.FetchTodayAppointmentsAsync();
+            // Before the list is published, so no render pairs it with a stale set.
+            PruneEndedHere(appointments);
+            TodayAppointments = appointments;
             AppointmentsErrorMessage = null;
         }
         catch (PabloException)
@@ -469,6 +563,24 @@ public partial class SessionViewModel : ObservableObject
     [RelayCommand]
     public async Task EndSessionAsync(string sessionId)
     {
+        // This PC ended it, so it is never "recording on another device", even
+        // while the server still reports it in progress until the upload lands.
+        RememberEndedHere(sessionId);
+        EndingSessionId = sessionId;
+        try
+        {
+            await EndSessionCoreAsync(sessionId);
+        }
+        finally
+        {
+            if (EndingSessionId == sessionId) EndingSessionId = null;
+        }
+        ActiveSession = null;
+        await LoadTodaySessionsAsync();
+    }
+
+    private async Task EndSessionCoreAsync(string sessionId)
+    {
         // Stop recording first.
         try
         {
@@ -505,9 +617,6 @@ public partial class SessionViewModel : ObservableObject
         }
 
         await _transcriptionVm.UploadAudioAsync(sessionId);
-
-        ActiveSession = null;
-        await LoadTodaySessionsAsync();
     }
 
     [RelayCommand]

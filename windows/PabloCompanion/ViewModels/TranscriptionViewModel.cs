@@ -121,6 +121,42 @@ public partial class TranscriptionViewModel : ObservableObject
     }
 
     /// <summary>
+    /// The backlog without one session, for the main window while that session's
+    /// first upload is shown on its own card: the backlog note would otherwise
+    /// say the same thing twice.
+    /// </summary>
+    public UploadBacklog UploadBacklogExcluding(string sessionId) =>
+        UploadBacklog.From(_pendingStore.GetAll().Where(e => e.SessionId != sessionId));
+
+    /// <summary>
+    /// Raised with the session id whenever that session's
+    /// <see cref="UploadPhase"/> may have changed: an upload claimed or let go,
+    /// accepted, failed, re-queued, or its note confirmed. May fire on any thread.
+    /// </summary>
+    public event EventHandler<string>? UploadPhaseChanged;
+
+    /// <summary>
+    /// Where one session's upload stands, for the main window. Only the first
+    /// attempt in flight reads as <see cref="SessionUploadPhase.Uploading"/>;
+    /// once an attempt failed (or could not start) it is
+    /// <see cref="SessionUploadPhase.WaitingToRetry"/>, which the backlog note
+    /// owns. A claim lands before the entry is written, so in flight with no
+    /// entry yet is the first attempt too.
+    /// </summary>
+    public SessionUploadPhase UploadPhase(string sessionId)
+    {
+        var inFlight = _inFlight.ContainsKey(sessionId);
+        var entry = _pendingStore.Get(sessionId);
+        if (entry is null) return inFlight ? SessionUploadPhase.Uploading : SessionUploadPhase.None;
+        if (entry.State == UploadLifecycleState.AwaitingNote) return SessionUploadPhase.AwaitingNote;
+        return inFlight && entry.RetryCount == 0
+            ? SessionUploadPhase.Uploading
+            : SessionUploadPhase.WaitingToRetry;
+    }
+
+    private void RaiseUploadPhaseChanged(string sessionId) => UploadPhaseChanged?.Invoke(this, sessionId);
+
+    /// <summary>
     /// The main window's Upload Now: send every waiting upload now, ignoring the
     /// backoff. One drain at a time.
     /// </summary>
@@ -326,6 +362,7 @@ public partial class TranscriptionViewModel : ObservableObject
                         App.LogException("TranscriptionViewModel.DeleteAfterNote", ex);
                     }
                     confirmed++;
+                    RaiseUploadPhaseChanged(entry.SessionId);
                     break;
 
                 case SessionNoteOutcome.Failed:
@@ -335,6 +372,7 @@ public partial class TranscriptionViewModel : ObservableObject
                     _pendingStore.SetState(entry.SessionId, UploadLifecycleState.PendingUpload);
                     _pendingStore.ResetRetry(entry.SessionId);
                     App.Log($"  session={entry.SessionId} failed transcription; re-queued for upload");
+                    RaiseUploadPhaseChanged(entry.SessionId);
                     break;
 
                 case SessionNoteOutcome.StillWorking:
@@ -435,7 +473,11 @@ public partial class TranscriptionViewModel : ObservableObject
             App.Log($"  skip session={sessionId} (declined; audio discarded)");
             return false;
         }
-        if (_inFlight.TryAdd(sessionId, 0)) return true;
+        if (_inFlight.TryAdd(sessionId, 0))
+        {
+            RaiseUploadPhaseChanged(sessionId);
+            return true;
+        }
         App.Log($"  skip session={sessionId} (upload already in flight)");
         return false;
     }
@@ -450,6 +492,8 @@ public partial class TranscriptionViewModel : ObservableObject
             _cleaner.DiscardDeclined(sessionId, _recordingStore, _pendingStore);
             PendingUploadCount = _pendingStore.GetAll().Length;
         }
+        // The attempt has landed (accepted, failed or skipped): its entry now says how.
+        RaiseUploadPhaseChanged(sessionId);
     }
 
     /// <summary>
@@ -473,6 +517,7 @@ public partial class TranscriptionViewModel : ObservableObject
 
         var gone = _cleaner.DiscardDeclined(sessionId, _recordingStore, _pendingStore);
         PendingUploadCount = _pendingStore.GetAll().Length;
+        RaiseUploadPhaseChanged(sessionId);
         return gone;
     }
 

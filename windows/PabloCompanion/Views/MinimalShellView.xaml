@@ -124,6 +124,40 @@
                     <local:AskOnRecordingPanel x:Name="AskPanel"
                                                Visibility="Collapsed" />
 
+                    <!-- The session this PC just ended: its first upload, then its
+                         note being written. Sits above the next appointment rather
+                         than replacing it, so Start Session for the next client is
+                         always reachable. A failed upload is the backlog note's. -->
+                    <Border x:Name="UploadStatusCard"
+                            Background="#1F7A9E7E"
+                            CornerRadius="12"
+                            Padding="16"
+                            Visibility="Collapsed">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ProgressRing x:Name="UploadStatusRing"
+                                          Grid.Column="0"
+                                          Width="18"
+                                          Height="18"
+                                          IsActive="False"
+                                          VerticalAlignment="Center"
+                                          AutomationProperties.AccessibilityView="Raw" />
+                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                <TextBlock x:Name="UploadStatusTitle"
+                                           FontFamily="{StaticResource PabloDisplayFont}"
+                                           FontSize="16"
+                                           Foreground="{StaticResource PabloBrownDeep}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock x:Name="UploadStatusSubtitle"
+                                           Style="{StaticResource PabloBodySmall}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
                     <!-- Next appointment / live recording -->
                     <local:AppointmentCard x:Name="Card"
                                            Visibility="Collapsed" />
