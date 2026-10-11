@@ -446,31 +446,10 @@ public class APIClient
         return result.Data;
     }
 
-    public async Task<Session> CreateSessionAsync(CreateSessionRequest sessionRequest)
-    {
-        using var request = CreateRequest(HttpMethod.Post, "/api/sessions/schedule");
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(sessionRequest, JsonOptions),
-            Encoding.UTF8,
-            "application/json");
-        return await SendAsync<Session>(request);
-    }
-
     public virtual async Task<Session> FetchSessionAsync(string sessionId)
     {
         using var request = CreateRequest(HttpMethod.Get, $"/api/sessions/{Uri.EscapeDataString(sessionId)}");
         return await SendAsync<Session>(request);
-    }
-
-    public async Task<SessionListResponse> FetchSessionsAsync(uint page, uint pageSize, string? status = null)
-    {
-        var path = $"/api/sessions?page={page}&page_size={pageSize}";
-        if (!string.IsNullOrEmpty(status))
-        {
-            path += $"&status={Uri.EscapeDataString(status)}";
-        }
-        using var request = CreateRequest(HttpMethod.Get, path);
-        return await SendAsync<SessionListResponse>(request);
     }
 
     public virtual async Task<Session> UpdateSessionStatusAsync(string sessionId, SessionStatus status)
@@ -500,29 +479,6 @@ public class APIClient
         var body = JsonSerializer.Serialize(new { quality_rating = qualityRating });
         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
         return await SendAsync<Session>(request);
-    }
-
-    // ── Patients ────────────────────────────────────────────────────────────
-
-    public async Task<PatientListResponse> FetchPatientsAsync(string? search = null, uint page = 1, uint pageSize = 50)
-    {
-        var path = $"/api/patients?page={page}&page_size={pageSize}";
-        if (!string.IsNullOrEmpty(search))
-        {
-            path += $"&search={Uri.EscapeDataString(search)}";
-        }
-        using var request = CreateRequest(HttpMethod.Get, path);
-        return await SendAsync<PatientListResponse>(request);
-    }
-
-    public async Task<Patient> CreatePatientAsync(CreatePatientRequest patientRequest)
-    {
-        using var request = CreateRequest(HttpMethod.Post, "/api/patients");
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(patientRequest, JsonOptions),
-            Encoding.UTF8,
-            "application/json");
-        return await SendAsync<Patient>(request);
     }
 
     // ── Launch handoff ────────────────────────────────────────────────────────

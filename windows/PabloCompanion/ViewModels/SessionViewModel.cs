@@ -10,8 +10,8 @@ using PabloCompanion.Models;
 namespace PabloCompanion.ViewModels;
 
 /// <summary>
-/// Manages session lifecycle, today's sessions, and session history.
-/// Singleton — shared between DayPage and SessionHistoryPage.
+/// Manages session lifecycle and today's appointments.
+/// Singleton - drives the session-first shell.
 /// Mirrors SessionViewModel.swift on macOS.
 /// </summary>
 public partial class SessionViewModel : ObservableObject
@@ -20,7 +20,6 @@ public partial class SessionViewModel : ObservableObject
     private readonly VideoLaunchService _videoLaunch;
     private readonly RecordingViewModel _recordingVm;
     private readonly TranscriptionViewModel _transcriptionVm;
-    private DispatcherTimer? _pollingTimer;
     private DispatcherTimer? _appointmentRefreshTimer;
 
     /// <summary>How often the minimal window re-reads today's appointments while signed in.</summary>
@@ -130,29 +129,6 @@ public partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     public partial Session? ActiveSession { get; set; }
 
-    // --- Session history ---
-
-    [ObservableProperty]
-    public partial Session[] Sessions { get; set; } = [];
-
-    [ObservableProperty]
-    public partial uint TotalSessions { get; set; }
-
-    [ObservableProperty]
-    public partial bool HasMoreSessions { get; set; }
-
-    [ObservableProperty]
-    public partial bool IsLoadingHistory { get; set; }
-
-    [ObservableProperty]
-    public partial string? HistoryErrorMessage { get; set; }
-
-    [ObservableProperty]
-    public partial string? StatusFilter { get; set; }
-
-    private uint _historyPage = 1;
-    private const uint HistoryPageSize = 20;
-
     private readonly ISessionRecorder _recorder;
 
     public SessionViewModel(APIClient apiClient, VideoLaunchService videoLaunch,
@@ -227,7 +203,6 @@ public partial class SessionViewModel : ObservableObject
     /// </summary>
     public void ClearAllData()
     {
-        StopPolling();
         StopAppointmentRefresh();
         TodayAppointments = [];
         AppointmentsErrorMessage = null;
@@ -240,13 +215,8 @@ public partial class SessionViewModel : ObservableObject
         EndingSessionId = null;
         _lastEndedPhase = SessionUploadPhase.None;
         TodaySessions = [];
-        Sessions = [];
         ActiveSession = null;
-        TotalSessions = 0;
-        HasMoreSessions = false;
-        StatusFilter = null;
         ErrorMessage = null;
-        HistoryErrorMessage = null;
     }
 
     // --- Today (appointments) ---
@@ -432,33 +402,6 @@ public partial class SessionViewModel : ObservableObject
         await LoadTodayAppointmentsAsync();
     }
 
-    [RelayCommand]
-    public async Task<Session?> StartSessionFromAppointmentAsync(string appointmentId)
-    {
-        try
-        {
-            var session = await _apiClient.StartSessionFromAppointmentAsync(appointmentId);
-            await LoadTodayAppointmentsAsync();
-            return session;
-        }
-        catch (PabloException ex) when (IsSubscriptionRefusal(ex))
-        {
-            SubscriptionBlocked = true;
-            ErrorMessage = SubscriptionViewModel.StartBlockedMessage;
-            return null;
-        }
-        catch (PabloException)
-        {
-            ErrorMessage = "Failed to start session from appointment.";
-            return null;
-        }
-        catch (HttpRequestException)
-        {
-            ErrorMessage = "Failed to start session from appointment.";
-            return null;
-        }
-    }
-
     // --- Today (sessions, legacy) ---
 
     [RelayCommand]
@@ -491,16 +434,6 @@ public partial class SessionViewModel : ObservableObject
         {
             IsLoading = false;
         }
-    }
-
-    [RelayCommand]
-    public async Task StartSessionAsync(string sessionId)
-    {
-        if (await MarkInProgressAndLaunchAsync(sessionId) is null) return;
-
-        await StartCaptureOrReleaseAsync(sessionId);
-
-        await LoadTodaySessionsAsync();
     }
 
     /// <summary>
@@ -618,116 +551,6 @@ public partial class SessionViewModel : ObservableObject
         }
 
         await _transcriptionVm.UploadAudioAsync(sessionId);
-    }
-
-    [RelayCommand]
-    public async Task CreateAdHocSessionAsync(string patientId)
-    {
-        try
-        {
-            var request = new CreateSessionRequest(
-                PatientId: patientId,
-                ScheduledAt: DateTimeOffset.UtcNow.ToString("o"),
-                DurationMinutes: 50,
-                VideoLink: null,
-                VideoPlatform: null,
-                SessionType: SessionType.Individual,
-                Source: SessionSource.Companion,
-                Notes: null
-            );
-
-            var session = await _apiClient.CreateSessionAsync(request);
-            await StartSessionAsync(session.Id);
-        }
-        catch (PabloException ex) when (IsSubscriptionRefusal(ex))
-        {
-            SubscriptionBlocked = true;
-            ErrorMessage = SubscriptionViewModel.StartBlockedMessage;
-        }
-        catch (PabloException)
-        {
-            ErrorMessage = "Failed to create session.";
-        }
-    }
-
-    // --- Session History ---
-
-    [RelayCommand]
-    public async Task LoadSessionsAsync()
-    {
-        _historyPage = 1;
-        IsLoadingHistory = true;
-        HistoryErrorMessage = null;
-
-        try
-        {
-            var response = await _apiClient.FetchSessionsAsync(_historyPage, HistoryPageSize, StatusFilter);
-            Sessions = response.Data;
-            TotalSessions = response.Total;
-            HasMoreSessions = response.HasMore;
-        }
-        catch (PabloException)
-        {
-            HistoryErrorMessage = "Failed to load session history.";
-        }
-        catch (Exception)
-        {
-            HistoryErrorMessage = "Failed to load sessions. Check your connection.";
-        }
-        finally
-        {
-            IsLoadingHistory = false;
-        }
-    }
-
-    [RelayCommand]
-    public async Task LoadMoreSessionsAsync()
-    {
-        if (!HasMoreSessions || IsLoadingHistory) return;
-
-        _historyPage++;
-        IsLoadingHistory = true;
-
-        try
-        {
-            var response = await _apiClient.FetchSessionsAsync(_historyPage, HistoryPageSize, StatusFilter);
-            Sessions = [.. Sessions, .. response.Data];
-            TotalSessions = response.Total;
-            HasMoreSessions = response.HasMore;
-        }
-        catch (PabloException)
-        {
-            HistoryErrorMessage = "Failed to load more sessions.";
-        }
-        finally
-        {
-            IsLoadingHistory = false;
-        }
-    }
-
-    partial void OnStatusFilterChanged(string? value)
-    {
-        _ = LoadSessionsAsync();
-    }
-
-    // --- Polling ---
-
-    public void StartPolling()
-    {
-        StopPolling();
-        _pollingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _pollingTimer.Tick += async (_, _) =>
-        {
-            if (IsLoading) return;
-            await LoadTodaySessionsAsync();
-        };
-        _pollingTimer.Start();
-    }
-
-    public void StopPolling()
-    {
-        _pollingTimer?.Stop();
-        _pollingTimer = null;
     }
 
     /// <summary>

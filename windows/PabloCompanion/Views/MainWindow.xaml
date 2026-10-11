@@ -12,12 +12,12 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Subscription banner: visible across all pages when authenticated -->
+        <!-- Subscription banner: shown above the session-first shell when authenticated -->
         <local:SubscriptionBanner x:Name="SubscriptionBannerControl"
                                   Grid.Row="0" />
 
         <!-- Device link note: sign-in could not register this PC, so the web
-             dashboard can't start sessions here. Shown over either shell. -->
+             dashboard can't start sessions here. -->
         <local:DeviceLinkNote x:Name="DeviceLinkNoteControl"
                               Grid.Row="1"
                               Margin="16,12,16,0"
@@ -28,61 +28,10 @@
                          Grid.RowSpan="3"
                          Visibility="Collapsed" />
 
-        <!-- Minimal handoff shell — default authenticated surface. The web app is
-             the dashboard; the companion is a thin handoff target. Shown when
-             ENABLE_NATIVE_DASHBOARD is false (default). -->
+        <!-- Session-first shell: the only authenticated surface. The web app is
+             the dashboard; the companion is a thin handoff target. -->
         <local:MinimalShellView x:Name="MinimalShell"
                                 Grid.Row="2"
                                 Visibility="Collapsed" />
-
-        <!-- Main navigation shown when authenticated -->
-        <NavigationView x:Name="NavView"
-                        Grid.Row="2"
-                        x:FieldModifier="internal"
-                        Visibility="Collapsed"
-                        PaneDisplayMode="LeftCompact"
-                        CompactModeThresholdWidth="0"
-                        IsBackButtonVisible="Collapsed"
-                        IsSettingsVisible="False"
-                        SelectionChanged="NavView_SelectionChanged">
-            <NavigationView.MenuItems>
-                <NavigationViewItem Content="Today" Tag="DayPage">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE787;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Sessions" Tag="SessionHistoryPage">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8B7;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Patients" Tag="PatientListPage">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE77B;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <!-- Practice Mode hidden pre-1.0-Store-submission: known crash when
-                     ending a session. Pages remain in the project so we can re-enable
-                     once the crash is fixed. -->
-                <!--
-                <NavigationViewItem Content="Practice" Tag="PracticeTopicPage">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8D6;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                -->
-
-            </NavigationView.MenuItems>
-
-            <NavigationView.FooterMenuItems>
-                <NavigationViewItem Content="Settings" Tag="SettingsPage">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE713;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-            </NavigationView.FooterMenuItems>
-
-            <Frame x:Name="ContentFrame" />
-        </NavigationView>
     </Grid>
 </Window>

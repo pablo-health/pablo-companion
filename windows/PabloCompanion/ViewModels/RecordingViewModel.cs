@@ -12,7 +12,8 @@ namespace PabloCompanion.ViewModels;
 
 /// <summary>
 /// Manages recording state, audio levels, and device selection.
-/// Singleton — shared between DayPage (banner) and SettingsPage (mic picker).
+/// Singleton - shared between the session-first shell (recording banner) and
+/// SettingsPage (mic picker).
 /// </summary>
 public partial class RecordingViewModel : ObservableObject
 {
