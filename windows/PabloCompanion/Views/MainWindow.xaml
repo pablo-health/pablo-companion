@@ -8,6 +8,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -15,21 +16,28 @@
         <local:SubscriptionBanner x:Name="SubscriptionBannerControl"
                                   Grid.Row="0" />
 
+        <!-- Device link note: sign-in could not register this PC, so the web
+             dashboard can't start sessions here. Shown over either shell. -->
+        <local:DeviceLinkNote x:Name="DeviceLinkNoteControl"
+                              Grid.Row="1"
+                              Margin="16,12,16,0"
+                              Visibility="Collapsed" />
+
         <!-- Login page shown when unauthenticated -->
         <local:LoginPage x:Name="LoginPage"
-                         Grid.RowSpan="2"
+                         Grid.RowSpan="3"
                          Visibility="Collapsed" />
 
         <!-- Minimal handoff shell — default authenticated surface. The web app is
              the dashboard; the companion is a thin handoff target. Shown when
              ENABLE_NATIVE_DASHBOARD is false (default). -->
         <local:MinimalShellView x:Name="MinimalShell"
-                                Grid.Row="1"
+                                Grid.Row="2"
                                 Visibility="Collapsed" />
 
         <!-- Main navigation shown when authenticated -->
         <NavigationView x:Name="NavView"
-                        Grid.Row="1"
+                        Grid.Row="2"
                         x:FieldModifier="internal"
                         Visibility="Collapsed"
                         PaneDisplayMode="LeftCompact"

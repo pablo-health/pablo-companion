@@ -1,0 +1,46 @@
+<UserControl
+    x:Class="PabloCompanion.Views.DeviceLinkNote"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Shown when sign-in could not register this PC with the server, with
+         Try Again to repeat the browser sign-in. Mirrors DeviceLinkNote.swift. -->
+    <Border Background="#1AC45B4A"
+            CornerRadius="8"
+            Padding="12">
+        <Grid ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <FontIcon Grid.Column="0"
+                      Glyph="&#xE71B;"
+                      FontSize="16"
+                      Foreground="{StaticResource PabloError}"
+                      VerticalAlignment="Center"
+                      AutomationProperties.AccessibilityView="Raw" />
+            <TextBlock Grid.Column="1"
+                       Text="This PC isn't connected to your Pablo account yet, so the web dashboard can't start sessions here."
+                       Style="{StaticResource PabloBodyMedium}"
+                       Foreground="{StaticResource PabloBrownDeep}"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+            <Button x:Name="TryAgainButton"
+                    Grid.Column="2"
+                    Content="Try Again"
+                    Click="TryAgainButton_Click"
+                    Style="{StaticResource PabloSecondaryButton}"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Try connecting this PC again" />
+            <ProgressRing x:Name="RetryingRing"
+                          Grid.Column="2"
+                          Width="16"
+                          Height="16"
+                          IsActive="False"
+                          Visibility="Collapsed"
+                          VerticalAlignment="Center"
+                          AutomationProperties.Name="Connecting this PC" />
+        </Grid>
+    </Border>
+</UserControl>

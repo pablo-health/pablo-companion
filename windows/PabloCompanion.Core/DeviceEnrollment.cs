@@ -1,7 +1,27 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace PabloCompanion.Core;
+
+/// <summary>Whether this install ended up registered after a code exchange.</summary>
+public enum EnrollmentOutcome
+{
+    /// <summary>The server registered this install.</summary>
+    Enrolled,
+
+    /// <summary>
+    /// No payload could be built, or the server rejected it. The web dashboard
+    /// will not recognise this PC until a later attempt works.
+    /// </summary>
+    Failed,
+
+    /// <summary>
+    /// The server did not say. Older servers omit the field; there is nothing to
+    /// show the clinician in that case.
+    /// </summary>
+    Unreported,
+}
 
 /// <summary>
 /// Builds the device-enrollment fields piggy-backed on the OAuth code exchange
@@ -49,6 +69,30 @@ public static class DeviceEnrollment
             ["crv"] = "P-256",
             ["x"] = Base64Url(parameters.Q.X!),
             ["y"] = Base64Url(parameters.Q.Y!),
+        };
+    }
+
+    /// <summary>
+    /// Reads the exchange response's <c>enrollment</c> field. <paramref name="sentPayload"/>
+    /// is false when no payload could be built and the exchange went out without
+    /// one, which is a failure whatever the server says. Mirrors
+    /// <c>DeviceEnrollment.outcome(sentPayload:exchangeResponse:)</c> on macOS.
+    /// </summary>
+    public static EnrollmentOutcome Outcome(bool sentPayload, JsonElement exchangeResponse)
+    {
+        if (!sentPayload) return EnrollmentOutcome.Failed;
+        if (exchangeResponse.ValueKind != JsonValueKind.Object
+            || !exchangeResponse.TryGetProperty("enrollment", out var field)
+            || field.ValueKind != JsonValueKind.String)
+        {
+            return EnrollmentOutcome.Unreported;
+        }
+
+        return field.GetString() switch
+        {
+            "enrolled" => EnrollmentOutcome.Enrolled,
+            "failed" => EnrollmentOutcome.Failed,
+            _ => EnrollmentOutcome.Unreported,
         };
     }
 
