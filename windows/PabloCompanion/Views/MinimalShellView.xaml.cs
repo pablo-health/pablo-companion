@@ -30,8 +30,10 @@ public sealed partial class MinimalShellView : UserControl
     private readonly SessionViewModel _sessionVm;
     private readonly TranscriptionViewModel _transcriptionVm;
     private readonly RecordingConsentViewModel _consentVm;
+    private readonly AudioCheckFirstUse _audioCheckOffer;
 
     private Window? _preferencesWindow;
+    private bool _audioCheckShowing;
 
     public MinimalShellView()
     {
@@ -41,6 +43,7 @@ public sealed partial class MinimalShellView : UserControl
         _sessionVm = App.Services.GetRequiredService<SessionViewModel>();
         _transcriptionVm = App.Services.GetRequiredService<TranscriptionViewModel>();
         _consentVm = App.Services.GetRequiredService<RecordingConsentViewModel>();
+        _audioCheckOffer = new AudioCheckFirstUse(App.Services.GetRequiredService<IAudioCheckSettings>());
 
         InitializeComponent();
 
@@ -55,6 +58,11 @@ public sealed partial class MinimalShellView : UserControl
         _transcriptionVm.UploadPhaseChanged += TranscriptionVm_UploadPhaseChanged;
         _consentVm.PropertyChanged += ConsentVm_PropertyChanged;
         AskPanel.Bind(_consentVm);
+
+        _audioCheckOffer.OfferRequested += AudioCheckOffer_Requested;
+        SessionConfirmationWindow.PendingLaunchChanged += (_, _) => DispatcherQueue.TryEnqueue(UpdateAudioCheckOffer);
+        Loaded += (_, _) => UpdateAudioCheckOffer();
+        RegisterPropertyChangedCallback(VisibilityProperty, (_, _) => UpdateAudioCheckOffer());
     }
 
     /// <summary>
@@ -247,6 +255,45 @@ public sealed partial class MinimalShellView : UserControl
             Card.ShowAppointment(appointment, card.Action, now);
         else if (card.Kind == ShellCardKind.UntrackedRecording)
             Card.ShowUntrackedRecording();
+
+        UpdateAudioCheckOffer();
+    }
+
+    /// <summary>
+    /// "Say hello to Pablo" is offered once, a second after the signed-in window
+    /// settles, and never while recording, starting a session, holding a launch
+    /// that waits for Start Recording, or showing a consent prompt.
+    /// </summary>
+    private void UpdateAudioCheckOffer()
+    {
+        var busy = Visibility != Visibility.Visible
+            || XamlRoot is null
+            || _audioCheckShowing
+            || _recordingVm.ActiveSessionId is not null
+            || _recordingVm.State != RecordingUIState.Idle
+            || _sessionVm.StartingAppointmentId is not null
+            || _consentVm.Prompt != ConsentPromptKind.None
+            || SessionConfirmationWindow.HasPendingLaunch;
+        _audioCheckOffer.Update(busy);
+    }
+
+    private async void AudioCheckOffer_Requested(object? sender, EventArgs e)
+    {
+        if (XamlRoot is null) return;
+        _audioCheckShowing = true;
+        try
+        {
+            var dialog = new AudioCheckDialog(_recordingVm.SelectedMicId) { XamlRoot = XamlRoot };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("MinimalShell.AudioCheck", ex);
+        }
+        finally
+        {
+            _audioCheckShowing = false;
+        }
     }
 
     /// <summary>
