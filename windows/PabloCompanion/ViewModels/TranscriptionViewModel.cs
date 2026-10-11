@@ -149,6 +149,7 @@ public partial class TranscriptionViewModel : ObservableObject
         var entry = _pendingStore.Get(sessionId);
         if (entry is null) return inFlight ? SessionUploadPhase.Uploading : SessionUploadPhase.None;
         if (entry.State == UploadLifecycleState.AwaitingNote) return SessionUploadPhase.AwaitingNote;
+        if (entry.IsPermanentlyFailed) return SessionUploadPhase.Unrecoverable;
         return inFlight && entry.RetryCount == 0
             ? SessionUploadPhase.Uploading
             : SessionUploadPhase.WaitingToRetry;
@@ -158,7 +159,9 @@ public partial class TranscriptionViewModel : ObservableObject
 
     /// <summary>
     /// The main window's Upload Now: send every waiting upload now, ignoring the
-    /// backoff. One drain at a time.
+    /// backoff. One drain at a time. Live entries only: a permanently failed one
+    /// is offered for removal (<see cref="RemoveUnrecoverableUploads"/>) instead
+    /// of being retried into the same failure.
     /// </summary>
     public async Task UploadNowAsync()
     {
@@ -269,6 +272,7 @@ public partial class TranscriptionViewModel : ObservableObject
     /// </summary>
     public async Task ResumePendingUploadsAsync()
     {
+        MarkDeadEntries();
         var pending = _pendingStore.GetAll();
         PendingUploadCount = pending.Length;
 
@@ -283,7 +287,7 @@ public partial class TranscriptionViewModel : ObservableObject
             {
                 if (item.IsPermanentlyFailed)
                 {
-                    App.Log($"  skip session={item.SessionId} retry={item.RetryCount} (max retries exhausted; permanent failure)");
+                    App.Log($"  skip session={item.SessionId} retry={item.RetryCount} (permanent failure: {item.Failure})");
                     continue;
                 }
                 if (item.RetryCount > 0)
@@ -417,20 +421,83 @@ public partial class TranscriptionViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Manual "Retry now" — ignores backoff, tries every pending item once.
+    /// Manual "Retry now": ignores backoff, tries every live pending item once.
+    /// Permanently failed entries are skipped: retrying an entry whose audio is
+    /// gone, or one that has already failed the cap, only fails again.
     /// </summary>
     public async Task ForceRetryPendingUploadsAsync()
     {
+        MarkDeadEntries();
         // Only entries still awaiting upload — an AwaitingNote entry has already
         // uploaded and must not be sent again; reconcile handles those.
         var uploads = _pendingStore.GetAll()
-            .Where(p => p.State == UploadLifecycleState.PendingUpload)
+            .Where(p => p.State == UploadLifecycleState.PendingUpload && !p.IsPermanentlyFailed)
             .ToArray();
         foreach (var item in uploads)
         {
             await UploadIfNotInFlightAsync(item);
         }
         RefreshUploadBacklog();
+    }
+
+    /// <summary>
+    /// Stamps every queued upload that can never succeed with its
+    /// <see cref="PermanentFailure"/>: a mic sidecar that no longer exists is
+    /// <see cref="PermanentFailure.FilesMissing"/> and is never attempted; an
+    /// entry at the retry cap is <see cref="PermanentFailure.RetriesExhausted"/>.
+    /// Entries in flight are left alone. Returns how many were newly marked.
+    /// </summary>
+    internal int MarkDeadEntries()
+    {
+        var marked = 0;
+        foreach (var entry in _pendingStore.GetAll())
+        {
+            if (entry.State != UploadLifecycleState.PendingUpload) continue;
+            if (entry.PermanentFailure is not null) continue;
+            if (_inFlight.ContainsKey(entry.SessionId)) continue;
+
+            PermanentFailure? reason = !MicFileExists(entry)
+                ? PermanentFailure.FilesMissing
+                : entry.Failure;
+            if (reason is not { } r) continue;
+
+            _pendingStore.MarkPermanentlyFailed(entry.SessionId, r);
+            App.Log($"  mark session={entry.SessionId} retry={entry.RetryCount} permanent failure: {r}");
+            RaiseUploadPhaseChanged(entry.SessionId);
+            marked++;
+        }
+        if (marked > 0)
+        {
+            App.Log($"Upload queue: {marked} entr{(marked == 1 ? "y" : "ies")} marked as permanently failed");
+            RefreshUploadBacklog();
+        }
+        return marked;
+    }
+
+    private static bool MicFileExists(PendingTranscription entry)
+        => !string.IsNullOrEmpty(entry.MicPath) && File.Exists(entry.MicPath);
+
+    /// <summary>
+    /// The backlog note's Remove: deletes every permanently failed upload and its
+    /// local audio folder, if one is left. Final by design: the audio could not be
+    /// uploaded and is not coming back. Returns how many entries were removed.
+    /// </summary>
+    public int RemoveUnrecoverableUploads()
+    {
+        var dead = _pendingStore.GetAll()
+            .Where(e => e.State == UploadLifecycleState.PendingUpload
+                && e.IsPermanentlyFailed
+                && !_inFlight.ContainsKey(e.SessionId))
+            .ToArray();
+        foreach (var entry in dead)
+        {
+            _cleaner.DiscardUnrecoverable(entry, _recordingStore, _pendingStore);
+            RaiseUploadPhaseChanged(entry.SessionId);
+        }
+        App.Log($"Upload queue: removed {dead.Length} unrecoverable upload(s)");
+        PendingUploadCount = _pendingStore.GetAll().Length;
+        RefreshUploadBacklog();
+        return dead.Length;
     }
 
     /// <summary>

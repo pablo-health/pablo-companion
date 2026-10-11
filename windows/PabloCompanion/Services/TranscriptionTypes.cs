@@ -54,4 +54,10 @@ public enum SessionUploadPhase
 
     /// <summary>The server has the audio; the note is being written.</summary>
     AwaitingNote,
+
+    /// <summary>
+    /// The upload will never be attempted again (its audio is gone, or it hit the
+    /// retry cap). Never shown as uploading; the backlog note offers Remove.
+    /// </summary>
+    Unrecoverable,
 }

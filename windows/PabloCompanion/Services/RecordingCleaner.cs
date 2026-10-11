@@ -52,6 +52,31 @@ public class RecordingCleaner
         SessionRecordingStore recordingStore,
         PendingTranscriptionStore pendingStore)
     {
+        var allGone = Discard(sessionId, recordingStore, pendingStore, extraPaths: []);
+        App.Log($"  discarded declined audio for session={sessionId} complete={allGone}");
+        return allGone;
+    }
+
+    /// <summary>
+    /// The therapist removed a queued upload that can never be sent (see
+    /// <see cref="PendingTranscription.IsPermanentlyFailed"/>). Same deletion as
+    /// <see cref="DiscardDeclined"/>, plus the sidecar paths the queued entry
+    /// itself points at: the entry goes, and so does every file of the session
+    /// the launch-time sweep could re-queue. Returns true when no audio for the
+    /// session is left on disk. Never throws.
+    /// </summary>
+    public virtual bool DiscardUnrecoverable(
+        PendingTranscription entry,
+        SessionRecordingStore recordingStore,
+        PendingTranscriptionStore pendingStore)
+        => Discard(entry.SessionId, recordingStore, pendingStore, [entry.MicPath, entry.SystemPath]);
+
+    private bool Discard(
+        string sessionId,
+        SessionRecordingStore recordingStore,
+        PendingTranscriptionStore pendingStore,
+        string?[] extraPaths)
+    {
         if (string.IsNullOrWhiteSpace(sessionId)) return false;
 
         var mapped = SafeGet(() => recordingStore.Get(sessionId));
@@ -64,23 +89,22 @@ public class RecordingCleaner
         // Capture files live in the session directory; a mapped path elsewhere
         // (an older layout) is removed by name too.
         var allGone = !Directory.Exists(SessionDirectory(sessionId));
-        if (mapped is not null)
+        string?[] mappedPaths = mapped is null
+            ? []
+            : [mapped.FilePath, mapped.MicPcmFilePath, mapped.SystemPcmFilePath];
+        foreach (var path in mappedPaths.Concat(extraPaths))
         {
-            foreach (var path in new[] { mapped.FilePath, mapped.MicPcmFilePath, mapped.SystemPcmFilePath })
+            if (string.IsNullOrEmpty(path)) continue;
+            try
             {
-                if (string.IsNullOrEmpty(path)) continue;
-                try
-                {
-                    if (File.Exists(path)) File.Delete(path);
-                }
-                catch (Exception ex)
-                {
-                    App.LogException("RecordingCleaner.DiscardDeclined", ex);
-                }
-                allGone &= !File.Exists(path);
+                if (File.Exists(path)) File.Delete(path);
             }
+            catch (Exception ex)
+            {
+                App.LogException("RecordingCleaner.Discard", ex);
+            }
+            allGone &= !File.Exists(path);
         }
-        App.Log($"  discarded declined audio for session={sessionId} complete={allGone}");
         return allGone;
     }
 

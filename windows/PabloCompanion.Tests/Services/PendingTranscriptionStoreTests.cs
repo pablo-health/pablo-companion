@@ -42,6 +42,38 @@ public class PendingTranscriptionStoreTests : IDisposable
     }
 
     [Fact]
+    public void MarkPermanentlyFailed_PersistsTheReason_AndAFreshLadderOnlyRevivesACappedEntry()
+    {
+        var store = MakeStore();
+        store.Add("missing", "mic.pcm", null, isEncrypted: false);
+        store.Add("capped", "mic.pcm", null, isEncrypted: false);
+        store.MarkPermanentlyFailed("missing", PermanentFailure.FilesMissing);
+        store.MarkPermanentlyFailed("capped", PermanentFailure.RetriesExhausted);
+
+        var reloaded = MakeStore();
+        Assert.Equal(PermanentFailure.FilesMissing, reloaded.Get("missing")!.Failure);
+        Assert.Equal(PermanentFailure.RetriesExhausted, reloaded.Get("capped")!.Failure);
+
+        reloaded.ResetRetry("missing");
+        reloaded.ResetRetry("capped");
+        Assert.True(MakeStore().Get("missing")!.IsPermanentlyFailed);
+        Assert.False(MakeStore().Get("capped")!.IsPermanentlyFailed);
+    }
+
+    [Fact]
+    public void AnEntryAtTheRetryCapReadsAsRetriesExhaustedBeforeItIsStamped()
+    {
+        var store = MakeStore();
+        store.Add("legacy", "mic.pcm", null, isEncrypted: false);
+        for (var i = 0; i < PendingTranscriptionStore.MaxAutoRetries; i++) store.IncrementRetry("legacy");
+
+        var entry = MakeStore().Get("legacy")!;
+        Assert.Null(entry.PermanentFailure);
+        Assert.Equal(PermanentFailure.RetriesExhausted, entry.Failure);
+        Assert.True(entry.IsPermanentlyFailed);
+    }
+
+    [Fact]
     public void RemoveDropsEntry()
     {
         var store = MakeStore();

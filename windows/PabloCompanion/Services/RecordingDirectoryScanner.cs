@@ -44,6 +44,10 @@ public sealed class RecordingDirectoryScanner
         {
             if (!Directory.Exists(_recordingsRoot)) return 0;
 
+            // Every id the store holds is skipped, permanently failed ones included:
+            // re-adding one would reset its retry count and failure and bring a dead
+            // upload back to life. Those leave the store only through Remove, which
+            // deletes their folder too.
             var existing = _pendingStore.GetAll()
                 .Select(p => p.SessionId)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
