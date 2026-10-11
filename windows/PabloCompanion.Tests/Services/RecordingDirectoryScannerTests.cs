@@ -110,6 +110,31 @@ public sealed class RecordingDirectoryScannerTests : IDisposable
         Assert.False(store.Get("b")!.IsEncrypted);
     }
 
+    /// <summary>
+    /// A dead upload whose folder is still on disk must stay dead: re-adding it
+    /// would reset its failure and retry count and queue it again on every launch.
+    /// </summary>
+    [Theory]
+    [InlineData(PermanentFailure.FilesMissing)]
+    [InlineData(PermanentFailure.RetriesExhausted)]
+    public void AdoptOrphans_DoesNotResurrectAPermanentlyFailedEntry(PermanentFailure reason)
+    {
+        SeedSessionDir("dead-1");
+        var seed = MakePendingStore();
+        seed.Add("dead-1", Path.Combine(_recordingsRoot, "dead-1", "gone_mic.pcm"), null, isEncrypted: false);
+        for (var i = 0; i < 4; i++) seed.IncrementRetry("dead-1");
+        seed.MarkPermanentlyFailed("dead-1", reason);
+
+        var adopted = MakeScanner(MakePendingStore()).AdoptOrphans();
+
+        Assert.Equal(0, adopted);
+        var entry = MakePendingStore().Get("dead-1")!;
+        Assert.True(entry.IsPermanentlyFailed);
+        Assert.Equal(reason, entry.Failure);
+        Assert.Equal(4, entry.RetryCount);
+        Assert.EndsWith("gone_mic.pcm", entry.MicPath);
+    }
+
     public void Dispose()
     {
         try { if (Directory.Exists(_recordingsRoot)) Directory.Delete(_recordingsRoot, recursive: true); }

@@ -47,6 +47,7 @@ public sealed partial class MinimalShellView : UserControl
         VersionText.Text = AppVersion.Label(App.Services.GetRequiredService<IAppVersionProvider>());
         Card.StartRequested += Card_StartRequested;
         BacklogNote.UploadNowRequested += BacklogNote_UploadNowRequested;
+        BacklogNote.RemoveRequested += BacklogNote_RemoveRequested;
 
         _sessionVm.PropertyChanged += ViewModel_PropertyChanged;
         _recordingVm.PropertyChanged += RecordingVm_PropertyChanged;
@@ -178,6 +179,24 @@ public sealed partial class MinimalShellView : UserControl
         {
             App.LogException("MinimalShell.UploadNow", ex);
         }
+    }
+
+    /// <summary>
+    /// Remove on the backlog note: deletes the uploads that can never be sent.
+    /// No confirmation step: that audio could not be uploaded and is not
+    /// coming back, so there is nothing for a second click to protect.
+    /// </summary>
+    private void BacklogNote_RemoveRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            _transcriptionVm.RemoveUnrecoverableUploads();
+        }
+        catch (Exception ex)
+        {
+            App.LogException("MinimalShell.RemoveUnrecoverable", ex);
+        }
+        UpdateBacklog();
     }
 
     /// <summary>
