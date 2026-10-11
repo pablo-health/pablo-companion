@@ -49,7 +49,7 @@ public sealed partial class MainWindow : Window
         var appWindow = this.AppWindow;
         // The session-first window is compact (it matches the Mac minimal
         // window); the native dashboard keeps its original size.
-        var (width, height) = EnableNativeDashboard ? (1000, 750) : (480, 560);
+        var (width, height) = EnableNativeDashboard ? (1000, 750) : (520, 560);
         appWindow.Resize(new Windows.Graphics.SizeInt32(
             (int)(width * scale),
             (int)(height * scale)));
@@ -67,6 +67,11 @@ public sealed partial class MainWindow : Window
 
         _subscriptionVm = App.Services.GetRequiredService<SubscriptionViewModel>();
         SubscriptionBannerControl.Bind(_subscriptionVm);
+        // The Mac shows the subscription banner only in its full dashboard shell;
+        // the session-first window stays free of it.
+        SubscriptionBannerControl.Visibility = EnableNativeDashboard
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         _deepLinks = App.Services.GetRequiredService<DeepLinkRouter>();
         _deepLinks.UriReceived += OnDeepLinkReceived;
