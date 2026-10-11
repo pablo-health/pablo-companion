@@ -18,6 +18,7 @@ public partial class RecordingViewModel : ObservableObject
 {
     private readonly RecordingService _recordingService;
     private readonly SessionRecordingStore _store;
+    private readonly ISystemSleepGuard _sleepGuard;
     private readonly SynchronizationContext? _uiContext;
     private DispatcherTimer? _levelTimer;
     private DispatcherTimer? _durationTimer;
@@ -129,10 +130,16 @@ public partial class RecordingViewModel : ObservableObject
     public RecordingTrouble? Trouble => RecordingTrouble.Evaluate(
         ActiveSessionId, State, RecordingStalled, MicDisconnected, PersistentError);
 
-    public RecordingViewModel(RecordingService recordingService, SessionRecordingStore store)
+    /// <param name="sleepGuard">
+    /// Keeps the PC awake while capture runs. The app passes the real one; left
+    /// out, nothing is held.
+    /// </param>
+    public RecordingViewModel(
+        RecordingService recordingService, SessionRecordingStore store, ISystemSleepGuard? sleepGuard = null)
     {
         _recordingService = recordingService;
         _store = store;
+        _sleepGuard = sleepGuard ?? NoSleepGuard.Instance;
         _uiContext = SynchronizationContext.Current;
 
         // Raised from the watchdog's timer thread and from capture threads; state
@@ -193,6 +200,8 @@ public partial class RecordingViewModel : ObservableObject
                 App.Log($"RestartRecording: stop failed type={ex.GetType().Name}");
             }
             State = RecordingUIState.Idle;
+            // Held again below once the new capture is running.
+            _sleepGuard.AllowSleep();
 
             await StartCaptureAsync(sessionId, restart: true);
         }
@@ -218,6 +227,8 @@ public partial class RecordingViewModel : ObservableObject
             _liveCapture = _recordingService.CurrentCapture;
             ActiveSessionId = sessionId;
             State = RecordingUIState.Recording;
+            // The screen may lock during the session; the PC must not sleep.
+            _sleepGuard.KeepAwake();
             StartTimers();
             return true;
         }
@@ -232,6 +243,7 @@ public partial class RecordingViewModel : ObservableObject
                 ErrorMessage = failure.Message;
             State = RecordingUIState.Idle;
             StopTimers();
+            _sleepGuard.AllowSleep();
             return false;
         }
     }
@@ -259,18 +271,69 @@ public partial class RecordingViewModel : ObservableObject
         }
         finally
         {
-            State = RecordingUIState.Idle;
-            ActiveSessionId = null;
-            RecordingStalled = false;
-            MicDisconnected = false;
-            PersistentError = null;
-            SystemAudioInterrupted = false;
-            ResetClientAudio();
-            MicLevel = 0;
-            SystemLevel = 0;
-            PeakMicLevel = 0;
-            PeakSystemLevel = 0;
+            LetSessionGo();
         }
+    }
+
+    /// <summary>
+    /// Sign-out with a session open: ends capture cleanly and queues the session's
+    /// audio in <paramref name="pendingStore"/>, with no network call. The session
+    /// stays as it is on the server; the queued entry uploads after the next
+    /// sign-in through the pending-upload drain, whose INVALID_STATUS self-heal
+    /// completes the status change this skips. Nothing on disk is deleted. Run it
+    /// while still signed in: the queue is encrypted with the signed-in user's key.
+    /// Mirrors <c>stopAndQueueActiveRecording</c> on macOS.
+    /// </summary>
+    /// <returns>The session queued, or null when nothing was recorded for it.</returns>
+    public async Task<string?> StopAndQueueAsync(PendingTranscriptionStore pendingStore)
+    {
+        if (ActiveSessionId is not { } sessionId) return null;
+
+        LocalRecording? recording = null;
+        try
+        {
+            StopTimers();
+            recording = await _recordingService.TryStopAsync(sessionId);
+            if (recording != null)
+                _store.Save(sessionId, recording);
+        }
+        catch (Exception ex)
+        {
+            App.Log($"StopAndQueue: stop failed type={ex.GetType().Name}");
+        }
+        finally
+        {
+            LetSessionGo();
+        }
+
+        // A capture that already stopped on its own saved its recording then.
+        recording ??= _store.Get(sessionId);
+        if (recording?.MicPcmFilePath is not { } micPath) return null;
+
+        pendingStore.Add(
+            sessionId: sessionId,
+            micPath: micPath,
+            systemPath: recording.SystemPcmFilePath,
+            isEncrypted: recording.IsEncrypted,
+            sampleRate: recording.SampleRate);
+        return sessionId;
+    }
+
+    /// <summary>After a stop: no session, nothing recording, the PC free to sleep.</summary>
+    private void LetSessionGo()
+    {
+        State = RecordingUIState.Idle;
+        ActiveSessionId = null;
+        RecordingStalled = false;
+        MicDisconnected = false;
+        PersistentError = null;
+        SystemAudioInterrupted = false;
+        ResetClientAudio();
+        MicLevel = 0;
+        SystemLevel = 0;
+        PeakMicLevel = 0;
+        PeakSystemLevel = 0;
+        _sleepGuard.AllowSleep();
     }
 
     [RelayCommand]
@@ -319,17 +382,14 @@ public partial class RecordingViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Stops any active recording, clears the store, and resets state.
-    /// Called on sign-out to clear PHI.
+    /// Clears the store and resets state. Called on sign-out to clear PHI, after
+    /// <see cref="StopAndQueueAsync"/> has ended any recording. Never touches the
+    /// capture: disposing a live one used to cut a session's audio off mid-session.
     /// </summary>
     public void ClearAllData()
     {
-        try
-        {
-            StopTimers();
-            _recordingService.Dispose();
-        }
-        catch { /* best effort */ }
+        StopTimers();
+        if (!_recordingService.IsRecording) _sleepGuard.AllowSleep();
 
         _store.Clear();
         State = RecordingUIState.Idle;
@@ -363,6 +423,7 @@ public partial class RecordingViewModel : ObservableObject
 
         StopTimers();
         State = RecordingUIState.Idle;
+        _sleepGuard.AllowSleep();
         RecordingStalled = false;
         ResetClientAudio();
         MicLevel = 0;

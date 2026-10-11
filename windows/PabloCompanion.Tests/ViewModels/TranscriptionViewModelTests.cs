@@ -654,6 +654,47 @@ public sealed class TranscriptionViewModelTests : IDisposable
         Assert.InRange(bytesPerSecond, 16000 * 2 * 0.75, 16000 * 2 * 1.25);
     }
 
+    /// <summary>
+    /// A sign-out mid-session queues the recording with no network call; after the
+    /// next sign-in the pending-upload drain sends it once, through the self-healing
+    /// upload that completes the status change the sign-out skipped, with the
+    /// sidecar paths the capture wrote.
+    /// </summary>
+    [Fact]
+    public async Task SignOutMidSession_QueuedRecordingUploadsOnceAfterSignIn()
+    {
+        using var rig = new CaptureRig(StubCredentialManager.Key);
+        var recordingVm = new RecordingViewModel(rig.Service, _recordingStore);
+        Assert.True(await recordingVm.StartRecordingForSessionAsync("session-signout"));
+        await Task.Delay(TimeSpan.FromSeconds(0.6));
+
+        // Sign-out: stop and queue, then the signed-out clear.
+        var signedOutApi = new StubApiClient(_credentials);
+        var signedOutVm = MakeVm(signedOutApi, MakePendingStore());
+        await recordingVm.StopAndQueueAsync(MakePendingStore());
+        recordingVm.ClearAllData();
+        signedOutVm.ClearAllData();
+        Assert.Equal(0, signedOutApi.CallCount);
+        Assert.Equal(0, signedOutApi.ProbeCallCount);
+        Assert.Null(_recordingStore.Get("session-signout"));
+
+        // Sign-in: the scheduled drain runs.
+        var entry = MakePendingStore().Get("session-signout")!;
+        var api = new StubApiClient(_credentials);
+        var store = MakePendingStore();
+        await MakeVm(api, store).ResumePendingUploadsAsync();
+
+        Assert.Equal(1, api.CallCount);
+        Assert.Equal("session-signout", api.LastSessionId);
+        Assert.Equal(entry.MicPath, api.LastTherapistPath);
+        Assert.Equal(entry.SystemPath, api.LastClientPath);
+        Assert.Equal(Path.Join(rig.Service.SessionDirectory("session-signout"), RecordingService.MicSidecarName), api.LastTherapistPath);
+        Assert.Equal(Path.Join(rig.Service.SessionDirectory("session-signout"), RecordingService.SystemSidecarName), api.LastClientPath);
+        Assert.NotNull(api.LastDecryptChunk);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, store.Get("session-signout")!.State);
+        Assert.True(File.Exists(entry.MicPath));
+    }
+
     [Fact]
     public async Task Resume_EntryWithoutSampleRate_UploadsAt48k()
     {

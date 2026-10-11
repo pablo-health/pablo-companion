@@ -48,6 +48,7 @@ public partial class AuthViewModel : ObservableObject
     private string? _pkceCodeVerifier;
     private string? _oauthState;
     private bool _isHandlingAuthFailure;
+    private bool _isSigningOut;
     private static readonly HttpClient s_httpClient = new();
 
     [ObservableProperty]
@@ -117,7 +118,7 @@ public partial class AuthViewModel : ObservableObject
         {
             var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
             if (recordingVm.ActiveSessionId != null) return;
-            SignOut();
+            _ = SignOutAsync();
         });
     }
 
@@ -137,14 +138,14 @@ public partial class AuthViewModel : ObservableObject
     /// </summary>
     private void OnApiUnauthenticated(string? errorCode)
     {
-        App.UiDispatcherQueue?.TryEnqueue(() =>
+        App.UiDispatcherQueue?.TryEnqueue(async () =>
         {
             if (_isHandlingAuthFailure) return;
             if (this.AuthState != AuthState.Authenticated) return;
             _isHandlingAuthFailure = true;
             try
             {
-                SignOut();
+                await SignOutAsync();
                 ErrorMessage = SessionRejectedMessage(errorCode);
             }
             finally
@@ -302,7 +303,45 @@ public partial class AuthViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SignOut()
+    private async Task SignOutAsync()
+    {
+        if (_isSigningOut) return;
+        _isSigningOut = true;
+        try
+        {
+            await StopAndQueueRecordingAsync();
+            ClearSignedInState();
+        }
+        finally
+        {
+            _isSigningOut = false;
+        }
+    }
+
+    /// <summary>
+    /// A session recording when the sign-out arrives (a 401 mid-session, say)
+    /// keeps its audio: capture ends cleanly and the audio is queued for upload
+    /// with no network call, before the credentials go, because the queue is
+    /// encrypted with the signed-in user's key. The upload runs after the next
+    /// sign-in. Mirrors <c>stopAndQueueActiveRecording</c> on macOS.
+    /// </summary>
+    private static async Task StopAndQueueRecordingAsync()
+    {
+        var recordingVm = App.Services.GetRequiredService<RecordingViewModel>();
+        if (recordingVm.ActiveSessionId is null) return;
+        try
+        {
+            var queued = await recordingVm.StopAndQueueAsync(App.Services.GetRequiredService<PendingTranscriptionStore>());
+            App.Log($"SignOut: stopped the recording; queued={queued is not null}");
+        }
+        catch (Exception ex)
+        {
+            // The audio is still on disk; the next launch's orphan scan adopts it.
+            App.LogException("SignOut.StopAndQueue", ex);
+        }
+    }
+
+    private void ClearSignedInState()
     {
         _refreshTimer?.Dispose();
         _refreshTimer = null;
