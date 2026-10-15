@@ -30,6 +30,10 @@ public sealed class PendingTranscriptionStore
     private readonly string _storePath;
     private readonly object _lock = new();
     private Dictionary<string, PendingTranscription>? _cache;
+    // The key the cache was decrypted with. The cache is only trusted while the
+    // signed-in user's key is this one: before sign-in there is no key, and a
+    // different user has a different file.
+    private byte[]? _cacheKey;
 
     public PendingTranscriptionStore(CredentialManager credentials) : this(credentials, StorePath) { }
 
@@ -184,61 +188,91 @@ public sealed class PendingTranscriptionStore
     {
         lock (_lock)
         {
-            _cache = [];
+            _cache = null;
+            _cacheKey = null;
             if (File.Exists(_storePath))
                 File.Delete(_storePath);
         }
     }
 
+    /// <summary>
+    /// True while a signed-in user's key is available, so a write reaches disk.
+    /// False on launch until the saved session is restored, and after sign-out.
+    /// Callers that adopt or enqueue should wait rather than write into the void.
+    /// </summary>
+    public bool CanPersist
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _credentials.GetOrCreateUserEncryptionKey() != null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The queue for the current key. With no key (not signed in yet, or signed
+    /// out) this is a throwaway empty dictionary that is never cached: the real
+    /// queue is still on disk, and caching an empty stand-in here is how a later
+    /// <see cref="Persist"/> used to overwrite it. The app's launch scan runs
+    /// before session restore has set the active user, so that window is hit on
+    /// every cold start.
+    /// </summary>
     private Dictionary<string, PendingTranscription> Load()
     {
-        if (_cache != null) return _cache;
+        var key = _credentials.GetOrCreateUserEncryptionKey();
+        if (key == null) return [];
 
-        if (!File.Exists(_storePath))
-        {
-            _cache = [];
+        if (_cache != null && _cacheKey != null && key.AsSpan().SequenceEqual(_cacheKey))
             return _cache;
-        }
+
+        _cache = ReadFromDisk(key);
+        _cacheKey = key;
+        return _cache;
+    }
+
+    private Dictionary<string, PendingTranscription> ReadFromDisk(byte[] key)
+    {
+        if (!File.Exists(_storePath)) return [];
 
         try
         {
-            var key = _credentials.GetOrCreateUserEncryptionKey();
-            if (key == null)
-            {
-                _cache = [];
-                return _cache;
-            }
-
             var fileBytes = File.ReadAllBytes(_storePath);
             using var encryptor = new AesGcmEncryptor(key, "device-key");
             var decrypted = encryptor.Decrypt(fileBytes);
             var json = Encoding.UTF8.GetString(decrypted);
-            _cache = JsonSerializer.Deserialize<Dictionary<string, PendingTranscription>>(json, JsonOptions) ?? [];
+            return JsonSerializer.Deserialize<Dictionary<string, PendingTranscription>>(json, JsonOptions) ?? [];
         }
-        catch
+        catch (Exception ex)
         {
-            _cache = [];
+            // Unreadable under this key (corrupt, or written by another user of
+            // this Windows account). Start empty, as before, but say so.
+            App.Log($"PendingTranscriptionStore: could not read the queue ({ex.GetType().Name}); starting empty.");
+            return [];
         }
-
-        return _cache;
     }
 
     private void Persist(Dictionary<string, PendingTranscription> store)
     {
-        _cache = store;
+        var key = _credentials.GetOrCreateUserEncryptionKey();
+        // No key: the caller mutated a throwaway from Load(). Dropping the write
+        // is the only safe outcome, since the file on disk belongs to a key we
+        // do not have.
+        if (key == null) return;
 
         var dir = Path.GetDirectoryName(_storePath);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
-
-        var key = _credentials.GetOrCreateUserEncryptionKey();
-        if (key == null) return;
 
         var json = JsonSerializer.Serialize(store, JsonOptions);
         var plaintext = Encoding.UTF8.GetBytes(json);
         using var encryptor = new AesGcmEncryptor(key, "device-key");
         var encrypted = encryptor.Encrypt(plaintext);
         File.WriteAllBytes(_storePath, encrypted);
+
+        _cache = store;
+        _cacheKey = key;
     }
 }
 

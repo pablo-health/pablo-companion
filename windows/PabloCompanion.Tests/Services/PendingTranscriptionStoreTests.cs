@@ -115,6 +115,83 @@ public class PendingTranscriptionStoreTests : IDisposable
         Assert.Contains(items, i => i.SessionId == "session-B" && !i.IsEncrypted);
     }
 
+    /// <summary>
+    /// A credential manager whose key can appear later, the way the real one's
+    /// does on launch: the store is read by the orphan scan before session
+    /// restore has set the active user.
+    /// </summary>
+    private sealed class LateKeyCredentialManager : CredentialManager
+    {
+        public byte[]? Key { get; set; }
+        public override byte[]? GetOrCreateUserEncryptionKey() => Key;
+    }
+
+    private static byte[] NewKey()
+    {
+        var k = new byte[32];
+        RandomNumberGenerator.Fill(k);
+        return k;
+    }
+
+    [Fact]
+    public void ReadBeforeSignInDoesNotShadowTheQueueOnDisk()
+    {
+        var key = NewKey();
+        var credentials = new LateKeyCredentialManager { Key = key };
+        new PendingTranscriptionStore(credentials, _tempPath)
+            .Add("session-A", "mic-a.enc.pcm", null, isEncrypted: true);
+
+        // Cold start: the scan reads the store before the key exists.
+        var late = new LateKeyCredentialManager();
+        var store = new PendingTranscriptionStore(late, _tempPath);
+        Assert.False(store.CanPersist);
+        Assert.Empty(store.GetAll());
+
+        // Session restore completes; the same instance must now see the disk.
+        late.Key = key;
+        Assert.True(store.CanPersist);
+        Assert.Single(store.GetAll());
+        Assert.NotNull(store.Get("session-A"));
+    }
+
+    [Fact]
+    public void WriteBeforeSignInDoesNotOverwriteTheQueueOnDisk()
+    {
+        var key = NewKey();
+        new PendingTranscriptionStore(new LateKeyCredentialManager { Key = key }, _tempPath)
+            .Add("session-A", "mic-a.enc.pcm", null, isEncrypted: true);
+        new PendingTranscriptionStore(new LateKeyCredentialManager { Key = key }, _tempPath)
+            .SetState("session-A", UploadLifecycleState.AwaitingNote);
+
+        var late = new LateKeyCredentialManager();
+        var store = new PendingTranscriptionStore(late, _tempPath);
+        store.Add("session-B", "mic-b.enc.pcm", null, isEncrypted: true);
+        store.Remove("session-A");
+
+        late.Key = key;
+        var items = store.GetAll();
+        var a = Assert.Single(items);
+        Assert.Equal("session-A", a.SessionId);
+        Assert.Equal(UploadLifecycleState.AwaitingNote, a.State);
+    }
+
+    [Fact]
+    public void ChangingTheKeyRereadsTheDisk()
+    {
+        var first = NewKey();
+        var credentials = new LateKeyCredentialManager { Key = first };
+        var store = new PendingTranscriptionStore(credentials, _tempPath);
+        store.Add("session-A", "mic-a.enc.pcm", null, isEncrypted: true);
+
+        // Another user of this Windows account signs in: their key cannot read
+        // the first user's file, so they start empty instead of inheriting it.
+        credentials.Key = NewKey();
+        Assert.Empty(store.GetAll());
+
+        credentials.Key = first;
+        Assert.NotNull(store.Get("session-A"));
+    }
+
     [Fact]
     public void UnknownPropertiesFromLegacySchemaAreIgnored()
     {
