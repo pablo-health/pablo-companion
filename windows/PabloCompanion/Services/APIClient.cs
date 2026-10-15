@@ -44,6 +44,12 @@ public class APIClient
     /// </summary>
     private readonly AudioUploadClient _uploadClient;
 
+    /// <summary>
+    /// Client identification headers sent on every backend request, by this class
+    /// and by the Core clients it builds.
+    /// </summary>
+    private readonly IReadOnlyDictionary<string, string> _clientHeaders;
+
     public string BaseUrl { get; set; }
 
     /// <summary>
@@ -85,17 +91,18 @@ public class APIClient
         // Seed from the previously discovered backend URL so a restored session
         // starts on the correct env before AuthViewModel.DiscoverServerConfigAsync runs.
         BaseUrl = credentials.BackendApiUrl ?? DefaultBaseUrl;
+        _clientHeaders = new Dictionary<string, string>
+        {
+            ["X-Client-Type"] = ClientTypeHeader,
+            ["X-Client-Version"] = ClientVersion,
+            ["X-Client-Platform"] = ClientPlatform,
+        };
 
         _uploadClient = new AudioUploadClient(
             baseUrl: () => BaseUrl,
             token: () => Task.FromResult(GetToken()),
             attachBinding: AttachDeviceBinding,
-            clientHeaders: new Dictionary<string, string>
-            {
-                ["X-Client-Type"] = ClientTypeHeader,
-                ["X-Client-Version"] = ClientVersion,
-                ["X-Client-Platform"] = ClientPlatform,
-            },
+            clientHeaders: _clientHeaders,
             http: Http,
             log: App.Log);
 
@@ -103,12 +110,7 @@ public class APIClient
             baseUrl: () => BaseUrl,
             token: () => Task.FromResult(GetToken()),
             attachBinding: AttachDeviceBinding,
-            clientHeaders: new Dictionary<string, string>
-            {
-                ["X-Client-Type"] = ClientTypeHeader,
-                ["X-Client-Version"] = ClientVersion,
-                ["X-Client-Platform"] = ClientPlatform,
-            },
+            clientHeaders: _clientHeaders,
             http: Http);
     }
 
@@ -130,9 +132,8 @@ public class APIClient
     internal HttpRequestMessage CreateRequest(HttpMethod method, string path, bool authenticated = true)
     {
         var request = new HttpRequestMessage(method, $"{BaseUrl}{path}");
-        request.Headers.Add("X-Client-Type", ClientTypeHeader);
-        request.Headers.Add("X-Client-Version", ClientVersion);
-        request.Headers.Add("X-Client-Platform", ClientPlatform);
+        foreach (var (name, value) in _clientHeaders)
+            request.Headers.Add(name, value);
 
         if (authenticated)
         {

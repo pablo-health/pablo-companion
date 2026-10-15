@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using PabloCompanion.Core;
 
 namespace RecordHarness;
 
@@ -19,7 +20,6 @@ namespace RecordHarness;
 public sealed class FirebaseAuth(string apiKey, HttpClient? http = null)
 {
     private const string IdpBase = "https://identitytoolkit.googleapis.com";
-    private const string SecureTokenBase = "https://securetoken.googleapis.com";
 
     private readonly HttpClient _http = http ?? new HttpClient();
 
@@ -95,26 +95,13 @@ public sealed class FirebaseAuth(string apiKey, HttpClient? http = null)
     private async Task<(string IdToken, string RefreshToken)> ExchangeRefreshTokenAsync(
         string refreshToken, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post, $"{SecureTokenBase}/v1/token?key={apiKey}")
-        {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["grant_type"] = "refresh_token",
-                ["refresh_token"] = refreshToken,
-            }),
-        };
+        // The app's own refresher, so the harness exercises the request the app sends.
+        var tokens = await new TokenRefresher(_http).RefreshTokenAsync(refreshToken, apiKey, cancellationToken);
 
-        using var response = await _http.SendAsync(request, cancellationToken);
-        var json = await ReadJsonAsync(response, "securetoken/v1/token", cancellationToken);
-
-        // This endpoint returns snake_case despite the rest of IDP being camelCase.
-        var id = json.GetPropertyOrNull("id_token")?.GetString();
-        var rt = json.GetPropertyOrNull("refresh_token")?.GetString();
-        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(rt))
+        if (string.IsNullOrEmpty(tokens.IdToken) || string.IsNullOrEmpty(tokens.RefreshToken))
             throw new HarnessException("securetoken response missing id_token/refresh_token");
 
-        return (id, rt);
+        return (tokens.IdToken, tokens.RefreshToken);
     }
 
     // --- Password + TOTP MFA ---

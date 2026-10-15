@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -26,10 +25,7 @@ namespace PabloCompanion.Core;
 /// </summary>
 public sealed class RecordingConsentClient
 {
-    private readonly Func<string> _baseUrl;
-    private readonly Func<Task<string>> _token;
-    private readonly Action<HttpRequestMessage>? _attachBinding;
-    private readonly IReadOnlyDictionary<string, string> _clientHeaders;
+    private readonly BackendRequest _backend;
     private readonly HttpClient _http;
 
     /// <param name="baseUrl">Supplies the backend origin (no trailing slash).</param>
@@ -44,13 +40,7 @@ public sealed class RecordingConsentClient
         IReadOnlyDictionary<string, string>? clientHeaders = null,
         HttpClient? http = null)
     {
-        ArgumentNullException.ThrowIfNull(baseUrl);
-        ArgumentNullException.ThrowIfNull(token);
-
-        _baseUrl = baseUrl;
-        _token = token;
-        _attachBinding = attachBinding;
-        _clientHeaders = clientHeaders ?? new Dictionary<string, string>();
+        _backend = new BackendRequest(baseUrl, token, attachBinding, clientHeaders);
         _http = http ?? new HttpClient();
     }
 
@@ -137,13 +127,10 @@ public sealed class RecordingConsentClient
 
     private async Task<T> SendAsync<T>(HttpMethod method, string path, string? body, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(method, $"{_baseUrl()}{path}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await _token());
-        foreach (var (name, value) in _clientHeaders)
-            request.Headers.Add(name, value);
+        using var request = new HttpRequestMessage(method, _backend.Url(path));
         if (body is not null)
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-        _attachBinding?.Invoke(request);
+        await _backend.AuthorizeAsync(request);
 
         using var response = await _http.SendAsync(request, cancellationToken);
         var text = await response.Content.ReadAsStringAsync(cancellationToken);
