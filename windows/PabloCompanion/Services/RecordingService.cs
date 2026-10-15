@@ -483,9 +483,7 @@ public sealed class RecordingService : IDisposable
         public void OnDeviceChanged(CaptureDeviceChange change) => owner.OnCaptureDeviceChanged(session, change);
     }
 
-    private static string DefaultRecordingsRoot() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PabloCompanion", "Recordings");
+    private static string DefaultRecordingsRoot() => AppPaths.RecordingsRoot;
 
     /// <summary>
     /// The rate to stamp into the uploaded WAV headers: the frame rate of the bytes

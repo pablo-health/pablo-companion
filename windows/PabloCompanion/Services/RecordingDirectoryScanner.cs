@@ -17,9 +17,7 @@ namespace PabloCompanion.Services;
 /// </summary>
 public sealed class RecordingDirectoryScanner
 {
-    private static readonly string RecordingsRoot = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PabloCompanion", "Recordings");
+    private static readonly string RecordingsRoot = AppPaths.RecordingsRoot;
 
     private readonly PendingTranscriptionStore _pendingStore;
     private readonly string _recordingsRoot;
