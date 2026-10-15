@@ -135,7 +135,7 @@ public sealed class RecordingConsentClient
         using var response = await _http.SendAsync(request, cancellationToken);
         var text = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new ConsentRequestException((int)response.StatusCode, RecordingConsent.ReadError(text)?.Code);
+            throw new ConsentRequestException((int)response.StatusCode, BackendError.ReadCode(text));
 
         try
         {
@@ -155,7 +155,7 @@ public sealed class RecordingConsentClient
 /// re-auth.
 /// </summary>
 public sealed class ConsentRequestException(int statusCode, string? code)
-    : Exception($"consent request failed: HTTP {statusCode}" + (code is null ? "" : $" [{code}]"))
+    : Exception($"consent request failed: {BackendError.Describe(statusCode, code)}")
 {
     public int StatusCode { get; } = statusCode;
     public string? Code { get; } = code;

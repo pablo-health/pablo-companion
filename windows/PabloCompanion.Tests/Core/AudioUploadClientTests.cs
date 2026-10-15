@@ -359,6 +359,20 @@ public class AudioUploadClientTests : IDisposable
         Assert.Single(handler.Requests);
     }
 
+    [Fact]
+    public async Task BackendError_MessageCarriesStatusAndCodeButNeverTheBody()
+    {
+        const string body = """{"error":{"code":"INVALID_STATUS","message":"Session for Jane Example is still recording"}}""";
+        var handler = new StubHandler().Respond(HttpStatusCode.BadRequest, body);
+        var client = MakeClient(handler);
+
+        var ex = await Assert.ThrowsAsync<SessionUploadException>(
+            () => client.UploadWithSelfHealAsync("session-1", WritePcm("mic.pcm", 100), WritePcm("system.pcm", 100)));
+
+        Assert.Equal("HTTP 400 [INVALID_STATUS]", ex.Message);
+        Assert.DoesNotContain("Jane", ex.Message);
+    }
+
     // --- encrypted sidecars, streamed ---
 
     [Fact]
