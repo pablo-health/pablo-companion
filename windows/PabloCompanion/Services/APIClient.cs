@@ -627,29 +627,6 @@ public class APIClient
     // ── Audio Upload ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Uploads therapist and client audio files to the backend for server-side
-    /// transcription. The headerless PCM sidecars are given accurate WAV headers on
-    /// the way out — see <see cref="WAVEncoder"/> for why that matters.
-    /// </summary>
-    /// <param name="sessionId">Backend session UUID (must be in recording_complete status).</param>
-    /// <param name="therapistAudioPath">Path to the mic PCM/WAV file.</param>
-    /// <param name="clientAudioPath">Path to the system audio PCM/WAV file (optional).</param>
-    public virtual async Task<AudioUploadResponse> UploadAudioAsync(
-        string sessionId,
-        string therapistAudioPath,
-        string? clientAudioPath = null)
-    {
-        try
-        {
-            return await _uploadClient.UploadAudioAsync(sessionId, therapistAudioPath, clientAudioPath);
-        }
-        catch (SessionUploadException ex)
-        {
-            throw TranslateUploadError(ex);
-        }
-    }
-
-    /// <summary>
     /// Uploads both channels straight to storage through signed URLs, healing a
     /// <c>400 INVALID_STATUS</c> at finalize once by PATCHing the session to
     /// <c>recording_complete</c> and finalizing again. Used by the pending-upload
