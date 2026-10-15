@@ -21,9 +21,7 @@ namespace PabloCompanion.Services;
 /// </summary>
 public class RecordingCleaner
 {
-    private static readonly string RecordingsRoot = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PabloCompanion", "Recordings");
+    private static readonly string RecordingsRoot = AppPaths.RecordingsRoot;
 
     private readonly string _recordingsRoot;
 

@@ -9,9 +9,7 @@ namespace PabloCompanion.Services;
 /// </summary>
 public sealed class SessionRecordingStore
 {
-    private static readonly string StorePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PabloCompanion", "SessionRecordings.json");
+    private static readonly string StorePath = AppPaths.SessionRecordingsFile;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

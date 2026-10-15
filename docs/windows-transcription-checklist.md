@@ -18,9 +18,10 @@ none of their failure modes apply when inference is server-side.
    `PendingTranscriptionStore` and calls `TranscriptionViewModel.UploadAudioAsync`.
 3. `PcmDecryptor.PrepareForUploadAsync` decrypts the sidecars to a temp file
    (when encrypted) — mirrors macOS `RecordingEncryptor.decryptPCMToTempFile`.
-4. `APIClient.UploadAudioAsync` POSTs `multipart/form-data` to
-   `/api/sessions/{id}/upload-audio` with `therapist_audio` and optional
-   `client_audio` parts. The temp files are cleaned up in the `finally` block.
+4. `APIClient.UploadAudioWithSelfHealAsync` (via the shared
+   `AudioUploadClient` in `PabloCompanion.Core`) uploads both channels through
+   signed URLs: `POST .../upload-audio/init`, one direct-to-storage PUT per
+   channel, then `POST .../upload-audio/finalize`.
 5. On failure the session stays in the pending queue; `ResumePendingUploadsAsync`
    retries on next launch with exponential backoff (5 min → 4 h, max 10
    attempts), matching the macOS retry policy.

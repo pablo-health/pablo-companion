@@ -12,10 +12,7 @@ public partial class App : Application
     public static IServiceProvider Services { get; private set; } = null!;
     public static Microsoft.UI.Dispatching.DispatcherQueue? UiDispatcherQueue { get; private set; }
 
-    public static string CrashLogPath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PabloCompanion",
-        "crash.log");
+    public static string CrashLogPath => PabloCompanion.Services.AppPaths.CrashLog;
 
     public static void Log(string message)
     {
@@ -144,9 +141,7 @@ public partial class App : Application
     /// </summary>
     private static void DropLegacyArtifacts()
     {
-        var appData = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PabloCompanion");
+        var appData = PabloCompanion.Services.AppPaths.Root;
 
         try
         {

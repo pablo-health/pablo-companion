@@ -22,10 +22,7 @@ public sealed class AudioCheckSettings : IAudioCheckSettings
     public AudioCheckSettings()
         : this(
             PackageAppVersionProvider.HasPackageIdentity(),
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "PabloCompanion",
-                "audio-check-offered"))
+            AppPaths.AudioCheckOfferedMarker)
     {
     }
 
