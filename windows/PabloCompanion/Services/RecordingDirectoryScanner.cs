@@ -42,6 +42,16 @@ public sealed class RecordingDirectoryScanner
         {
             if (!Directory.Exists(_recordingsRoot)) return 0;
 
+            // Before sign-in the store has no key: it reads as empty and cannot
+            // write, so every folder would look orphaned and every adoption would
+            // be dropped. Leave the folders where they are; the next pass after
+            // sign-in adopts them.
+            if (!_pendingStore.CanPersist)
+            {
+                App.Log("AdoptOrphans: no signed-in user yet; deferring the scan.");
+                return 0;
+            }
+
             // Every id the store holds is skipped, permanently failed ones included:
             // re-adding one would reset its retry count and failure and bring a dead
             // upload back to life. Those leave the store only through Remove, which

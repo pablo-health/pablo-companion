@@ -36,6 +36,33 @@ public sealed class RecordingDirectoryScannerTests : IDisposable
         Assert.Equal(0, scanner.AdoptOrphans());
     }
 
+    /// <summary>
+    /// The launch scan runs before session restore has signed the user in. With
+    /// no key the store cannot persist, so the scan must defer rather than adopt
+    /// into a queue that would be dropped, and must leave the folder for the
+    /// next pass.
+    /// </summary>
+    [Fact]
+    public void AdoptOrphans_WithoutSignedInUser_DefersAndKeepsTheFolder()
+    {
+        SeedSessionDir("orphan-deferred");
+        var noKey = new NoKeyCredentialManager();
+        var scanner = MakeScanner(new PendingTranscriptionStore(noKey, _pendingPath));
+
+        Assert.Equal(0, scanner.AdoptOrphans());
+        Assert.True(Directory.Exists(Path.Combine(_recordingsRoot, "orphan-deferred")));
+
+        // After sign-in the same folder is adopted by a keyed store.
+        var adopted = MakeScanner(MakePendingStore()).AdoptOrphans();
+        Assert.Equal(1, adopted);
+        Assert.NotNull(MakePendingStore().Get("orphan-deferred"));
+    }
+
+    private sealed class NoKeyCredentialManager : CredentialManager
+    {
+        public override byte[]? GetOrCreateUserEncryptionKey() => null;
+    }
+
     [Fact]
     public void AdoptOrphans_AddsEncryptedSessionToPending()
     {

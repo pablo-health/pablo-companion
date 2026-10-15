@@ -179,7 +179,7 @@ public partial class App : Application
 
         services.AddSingleton<Services.SessionKeepAliveService>();
         services.AddSingleton<Services.PendingUploadScheduler>(sp => new Services.PendingUploadScheduler(
-            () => sp.GetRequiredService<ViewModels.TranscriptionViewModel>().ResumePendingUploadsAsync()));
+            AdoptOrphansAndResumeAsync));
         services.AddSingleton<Services.ProtocolActivationListener>();
         services.AddSingleton<Services.DeepLinkRouter>();
 
@@ -228,21 +228,31 @@ public partial class App : Application
         {
             // Small delay to let the UI settle before background work
             await Task.Delay(2000);
-
-            // First, sweep the disk for orphaned recordings and adopt them into
-            // the pending queue. This is the safety net for any path where audio
-            // ended up on disk but never reached the upload pipeline.
-            var scanner = Services.GetRequiredService<Services.RecordingDirectoryScanner>();
-            var adopted = scanner.AdoptOrphans();
-            if (adopted > 0) Log($"Adopted {adopted} orphaned recording(s) into pending queue.");
-
-            var transcriptionVm = Services.GetRequiredService<ViewModels.TranscriptionViewModel>();
-            await transcriptionVm.ResumePendingUploadsAsync();
+            await AdoptOrphansAndResumeAsync();
         }
         catch (Exception ex)
         {
             // Best effort — don't crash on resume failures
             LogException("ResumePendingUploadsAsync", ex);
         }
+    }
+
+    /// <summary>
+    /// One pass: sweep the disk for orphaned recordings into the pending queue,
+    /// then drain the queue. Runs at launch and on the scheduler's cadence. The
+    /// launch pass usually lands before session restore has signed the user in,
+    /// when the store has no key and the scan defers itself, so the scheduler
+    /// repeating the sweep is what adopts those recordings on a cold start.
+    /// </summary>
+    private static async Task AdoptOrphansAndResumeAsync()
+    {
+        // This is the safety net for any path where audio ended up on disk
+        // but never reached the upload pipeline.
+        var scanner = Services.GetRequiredService<Services.RecordingDirectoryScanner>();
+        var adopted = scanner.AdoptOrphans();
+        if (adopted > 0) Log($"Adopted {adopted} orphaned recording(s) into pending queue.");
+
+        var transcriptionVm = Services.GetRequiredService<ViewModels.TranscriptionViewModel>();
+        await transcriptionVm.ResumePendingUploadsAsync();
     }
 }
