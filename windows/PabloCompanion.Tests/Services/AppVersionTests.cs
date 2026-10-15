@@ -90,6 +90,19 @@ public class AppVersionTests
         Assert.False(APIClient.MapError(400, "").IsUpdateRequired);
     }
 
+    [Theory]
+    [InlineData(404, "Not found: HTTP 404 [NOT_FOUND]")]
+    [InlineData(409, "Conflict: HTTP 409 [NOT_FOUND]")]
+    [InlineData(500, "Request failed: HTTP 500 [NOT_FOUND]")]
+    public void MapError_MessageIsCategoryStatusAndCode_NeverTheBody(ushort status, string expected)
+    {
+        var error = APIClient.MapError(status, """{"error": {"code": "NOT_FOUND", "message": "No client named Jane Example"}}""");
+
+        Assert.Equal(expected, error.Message);
+        Assert.Equal("NOT_FOUND", error.ErrorCode);
+        Assert.Equal("Request failed: HTTP 502", APIClient.MapError(502, "<html>Jane Example</html>").Message);
+    }
+
     [Fact]
     public void NotifyIfUpdateRequired_RaisesOnlyFor426()
     {

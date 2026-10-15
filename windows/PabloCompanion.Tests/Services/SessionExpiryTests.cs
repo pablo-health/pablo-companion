@@ -1,3 +1,4 @@
+using PabloCompanion.Core;
 using PabloCompanion.Services;
 using PabloCompanion.ViewModels;
 
@@ -15,10 +16,9 @@ public sealed class SessionExpiryTests
     {
         var body = """{"error": {"code": "IDLE_TIMEOUT", "message": "Session expired"}}""";
 
-        var (message, code) = APIClient.TryParseErrorEnvelope(body);
+        var code = BackendError.ReadCode(body);
 
         Assert.Equal(APIClient.IdleTimeoutCode, code);
-        Assert.Equal("Session expired", message);
     }
 
     [Theory]
@@ -28,7 +28,7 @@ public sealed class SessionExpiryTests
     [InlineData("[1, 2, 3]")]
     public void ErrorEnvelope_ReturnsNullCodeForNonEnvelopeBodies(string body)
     {
-        var (_, code) = APIClient.TryParseErrorEnvelope(body);
+        var code = BackendError.ReadCode(body);
 
         Assert.Null(code);
     }

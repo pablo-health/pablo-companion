@@ -634,19 +634,15 @@ public partial class TranscriptionViewModel : ObservableObject
         {
             _pendingStore.IncrementRetry(item.SessionId);
             ErrorMessage = $"Audio upload failed: {ex.Message}";
-            App.Log($"  upload FAIL session={item.SessionId} retry={item.RetryCount}->{item.RetryCount + 1} type={ex.GetType().Name}{FormatStatusCode(ex.Message)}");
+            App.Log($"  upload FAIL session={item.SessionId} retry={item.RetryCount}->{item.RetryCount + 1} type={ex.GetType().Name}{FormatStatusCode(ex)}");
             return false;
         }
     }
 
     /// <summary>
-    /// Extracts only the HTTP status digits from the upload exception (e.g. "(401)").
-    /// Discards the rest of the message — the response body can contain PHI/PII.
+    /// The HTTP status of a backend failure for the upload log line, read from the
+    /// typed exception rather than its message.
     /// </summary>
-    private static string FormatStatusCode(string? message)
-    {
-        if (string.IsNullOrEmpty(message)) return "";
-        var match = System.Text.RegularExpressions.Regex.Match(message, @"\((\d{3})\)");
-        return match.Success ? $" status={match.Groups[1].Value}" : "";
-    }
+    private static string FormatStatusCode(Exception ex) =>
+        ex is PabloException { StatusCode: var status } ? $" status={status}" : "";
 }

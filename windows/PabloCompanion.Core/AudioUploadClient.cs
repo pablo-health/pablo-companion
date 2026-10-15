@@ -381,10 +381,7 @@ public sealed class AudioUploadClient
 
     private static SessionUploadException BuildError(int statusCode, string body)
     {
-        var (message, code) = SessionUploadException.ParseEnvelope(body);
-        return new SessionUploadException(
-            statusCode,
-            code,
-            message ?? (string.IsNullOrWhiteSpace(body) ? $"HTTP {statusCode}" : body));
+        var code = BackendError.ReadCode(body);
+        return new SessionUploadException(statusCode, code, BackendError.Describe(statusCode, code));
     }
 }
