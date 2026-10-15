@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
@@ -34,10 +33,7 @@ public sealed class AudioUploadClient
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
     };
 
-    private readonly Func<string> _baseUrl;
-    private readonly Func<Task<string>> _token;
-    private readonly Action<HttpRequestMessage>? _attachBinding;
-    private readonly IReadOnlyDictionary<string, string> _clientHeaders;
+    private readonly BackendRequest _backend;
     private readonly HttpClient _http;
     private readonly HttpClient _storageHttp;
     private readonly TimeSpan _putStallTimeout;
@@ -79,13 +75,7 @@ public sealed class AudioUploadClient
         HttpClient? storageHttp = null,
         TimeSpan? putStallTimeout = null)
     {
-        ArgumentNullException.ThrowIfNull(baseUrl);
-        ArgumentNullException.ThrowIfNull(token);
-
-        _baseUrl = baseUrl;
-        _token = token;
-        _attachBinding = attachBinding;
-        _clientHeaders = clientHeaders ?? new Dictionary<string, string>();
+        _backend = new BackendRequest(baseUrl, token, attachBinding, clientHeaders);
         _http = http ?? new HttpClient();
         _storageHttp = storageHttp ?? new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         _putStallTimeout = putStallTimeout ?? DefaultPutStallTimeout;
@@ -284,13 +274,13 @@ public sealed class AudioUploadClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var url = $"{_baseUrl()}/api/sessions/{Uri.EscapeDataString(sessionId)}/status";
+        var url = _backend.Url($"/api/sessions/{Uri.EscapeDataString(sessionId)}/status");
         using var request = new HttpRequestMessage(HttpMethod.Patch, url)
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(new { status }), Encoding.UTF8, "application/json"),
         };
-        await AuthorizeAsync(request);
+        await _backend.AuthorizeAsync(request);
 
         using var response = await _http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -306,9 +296,9 @@ public sealed class AudioUploadClient
     private async Task<string> PostBackendAsync(
         string sessionId, string route, CancellationToken cancellationToken)
     {
-        var url = $"{_baseUrl()}/api/sessions/{Uri.EscapeDataString(sessionId)}/{route}";
+        var url = _backend.Url($"/api/sessions/{Uri.EscapeDataString(sessionId)}/{route}");
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        await AuthorizeAsync(request);
+        await _backend.AuthorizeAsync(request);
 
         using var response = await _http.SendAsync(request, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -388,14 +378,6 @@ public sealed class AudioUploadClient
 
     private static FileStream OpenForStreaming(string path) =>
         new(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 81920, useAsync: true);
-
-    private async Task AuthorizeAsync(HttpRequestMessage request)
-    {
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await _token());
-        foreach (var (name, value) in _clientHeaders)
-            request.Headers.Add(name, value);
-        _attachBinding?.Invoke(request);
-    }
 
     private static SessionUploadException BuildError(int statusCode, string body)
     {

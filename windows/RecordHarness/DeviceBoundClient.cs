@@ -140,11 +140,7 @@ public sealed class DeviceBoundClient : IDisposable
         object? jsonBody = null,
         CancellationToken cancellationToken = default)
     {
-        var url = _baseUrl + path;
-        using var request = new HttpRequestMessage(method, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
-        request.Headers.Add("X-Install-ID", InstallId);
-        request.Headers.Add("DPoP", DpopProof.Create(_deviceKey, method.Method, url));
+        using var request = SignedRequest(method, path, idToken);
 
         if (jsonBody is not null)
         {
@@ -168,11 +164,7 @@ public sealed class DeviceBoundClient : IDisposable
         string? rawJson,
         CancellationToken cancellationToken = default)
     {
-        var url = _baseUrl + path;
-        using var request = new HttpRequestMessage(method, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
-        request.Headers.Add("X-Install-ID", InstallId);
-        request.Headers.Add("DPoP", DpopProof.Create(_deviceKey, method.Method, url));
+        using var request = SignedRequest(method, path, idToken);
         if (rawJson is not null)
             request.Content = new StringContent(rawJson, Encoding.UTF8, "application/json");
 
@@ -187,9 +179,27 @@ public sealed class DeviceBoundClient : IDisposable
     public void AttachBinding(HttpRequestMessage request)
     {
         if (request.RequestUri is null) return;
-        request.Headers.Add("DPoP", DpopProof.Create(
-            _deviceKey, request.Method.Method, request.RequestUri.ToString()));
+        Bind(request, request.RequestUri.ToString());
+    }
+
+    /// <summary>A request to <paramref name="path"/> carrying <c>Bearer</c> plus the device binding.</summary>
+    private HttpRequestMessage SignedRequest(HttpMethod method, string path, string idToken)
+    {
+        var url = _baseUrl + path;
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+        Bind(request, url);
+        return request;
+    }
+
+    /// <summary>
+    /// The one place the binding is stamped: <c>X-Install-ID</c> and a fresh
+    /// <c>DPoP</c> proof over the request's method and <paramref name="url"/>.
+    /// </summary>
+    private void Bind(HttpRequestMessage request, string url)
+    {
         request.Headers.Add("X-Install-ID", InstallId);
+        request.Headers.Add("DPoP", DpopProof.Create(_deviceKey, request.Method.Method, url));
     }
 
     private async Task<Response> SendAsync(

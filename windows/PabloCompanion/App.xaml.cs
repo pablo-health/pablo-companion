@@ -163,7 +163,7 @@ public partial class App : Application
     {
         services.AddSingleton<Services.CredentialManager>();
         services.AddSingleton<Services.DeviceKeyService>();
-        services.AddSingleton<Services.TokenRefresher>();
+        services.AddSingleton<Core.TokenRefresher>();
         services.AddSingleton<Services.APIClient>();
         services.AddSingleton<Services.VideoLaunchService>();
 
