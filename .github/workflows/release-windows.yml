@@ -110,8 +110,13 @@ jobs:
           FILE="windows/PabloCompanion/AppPackages/$UPLOAD_NAME"
           # On a shared v* tag the macOS job races this one; whichever runs first
           # creates the release, and a lost race to create is not a failure.
+          # A Windows-only (win-*) release is never marked latest: the Mac
+          # download link is releases/latest/download/Pablo.dmg, which 404s
+          # when the latest release has no DMG.
+          latest=true
+          [[ "$TAG" != win-* ]] || latest=false
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "$TAG" --generate-notes \
+            gh release create "$TAG" --title "$TAG" --generate-notes --latest="$latest" \
               || gh release view "$TAG" >/dev/null
           fi
           gh release upload "$TAG" "$FILE" --clobber
