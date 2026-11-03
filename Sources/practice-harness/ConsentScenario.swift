@@ -272,6 +272,12 @@ private struct Driver {
             "end_at": iso.string(from: start.addingTimeInterval(50 * 60)),
             "duration_minutes": 50,
             "session_type": "individual",
+            // Book past the test clinician's availability rules, as a clinician
+            // confirming "book it anyway" does. This scenario tests consent, not
+            // scheduling: when another suite blocked today on the shared test
+            // account, every visit was refused and the nightly run went red for
+            // a reason unrelated to anything it checks.
+            "rule_override": true,
         ]
         if let videoLink { body["video_link"] = videoLink }
         let appointment = try await send("POST", "/api/appointments", body)
