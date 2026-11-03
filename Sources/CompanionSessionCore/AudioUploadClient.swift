@@ -150,6 +150,7 @@ public struct AudioUploadClient: Sendable {
         therapistAudioURL: URL,
         clientAudioURL: URL?,
         sampleRate: Int,
+        clientChannels: Int = 2,
         recoveryStatus: String = "recording_complete",
         onProgress: @Sendable (Double) -> Void = { _ in }
     ) async throws -> AudioUploadResponse {
@@ -158,6 +159,7 @@ public struct AudioUploadClient: Sendable {
             therapistAudioURL: therapistAudioURL,
             clientAudioURL: clientAudioURL,
             sampleRate: sampleRate,
+            clientChannels: clientChannels,
             recoveryStatus: recoveryStatus,
             onProgress: onProgress
         )
@@ -192,9 +194,10 @@ public struct AudioUploadClient: Sendable {
     /// self-describing (RIFF or ADTS AAC).
     ///
     /// Internal rather than private so the passthrough can be asserted directly:
-    /// AAC has been the production capture format since #105, and this branch
-    /// had no test — a wrong sync mask would staple a PCM-claiming WAV header
-    /// onto every AAC recording, corrupt at transcription, with a green suite.
+    /// an AAC recording must pass through untouched (the app captures raw PCM,
+    /// but #105 made the uploader accept AAC), and this branch had no test — a
+    /// wrong sync mask would staple a PCM-claiming WAV header onto every AAC
+    /// recording, corrupt at transcription, with a green suite.
     static func wavData(_ data: Data, sampleRate: Int, channels: Int) -> Data {
         // Already a self-describing container (WAV or ADTS AAC)? Pass through.
         if data.prefix(4) == Data("RIFF".utf8) || isADTSSync(data) { return data }
@@ -238,11 +241,16 @@ extension AudioUploadClient {
     /// finalize` (Bearer + DPoP) verifies both blobs and starts transcription.
     ///
     /// Both channels are required: finalize 400s if either blob is missing.
+    ///
+    /// `clientChannels` is the client file's channel count when it is headerless
+    /// PCM: 2 for a raw system-audio sidecar, 1 once ``SessionAudioStager`` has
+    /// converted it for upload.
     public func uploadAudioViaSignedURL(
         sessionId: String,
         therapistAudioURL: URL,
         clientAudioURL: URL?,
         sampleRate: Int,
+        clientChannels: Int = 2,
         recoveryStatus: String = "recording_complete",
         onProgress: @Sendable (Double) -> Void = { _ in }
     ) async throws -> AudioUploadResponse {
@@ -262,11 +270,13 @@ extension AudioUploadClient {
         let initResponse = try await initSignedUpload(sessionId: sessionId)
         onProgress(0.15)
 
-        // Produce the exact WAV bytes the backend/transcription expects (mic =
-        // mono, system = stereo) as files on disk, so the PUT streams from disk.
+        // Produce the exact WAV bytes the backend/transcription expects (mic
+        // mono, client as given) as files on disk, so the PUT streams from disk.
         let therapist = try Self.wavFileForUpload(source: therapistAudioURL, sampleRate: sampleRate, channels: 1)
         defer { if therapist.isTemp { try? FileManager.default.removeItem(at: therapist.url) } }
-        let client = try Self.wavFileForUpload(source: clientAudioURL, sampleRate: sampleRate, channels: 2)
+        let client = try Self.wavFileForUpload(
+            source: clientAudioURL, sampleRate: sampleRate, channels: clientChannels
+        )
         defer { if client.isTemp { try? FileManager.default.removeItem(at: client.url) } }
 
         try await putChannelUnlessStored(initResponse.therapist, fileURL: therapist.url, label: "therapist")
