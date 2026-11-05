@@ -244,11 +244,24 @@ private struct Driver {
             store: store,
             upload: { entry in
                 do {
+                    // Stage exactly as TranscriptionViewModel.upload does, so the
+                    // bytes PUT to storage are the ones the app sends.
+                    let staged = try SessionAudioStager.stage(
+                        entry.segments,
+                        fallbackRate: 48000,
+                        decrypt: { (URL(fileURLWithPath: $0), false) }
+                    )
+                    defer { staged.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+                    RecordScenario.log(
+                        "staged upload: \(Self.fileSize(staged.micURL)) + "
+                            + "\(staged.systemURL.map(Self.fileSize) ?? 0) bytes at \(Int(staged.sampleRate)) Hz mono"
+                    )
                     let uploaded = try await uploadClient.uploadWithSelfHeal(
                         sessionId: entry.sessionId,
-                        therapistAudioURL: URL(fileURLWithPath: entry.micPath),
-                        clientAudioURL: entry.systemPath.map { URL(fileURLWithPath: $0) },
-                        sampleRate: Int(entry.sampleRate ?? 48000)
+                        therapistAudioURL: staged.micURL,
+                        clientAudioURL: staged.systemURL,
+                        sampleRate: Int(staged.sampleRate),
+                        clientChannels: SessionAudioStager.uploadChannels
                     )
                     uploadStatus.value = uploaded.status
                 } catch {
@@ -346,8 +359,11 @@ private struct Driver {
             enableMicCapture: true,
             enableSystemCapture: true,
             mixingStrategy: .separated,
-            exportRawPCM: true,
-            sidecarFormat: .aacADTS
+            // Raw-PCM sidecars, as RecordingService writes them. This harness
+            // once captured AAC here while the app captured PCM, so a long run
+            // uploaded small files the app never produces and passed while a
+            // real session past ~45 minutes could not upload at all.
+            exportRawPCM: true
         )
 
         let session = CompositeCaptureSession(
@@ -375,6 +391,10 @@ private struct Driver {
             systemRMS: systemURL.map(Self.pcmRMS) ?? 0,
             overflow: diag.micOverflowSamples + diag.systemOverflowSamples
         )
+    }
+
+    private static func fileSize(_ url: URL) -> Int {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
     }
 
     /// RMS of a raw signed-16-bit-LE PCM sidecar — a cheap "is this speech, not
