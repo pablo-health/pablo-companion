@@ -4,14 +4,18 @@ using System.Net;
 namespace PabloCompanion.Core;
 
 /// <summary>
-/// Sends an encrypted capture sidecar as the plaintext audio it holds, decrypting
-/// chunk by chunk straight into the request stream.
+/// Sends an encrypted capture sidecar as the audio it holds, in the upload format:
+/// decrypting chunk by chunk and converting the plaintext to
+/// <see cref="AudioUploadClient.UploadSampleRate"/> mono straight into the
+/// request stream.
 ///
 /// The sidecar format is a run of length-prefixed AES-GCM chunks:
 /// <c>[4-byte LE length][12-byte nonce | ciphertext | 16-byte tag]</c>. GCM is a
 /// stream mode, so each chunk's plaintext is exactly <c>length - 28</c> bytes, and
-/// the body's size is known by walking the prefixes without decrypting anything.
-/// That matters three ways for a signed direct-to-storage PUT:
+/// the plaintext size is known by walking the prefixes without decrypting
+/// anything; the converted size follows from it exactly
+/// (<see cref="UploadFormatConverter.OutputByteCount"/>). That matters three ways
+/// for a signed direct-to-storage PUT:
 /// <list type="bullet">
 /// <item>No plaintext ever touches disk, and memory stays at about one chunk
 /// however long the session ran. Decrypting to a temp file first would leave
@@ -25,7 +29,8 @@ namespace PabloCompanion.Core;
 ///
 /// Format-agnostic, like the macOS uploader: if the decrypted audio is already a
 /// self-describing container (a RIFF WAV or an ADTS AAC stream) it is sent
-/// through unchanged; only headerless PCM gets the 44-byte WAV header.
+/// through unchanged; only headerless PCM is converted and given the 44-byte WAV
+/// header.
 ///
 /// A trailing chunk cut short (the writer stopped mid-chunk) is left out of both
 /// the length and the body, matching how the sidecar has always been read. A
@@ -44,18 +49,21 @@ public sealed class EncryptedPcmWavContent : HttpContent
     private const int MaxChunkLength = 16 * 1024 * 1024;
 
     private readonly string _path;
+    private readonly int _sampleRate;
+    private readonly int _channels;
     private readonly Func<byte[], byte[]> _decryptChunk;
     private readonly int _chunkCount;
     private readonly byte[] _header;
+    private readonly long _outputByteCount;
 
-    /// <summary>Plaintext bytes the sidecar decrypts to, excluding any WAV header.</summary>
+    /// <summary>Plaintext bytes the sidecar decrypts to, before conversion and excluding any WAV header.</summary>
     public long PlaintextLength { get; }
 
-    /// <summary>Whether the decrypted audio is already self-describing and is sent unwrapped.</summary>
+    /// <summary>Whether the decrypted audio is already self-describing and is sent unwrapped and unconverted.</summary>
     public bool IsPassthrough { get; }
 
     /// <param name="path">Encrypted sidecar (<c>.enc.pcm</c>).</param>
-    /// <param name="sampleRate">Frames per second the audio was captured at; stamped into the WAV header.</param>
+    /// <param name="sampleRate">Frames per second the audio was captured at: the rate it is converted from.</param>
     /// <param name="channels">1 for the mono mic sidecar, 2 for the stereo system sidecar.</param>
     /// <param name="decryptChunk">Decrypts one combined <c>nonce|ciphertext|tag</c> chunk to its plaintext.</param>
     public EncryptedPcmWavContent(
@@ -65,6 +73,8 @@ public sealed class EncryptedPcmWavContent : HttpContent
         ArgumentNullException.ThrowIfNull(decryptChunk);
 
         _path = path;
+        _sampleRate = sampleRate;
+        _channels = channels;
         _decryptChunk = decryptChunk;
 
         // The sidecar is closed before upload, so this walk can't race the writer.
@@ -74,9 +84,18 @@ public sealed class EncryptedPcmWavContent : HttpContent
 
         file.Position = 0;
         IsPassthrough = AudioFormat.IsSelfDescribing(ReadPlaintextPrefix(file, _chunkCount, wanted: 4));
-        _header = IsPassthrough
-            ? []
-            : WAVEncoder.BuildHeader(plaintextLength, sampleRate, channels);
+        if (IsPassthrough)
+        {
+            _header = [];
+            _outputByteCount = plaintextLength;
+        }
+        else
+        {
+            _outputByteCount = UploadFormatConverter.OutputByteCount(
+                plaintextLength, sampleRate, channels, AudioUploadClient.UploadSampleRate);
+            _header = WAVEncoder.BuildHeader(
+                _outputByteCount, AudioUploadClient.UploadSampleRate, AudioUploadClient.UploadChannels);
+        }
     }
 
     protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
@@ -88,9 +107,14 @@ public sealed class EncryptedPcmWavContent : HttpContent
         if (_header.Length > 0)
             await stream.WriteAsync(_header, cancellationToken);
 
+        var converter = IsPassthrough
+            ? null
+            : new UploadFormatConverter(_sampleRate, _channels, AudioUploadClient.UploadSampleRate);
+
         using var file = OpenRead(_path);
         var prefix = new byte[4];
         byte[]? chunk = null;
+        long written = 0;
 
         // Bounded to the chunk count the length was computed from, so the body can
         // never disagree with Content-Length.
@@ -103,13 +127,27 @@ public sealed class EncryptedPcmWavContent : HttpContent
             if (chunk is null || chunk.Length != length) chunk = new byte[length];
             await file.ReadExactlyAsync(chunk, cancellationToken);
 
-            await stream.WriteAsync(DecryptChecked(chunk), cancellationToken);
+            var plaintext = DecryptChecked(chunk);
+            var audio = converter is null ? plaintext : converter.Process(plaintext);
+            await stream.WriteAsync(audio, cancellationToken);
+            written += audio.Length;
         }
+
+        if (converter is not null)
+        {
+            var tail = converter.Finish();
+            await stream.WriteAsync(tail, cancellationToken);
+            written += tail.Length;
+        }
+
+        // The converted length was promised from the plaintext length; silence at
+        // the tail beats a body that disagrees with its header.
+        await WavStreamContent.PadAsync(stream, _outputByteCount - written);
     }
 
     protected override bool TryComputeLength(out long length)
     {
-        length = _header.Length + PlaintextLength;
+        length = _header.Length + _outputByteCount;
         return true;
     }
 
