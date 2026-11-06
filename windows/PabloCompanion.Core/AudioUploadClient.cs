@@ -25,8 +25,30 @@ public sealed class AudioUploadClient
     /// <summary>The status a session must reach before the backend accepts its audio.</summary>
     public const string RecordingCompleteStatus = "recording_complete";
 
-    /// <summary>Sample rate the capture path records at, and the rate stamped into the WAV headers.</summary>
+    /// <summary>
+    /// Sample rate the capture path records at, assumed for a recording saved
+    /// without one. The sidecars are converted on the way out, so this is the
+    /// rate a raw PCM channel is converted from, not what its WAV header says.
+    /// </summary>
     public const int DefaultSampleRate = 48000;
+
+    /// <summary>
+    /// The rate every uploaded channel is at, whatever it was captured at.
+    ///
+    /// The sidecars are headerless PCM at the capture rate, usually 48 kHz: six
+    /// times what transcription uses for the stereo client channel, which made an
+    /// hour-long session's client file over a gigabyte. That is past the per-file
+    /// upload ceiling, so a session longer than about 45 minutes could never
+    /// upload. At 16 kHz mono an hour is about 115 MB per channel. 16 kHz is the
+    /// rate speech recognition works at, so nothing it uses is lost, and a mono
+    /// client channel also gets the backend's silence trimming, which it skips
+    /// for stereo. The same values as macOS <c>SessionAudioStager.uploadRate</c>
+    /// and <c>uploadChannels</c>.
+    /// </summary>
+    public const int UploadSampleRate = 16000;
+
+    /// <summary>The channel count of every uploaded file.</summary>
+    public const int UploadChannels = 1;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -95,7 +117,8 @@ public sealed class AudioUploadClient
     /// Flow: <see cref="InitSignedUploadAsync"/> (Bearer + device binding) mints a
     /// signed recipe per channel → <see cref="PutChannelUnlessStoredAsync"/> sends
     /// each channel to storage, streamed from disk (decrypted on the fly when the
-    /// sidecar is encrypted), skipping one an earlier attempt already stored →
+    /// sidecar is encrypted, and converted to <see cref="UploadSampleRate"/> mono),
+    /// skipping one an earlier attempt already stored →
     /// <see cref="FinalizeAsync"/> verifies both objects and starts transcription.
     ///
     /// The heal: finalize rejects a session still in <c>recording</c> (one whose
@@ -105,11 +128,12 @@ public sealed class AudioUploadClient
     /// propagates unchanged so the caller's retry/backoff policy takes over.
     /// </summary>
     /// <param name="sessionId">Session the audio belongs to.</param>
-    /// <param name="therapistAudioPath">Mic sidecar (mono).</param>
-    /// <param name="clientAudioPath">System-audio sidecar (stereo). Required: finalize verifies
-    /// both objects, so a missing channel fails here, before any backend round-trip.</param>
-    /// <param name="sampleRate">Frames per second the recording was captured at; stamped into the
-    /// WAV header of a raw PCM channel.</param>
+    /// <param name="therapistAudioPath">Mic sidecar (mono, at the capture rate).</param>
+    /// <param name="clientAudioPath">System-audio sidecar (stereo, at the capture rate). Required:
+    /// finalize verifies both objects, so a missing channel fails here, before any backend round-trip.</param>
+    /// <param name="sampleRate">Frames per second the sidecars were captured at. A raw PCM channel is
+    /// converted from this rate to <see cref="UploadSampleRate"/> mono as it is sent, and its WAV
+    /// header describes the converted audio.</param>
     /// <param name="recoveryStatus">Status the heal PATCHes a still-recording session to.</param>
     /// <param name="decryptChunk">Decrypts one AES-GCM sidecar chunk. Required when either path is
     /// an encrypted sidecar (<see cref="EncryptedSidecarSuffix"/>).</param>
@@ -220,7 +244,7 @@ public sealed class AudioUploadClient
         }
 
         await PutAsync(channel.Upload, content, label, cancellationToken);
-        _log?.Invoke($"  PUT {label} channel to storage ({length} bytes)");
+        _log?.Invoke($"  PUT {label} channel to storage ({length} bytes at {UploadSampleRate} Hz mono)");
         return true;
     }
 
@@ -241,9 +265,10 @@ public sealed class AudioUploadClient
     /// <summary>
     /// Builds the exact body a channel's PUT sends, with a known length.
     ///
-    /// Encrypted sidecars decrypt on the fly (<see cref="EncryptedPcmWavContent"/>);
-    /// plaintext raw PCM gets a WAV header (<see cref="WavStreamContent"/>); audio
-    /// that already describes itself (RIFF WAV, ADTS AAC) goes through unchanged.
+    /// Encrypted sidecars decrypt and convert on the fly
+    /// (<see cref="EncryptedPcmWavContent"/>); plaintext raw PCM is converted to the
+    /// upload format under a WAV header (<see cref="WavStreamContent"/>); audio that
+    /// already describes itself (RIFF WAV, ADTS AAC) goes through unchanged.
     /// No Content-Type is set here: the signed headers decide it.
     /// </summary>
     internal static HttpContent BuildChannelContent(

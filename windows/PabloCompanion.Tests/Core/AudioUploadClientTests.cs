@@ -116,13 +116,17 @@ public class AudioUploadClientTests : IDisposable
         Assert.Equal("Bearer test-token", handler.Requests[3].Authorization);
         Assert.Equal("test/1.0", handler.Requests[3].Header("X-Client-Type"));
 
-        // Each PUT is its channel as a WAV: mono mic, stereo system, exact sizes.
+        // Each PUT is its channel as a WAV in the upload format: 200 frames of
+        // 48 kHz mono mic and 200 frames of 48 kHz stereo system both land as 67
+        // frames of 16 kHz mono, exact sizes.
         var therapist = handler.Requests[1].Body;
         var system = handler.Requests[2].Body;
-        Assert.Equal(44 + 400, therapist.Length);
-        Assert.Equal(44 + 800, system.Length);
+        Assert.Equal(44 + 67 * 2, therapist.Length);
+        Assert.Equal(44 + 67 * 2, system.Length);
         Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(therapist.AsSpan(22, 2)));
-        Assert.Equal(2, BinaryPrimitives.ReadUInt16LittleEndian(system.AsSpan(22, 2)));
+        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(system.AsSpan(22, 2)));
+        Assert.Equal(16000u, BinaryPrimitives.ReadUInt32LittleEndian(therapist.AsSpan(24, 4)));
+        Assert.Equal(16000u, BinaryPrimitives.ReadUInt32LittleEndian(system.AsSpan(24, 4)));
     }
 
     [Fact]
@@ -178,10 +182,13 @@ public class AudioUploadClientTests : IDisposable
         }
     }
 
+    // 100 bytes of 48 kHz mono and 200 bytes of 48 kHz stereo are 50 frames each,
+    // which is 17 frames (34 bytes) of 16 kHz mono once converted: the size storage
+    // holds and existing_bytes reports.
     [Theory]
-    [InlineData(44 + 100, 44 + 200, 0)]       // both already stored at the exact size: no PUTs
-    [InlineData(44 + 100, null, 1)]           // therapist stored, client unknown: client only
-    [InlineData(44 + 99, 44 + 200, 1)]        // therapist size differs: re-send therapist only
+    [InlineData(44 + 34, 44 + 34, 0)]         // both already stored at the exact size: no PUTs
+    [InlineData(44 + 34, null, 1)]            // therapist stored, client unknown: client only
+    [InlineData(44 + 33, 44 + 34, 1)]         // therapist size differs: re-send therapist only
     [InlineData(null, null, 2)]               // older backend / first attempt: send both
     public async Task Signed_SkipsAPutOnlyWhenExistingBytesMatchesTheExactSize(
         int? therapistExisting, int? clientExisting, int expectedPuts)
@@ -241,13 +248,62 @@ public class AudioUploadClientTests : IDisposable
         var clientPut = handler.Requests[2].Body;
         Assert.Equal(WAVEncoder.HeaderSize, clientPut.Length);
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(clientPut.AsSpan(40, 4)));
-        Assert.Equal(2, BinaryPrimitives.ReadUInt16LittleEndian(clientPut.AsSpan(22, 2)));
+        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(clientPut.AsSpan(22, 2)));
         Assert.Contains(log, line => line.Contains("WARN client channel has no audio"));
     }
 
     [Fact]
-    public async Task Signed_StampsTheRecordingsSampleRateIntoTheHeader()
+    public async Task Signed_ConvertsEveryChannelToTheUploadFormat_WhateverTheCaptureRate()
     {
+        // The capture rate is negotiated at runtime (a Bluetooth headset in
+        // hands-free mode can drop the mic to 8-24 kHz; a device may run at
+        // 44.1 kHz). Whatever it was, every channel leaves as 16 kHz mono, and
+        // the header says so: 441 frames at 44.1 kHz are 160 frames at 16 kHz.
+        var handler = new StubHandler()
+            .Respond(HttpStatusCode.OK, InitBody())
+            .Respond(HttpStatusCode.OK, "")
+            .Respond(HttpStatusCode.OK, "")
+            .Respond(HttpStatusCode.OK, OkBody);
+        var client = MakeClient(handler);
+        var mic = Pattern(441 * 2);
+        var system = Pattern(441 * 4);
+
+        await client.UploadWithSelfHealAsync(
+            "session-1", WriteBytes("mic.pcm", mic), WriteBytes("system.pcm", system), sampleRate: 44100);
+
+        foreach (var (put, pcm, channels) in new[] { (handler.Requests[1], mic, 1), (handler.Requests[2], system, 2) })
+        {
+            var expected = Convert(pcm, 44100, channels);
+            Assert.Equal(160 * 2, expected.Length);
+            Assert.Equal(WAVEncoder.BuildHeader(expected.Length, 16000, 1), put.Body[..44]);
+            Assert.Equal(expected, put.Body[44..]);
+        }
+    }
+
+    [Fact]
+    public async Task Signed_ASidecarAlreadyInTheUploadFormat_IsSentSampleForSample()
+    {
+        var handler = new StubHandler()
+            .Respond(HttpStatusCode.OK, InitBody())
+            .Respond(HttpStatusCode.OK, "")
+            .Respond(HttpStatusCode.OK, "")
+            .Respond(HttpStatusCode.OK, OkBody);
+        var client = MakeClient(handler);
+        var mic = Pattern(1000);
+
+        await client.UploadWithSelfHealAsync(
+            "session-1", WriteBytes("mic.pcm", mic), WritePcm("system.pcm", 100), sampleRate: 16000);
+
+        Assert.Equal(WAVEncoder.Wrap(mic, 16000, 1), handler.Requests[1].Body);
+    }
+
+    [Fact]
+    public async Task Signed_AnHourOfStereoCaptureFitsUnderTheUploadCeiling()
+    {
+        // What made a long session unsendable: 48 kHz stereo is 192 KB a second,
+        // past the backend's 500 MiB per-file ceiling at about 45 minutes.
+        // Converted, every channel is 32 KB a second.
+        const int seconds = 10;
         var handler = new StubHandler()
             .Respond(HttpStatusCode.OK, InitBody())
             .Respond(HttpStatusCode.OK, "")
@@ -256,10 +312,17 @@ public class AudioUploadClientTests : IDisposable
         var client = MakeClient(handler);
 
         await client.UploadWithSelfHealAsync(
-            "session-1", WritePcm("mic.pcm", 100), WritePcm("system.pcm", 100), sampleRate: 44100);
+            "session-1",
+            WritePcm("mic.pcm", 48000 * 2 * seconds),
+            WritePcm("system.pcm", 48000 * 2 * 2 * seconds));
 
-        Assert.Equal(44100u, BinaryPrimitives.ReadUInt32LittleEndian(handler.Requests[1].Body.AsSpan(24, 4)));
-        Assert.Equal(44100u, BinaryPrimitives.ReadUInt32LittleEndian(handler.Requests[2].Body.AsSpan(24, 4)));
+        foreach (var put in handler.Requests.Where(r => r.Method == HttpMethod.Put))
+        {
+            var bytesPerSecond = (put.Body.Length - 44) / seconds;
+            Assert.Equal(32000, bytesPerSecond);
+            Assert.Equal(put.Body.Length.ToString(), put.Header("Content-Length"));
+            Assert.True(bytesPerSecond * 3600L < 500L * 1024 * 1024 / 4);
+        }
     }
 
     [Fact]
@@ -362,14 +425,14 @@ public class AudioUploadClientTests : IDisposable
     // --- encrypted sidecars, streamed ---
 
     [Fact]
-    public async Task Encrypted_ContentLengthIsHeaderPlusPlaintext_AndBodyDecryptsToTheOriginalPcm()
+    public async Task Encrypted_ContentLengthIsHeaderPlusConvertedAudio_AndBodyIsTheConvertedPcm()
     {
         var pcm = Pattern(10_000);
-        // Uneven chunks, including a short last one, as capture produces.
+        // Uneven chunks, including a short last one, as capture produces; 3,333
+        // bytes also splits a stereo frame across chunks.
         var mic = WriteEncrypted("mic.enc.pcm", pcm, chunkSize: 3_333);
-        var sys = WriteEncrypted("system.enc.pcm", pcm, chunkSize: 4_096);
-        var expectedLength = 44 + ChunkLengths(mic).Sum(len => len - 28);
-        Assert.Equal(44 + pcm.Length, expectedLength);
+        var sys = WriteEncrypted("system.enc.pcm", pcm, chunkSize: 3_333);
+        Assert.Equal(pcm.Length, ChunkLengths(mic).Sum(len => len - 28));
 
         var handler = new StubHandler()
             .Respond(HttpStatusCode.OK, InitBody())
@@ -380,12 +443,15 @@ public class AudioUploadClientTests : IDisposable
 
         await client.UploadWithSelfHealAsync("session-1", mic, sys, decryptChunk: _encryptor.Decrypt);
 
+        // The same bytes a whole-file conversion gives, however the sidecar was chunked.
         foreach (var (put, channels) in new[] { (handler.Requests[1], 1), (handler.Requests[2], 2) })
         {
+            var expected = Convert(pcm, 48000, channels);
+            var expectedLength = 44 + expected.Length;
             Assert.Equal(expectedLength.ToString(), put.Header("Content-Length"));
             Assert.Equal(expectedLength, put.Body.Length);
-            Assert.Equal(WAVEncoder.BuildHeader(pcm.Length, 48000, channels), put.Body[..44]);
-            Assert.Equal(pcm, put.Body[44..]);
+            Assert.Equal(WAVEncoder.BuildHeader(expected.Length, 16000, 1), put.Body[..44]);
+            Assert.Equal(expected, put.Body[44..]);
         }
     }
 
@@ -404,7 +470,7 @@ public class AudioUploadClientTests : IDisposable
         using var content = new EncryptedPcmWavContent(path, 48000, 1, _encryptor.Decrypt);
 
         Assert.Equal(pcm.Length, content.PlaintextLength);
-        Assert.Equal(44 + pcm.Length, content.Headers.ContentLength);
+        Assert.Equal(44 + Convert(pcm, 48000, 1).Length, content.Headers.ContentLength);
     }
 
     [Fact]
@@ -486,6 +552,20 @@ public class AudioUploadClientTests : IDisposable
         var bytes = new byte[length];
         for (int i = 0; i < length; i++) bytes[i] = (byte)(i * 7 % 253);
         return bytes;
+    }
+
+    private string WriteBytes(string name, byte[] bytes)
+    {
+        var path = Path.Combine(_tempDir, name);
+        File.WriteAllBytes(path, bytes);
+        return path;
+    }
+
+    /// <summary>What <paramref name="pcm"/> converts to in the upload format, done in one go.</summary>
+    private static byte[] Convert(byte[] pcm, int sampleRate, int channels)
+    {
+        var converter = new UploadFormatConverter(sampleRate, channels, AudioUploadClient.UploadSampleRate);
+        return [.. converter.Process(pcm), .. converter.Finish()];
     }
 
     /// <summary>Writes <paramref name="plaintext"/> in the capture sidecar's encrypted chunk format.</summary>

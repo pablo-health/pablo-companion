@@ -636,7 +636,8 @@ public class APIClient
     /// </summary>
     /// <param name="decryptChunk">Decrypts one sidecar chunk; required for encrypted sidecars,
     /// which are decrypted on the fly into the upload and never written to disk in plaintext.</param>
-    /// <param name="sampleRate">Rate the recording was captured at, stamped into the WAV headers.</param>
+    /// <param name="sampleRate">Rate the recording was captured at; each channel is converted from it
+    /// to the upload format (16 kHz mono) as it is sent.</param>
     public virtual async Task<AudioUploadResponse> UploadAudioWithSelfHealAsync(
         string sessionId,
         string therapistAudioPath,

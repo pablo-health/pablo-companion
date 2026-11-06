@@ -184,8 +184,8 @@ public partial class TranscriptionViewModel : ObservableObject
     /// </summary>
     /// <param name="sampleRate">
     /// Rate the sidecars were captured at; persisted with the queued entry so a
-    /// retry stamps the same rate into the WAV header. Null takes the rate the
-    /// capture saved with the recording, and a recording without one uploads as 48 kHz.
+    /// retry converts from the same rate. Null takes the rate the capture saved
+    /// with the recording, and a recording without one is taken as 48 kHz.
     /// </param>
     public async Task UploadAudioAsync(string sessionId, int? sampleRate = null)
     {
@@ -599,9 +599,11 @@ public partial class TranscriptionViewModel : ObservableObject
                     encryptor = new AesGcmEncryptor(keyBytes, "device-key");
             }
 
-            // The encrypted sidecars are decrypted chunk by chunk straight into the
-            // storage upload — no plaintext copy on disk, no whole-file read into
-            // memory. A missing key throws inside the upload call, inside this try on
+            // The encrypted sidecars are decrypted chunk by chunk, converted to the
+            // upload format (16 kHz mono, so a long session fits the per-file
+            // ceiling) and streamed straight into the storage upload — no plaintext
+            // copy on disk, no whole-file read into memory. A missing key throws
+            // inside the upload call, inside this try on
             // purpose: it has to land on the retry path below rather than escape.
             // Neither caller of this method wraps it, so an escaping throw would abort
             // the whole resume pass and strand every remaining item behind this one.
