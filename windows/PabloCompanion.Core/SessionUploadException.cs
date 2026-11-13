@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace PabloCompanion.Core;
 
 /// <summary>
@@ -8,7 +6,8 @@ namespace PabloCompanion.Core;
 /// Carries the backend's structured <c>error.code</c> alongside the HTTP status so
 /// callers can branch on semantic conditions — notably
 /// <see cref="InvalidStatusCode"/>, which drives the upload self-heal — without
-/// pattern-matching on human-readable messages.
+/// pattern-matching on human-readable messages. For an HTTP failure the message
+/// is <see cref="BackendError.Describe"/>: status and code only, never the body.
 ///
 /// The mirror of macOS <c>SessionUploadError</c> in <c>CompanionSessionCore</c>.
 /// The WinUI app translates this into its own <c>PabloException</c> at the
@@ -37,31 +36,4 @@ public sealed class SessionUploadException : Exception
     /// in <c>recording</c> — the one failure the upload path heals rather than retries.
     /// </summary>
     public bool IsInvalidStatus => StatusCode == 400 && ErrorCode == InvalidStatusCode;
-
-    /// <summary>
-    /// Parses the standard backend error envelope
-    /// (<c>{error: {code, message, details}}</c>) into <c>(message, code)</c>.
-    /// Returns <c>(null, null)</c> for non-JSON or unrecognized bodies.
-    /// </summary>
-    public static (string? Message, string? Code) ParseEnvelope(string body)
-    {
-        if (string.IsNullOrWhiteSpace(body)) return (null, null);
-        try
-        {
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (null, null);
-            if (!doc.RootElement.TryGetProperty("error", out var error) ||
-                error.ValueKind != JsonValueKind.Object) return (null, null);
-
-            var message = error.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String
-                ? m.GetString() : null;
-            var code = error.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String
-                ? c.GetString() : null;
-            return (message, code);
-        }
-        catch (JsonException)
-        {
-            return (null, null);
-        }
-    }
 }
