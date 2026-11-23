@@ -15,7 +15,8 @@ public sealed class TempDirectoryIsolation;
 
 /// <summary>
 /// A full-length encrypted session goes to storage without a plaintext copy on
-/// disk and without the sidecar landing on the heap.
+/// disk and without the sidecar landing on the heap, converted to the upload
+/// format on the way.
 ///
 /// The old path decrypted each sidecar to <c>%TEMP%</c> after reading the whole
 /// encrypted file into memory: for a 50-minute session, hundreds of megabytes on
@@ -50,8 +51,8 @@ public sealed class LargeEncryptedUploadTests : IDisposable
     [Fact]
     public async Task TwoHundredMegabyteSidecar_StreamsWithNoTempFilesAndFlatHeap()
     {
-        var (micPath, expectedHash) = WriteFixture("mic.enc.pcm", FixtureBytes, channels: 1);
-        var (systemPath, _) = WriteFixture("system.enc.pcm", 4096, channels: 2);
+        var (micPath, expectedHash, uploadBytes) = WriteFixture("mic.enc.pcm", FixtureBytes, channels: 1);
+        var (systemPath, _, _) = WriteFixture("system.enc.pcm", 4096, channels: 2);
 
         var sandboxTemp = Path.Combine(_fixtureDir, "temp");
         Directory.CreateDirectory(sandboxTemp);
@@ -86,9 +87,11 @@ public sealed class LargeEncryptedUploadTests : IDisposable
 
         Assert.Empty(Directory.EnumerateFileSystemEntries(sandboxTemp, "*", SearchOption.AllDirectories));
 
+        // 200 MiB of 48 kHz mono is a third of that at 16 kHz.
         var therapistPut = handler.Puts[0];
-        Assert.Equal(44L + FixtureBytes, therapistPut.Length);
-        Assert.Equal(44L + FixtureBytes, therapistPut.DeclaredLength);
+        Assert.Equal(FixtureBytes / 3, uploadBytes, 1.0);
+        Assert.Equal(44L + uploadBytes, therapistPut.Length);
+        Assert.Equal(44L + uploadBytes, therapistPut.DeclaredLength);
         Assert.Equal(expectedHash, therapistPut.Sha256);
 
         var peakAboveBaseline = handler.PeakLiveHeap - baseline;
@@ -99,13 +102,18 @@ public sealed class LargeEncryptedUploadTests : IDisposable
 
     /// <summary>
     /// Writes a sidecar in capture's encrypted chunk format, generating it a chunk
-    /// at a time, and returns the SHA-256 of the WAV the upload should produce.
+    /// at a time, and returns the SHA-256 and audio byte count of the WAV the
+    /// upload should produce: the plaintext converted to the upload format.
     /// </summary>
-    private (string Path, byte[] Sha256) WriteFixture(string name, int plaintextBytes, int channels)
+    private (string Path, byte[] Sha256, long UploadBytes) WriteFixture(string name, int plaintextBytes, int channels)
     {
         var path = Path.Combine(_fixtureDir, name);
+        var uploadBytes = UploadFormatConverter.OutputByteCount(
+            plaintextBytes, AudioUploadClient.DefaultSampleRate, channels, AudioUploadClient.UploadSampleRate);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        hash.AppendData(WAVEncoder.BuildHeader(plaintextBytes, AudioUploadClient.DefaultSampleRate, channels));
+        hash.AppendData(WAVEncoder.BuildHeader(uploadBytes, AudioUploadClient.UploadSampleRate, AudioUploadClient.UploadChannels));
+        var converter = new UploadFormatConverter(
+            AudioUploadClient.DefaultSampleRate, channels, AudioUploadClient.UploadSampleRate);
 
         using var file = File.Create(path);
         var chunk = new byte[ChunkBytes];
@@ -114,13 +122,14 @@ public sealed class LargeEncryptedUploadTests : IDisposable
             var size = Math.Min(ChunkBytes, plaintextBytes - written);
             if (size != chunk.Length) chunk = new byte[size];
             for (int i = 0; i < chunk.Length; i++) chunk[i] = (byte)((written + i) * 31 % 251);
-            hash.AppendData(chunk);
+            hash.AppendData(converter.Process(chunk));
 
             var encrypted = _encryptor.Encrypt(chunk);
             file.Write(BitConverter.GetBytes((uint)encrypted.Length));
             file.Write(encrypted);
         }
-        return (path, hash.GetHashAndReset());
+        hash.AppendData(converter.Finish());
+        return (path, hash.GetHashAndReset(), uploadBytes);
     }
 
     private sealed record PutRecord(long Length, long? DeclaredLength, byte[] Sha256);

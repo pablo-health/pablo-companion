@@ -45,12 +45,16 @@ struct SegmentedUploadTests {
     }
 
     /// Writes one segment's mixed file and sidecars; returns its paths.
+    ///
+    /// Fixtures default to the upload rate, so joining tests read their samples
+    /// back unchanged on the mono mic channel; the stereo client channel comes
+    /// back averaged to mono.
     private static func writeSegment(
         in dir: URL,
         name: String,
         mic: [Int16],
         system: [Int16]?,
-        sampleRate: Double = 48000
+        sampleRate: Double = SessionAudioStager.uploadRate
     ) throws -> AudioSegment {
         let micURL = dir.appendingPathComponent("\(name)_mic.pcm")
         let mixedURL = dir.appendingPathComponent("\(name).wav")
@@ -152,45 +156,76 @@ struct SegmentedUploadTests {
 
     // MARK: - Staging
 
-    @Test func oneSegmentUploadsItsOwnFilesUnchanged() throws {
+    @Test func oneSegmentIsConvertedToTheUploadFormat() throws {
         let dir = Self.tempDir()
-        let only = try Self.writeSegment(in: dir, name: "a", mic: [1, 2], system: [3, 4], sampleRate: 16000)
+        // A 48 kHz capture: mono mic, stereo client, as RecordingService writes them.
+        let only = try Self.writeSegment(
+            in: dir, name: "a",
+            mic: [30, 30, 30, 60, 60, 60],
+            system: [10, 20, 10, 20, 10, 20, 40, 60, 40, 60, 40, 60],
+            sampleRate: 48000
+        )
 
         let staged = try SessionAudioStager.stage([only], fallbackRate: 48000, decrypt: Self.plaintext)
+        defer { staged.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
 
-        #expect(staged.micURL.path == only.micPath)
-        #expect(staged.systemURL?.path == only.systemPath)
+        // Every third frame at 16 kHz, and the client channel averaged to mono.
         #expect(staged.sampleRate == 16000)
-        #expect(staged.tempFiles.isEmpty)
+        #expect(try Self.samples(Data(contentsOf: staged.micURL)) == [30, 60])
+        let system = try #require(staged.systemURL)
+        #expect(try Self.samples(Data(contentsOf: system)) == [15, 50])
+        // The sidecars themselves are never rewritten.
+        #expect(try Self.samples(Data(contentsOf: URL(fileURLWithPath: only.micPath))).count == 6)
+        #expect(staged.tempFiles.count == 2)
+    }
+
+    @Test func anHourOfCaptureFitsUnderTheUploadCeiling() throws {
+        // What made a long session unsendable: 48 kHz stereo is 192 KB a second,
+        // past a 500 MiB ceiling at ~45 minutes. Converted, it is 32 KB a second.
+        let dir = Self.tempDir()
+        let tenSeconds = 48000 * 10
+        let only = try Self.writeSegment(
+            in: dir, name: "a",
+            mic: [Int16](repeating: 100, count: tenSeconds),
+            system: [Int16](repeating: 100, count: tenSeconds * 2),
+            sampleRate: 48000
+        )
+
+        let staged = try SessionAudioStager.stage([only], fallbackRate: 48000, decrypt: Self.plaintext)
+        defer { staged.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        let system = try #require(staged.systemURL)
+        let bytesPerSecond = try Data(contentsOf: system).count / 10
+        #expect(bytesPerSecond == 32000)
+        #expect(bytesPerSecond * 3600 < 500 * 1024 * 1024 / 4)
     }
 
     @Test func twoSegmentsJoinIntoOneFilePerChannelInOrder() throws {
         let dir = Self.tempDir()
-        let first = try Self.writeSegment(in: dir, name: "a", mic: [1, 2, 3], system: [10, 11, 12, 13, 14, 15])
-        let second = try Self.writeSegment(in: dir, name: "b", mic: [4, 5], system: [16, 17, 18, 19])
+        let first = try Self.writeSegment(in: dir, name: "a", mic: [1, 2, 3], system: [10, 12, 14, 16, 18, 20])
+        let second = try Self.writeSegment(in: dir, name: "b", mic: [4, 5], system: [30, 32, 40, 42])
 
         let staged = try SessionAudioStager.stage([first, second], fallbackRate: 48000, decrypt: Self.plaintext)
         defer { staged.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
 
         #expect(try Self.samples(Data(contentsOf: staged.micURL)) == [1, 2, 3, 4, 5])
         let system = try #require(staged.systemURL)
-        #expect(try Self.samples(Data(contentsOf: system)) == [10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
-        #expect(staged.sampleRate == 48000)
+        #expect(try Self.samples(Data(contentsOf: system)) == [11, 15, 19, 31, 41])
+        #expect(staged.sampleRate == 16000)
     }
 
-    @Test func aSegmentAtAnotherRateIsResampledToTheSessionRate() throws {
+    @Test func segmentsAtDifferentRatesAllArriveAtTheUploadRate() throws {
         let dir = Self.tempDir()
-        // A Bluetooth headset in hands-free mode: 16 kHz, then back to 48 kHz.
-        let headset = try Self.writeSegment(in: dir, name: "a", mic: [0, 300], system: nil, sampleRate: 16000)
+        // A Bluetooth headset in hands-free mode at 8 kHz, then the built-in mic at 48 kHz.
+        let headset = try Self.writeSegment(in: dir, name: "a", mic: [0, 300], system: nil, sampleRate: 8000)
         let builtIn = try Self.writeSegment(in: dir, name: "b", mic: [7, 7, 7], system: nil, sampleRate: 48000)
 
         let staged = try SessionAudioStager.stage([headset, builtIn], fallbackRate: 48000, decrypt: Self.plaintext)
         defer { staged.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
 
-        #expect(staged.sampleRate == 48000)
-        // Two frames at 16 kHz are six at 48 kHz, interpolated, then the
-        // 48 kHz segment as it was.
-        #expect(try Self.samples(Data(contentsOf: staged.micURL)) == [0, 100, 200, 300, 300, 300, 7, 7, 7])
+        #expect(staged.sampleRate == 16000)
+        // Two frames at 8 kHz are four at 16 kHz, interpolated; three at 48 kHz are one.
+        #expect(try Self.samples(Data(contentsOf: staged.micURL)) == [0, 150, 300, 300, 7])
     }
 
     @Test func aSegmentWithoutClientAudioKeepsTheChannelsAligned() throws {
@@ -201,9 +236,9 @@ struct SegmentedUploadTests {
         let staged = try SessionAudioStager.stage([first, second], fallbackRate: 48000, decrypt: Self.plaintext)
         defer { staged.tempFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
 
-        // Two mic frames of silence on the stereo client channel, then its audio.
+        // Two mic frames of silence on the client channel, then its audio.
         let system = try #require(staged.systemURL)
-        #expect(try Self.samples(Data(contentsOf: system)) == [0, 0, 0, 0, 9, 9])
+        #expect(try Self.samples(Data(contentsOf: system)) == [0, 0, 9])
     }
 
     @Test func decryptedCopiesAreDeletedAfterJoining() throws {
@@ -286,7 +321,7 @@ struct SegmentedUploadTests {
 
         #expect(await coordinator.forceDrain(only: "s1") == 1)
         #expect(captured.value?.mic == [1, 2, 3])
-        #expect(captured.value?.system == [5, 5, 6, 6, 7, 7])
+        #expect(captured.value?.system == [5, 6, 7])
 
         // Uploaded, note not ready: every file of every segment stays.
         let files = [first, second].flatMap { [$0.micPath, $0.systemPath, $0.mixedPath] }
@@ -325,7 +360,7 @@ struct SegmentedUploadTests {
 
         #expect(await coordinator.drain() == 1)
         #expect(captured.value?.mic == [1, 2])
-        #expect(captured.value?.system == [4, 4, 5, 5])
+        #expect(captured.value?.system == [4, 5])
     }
 
     @Test func cleanupFindsAMixedFileQueuedWithoutItsPath() throws {

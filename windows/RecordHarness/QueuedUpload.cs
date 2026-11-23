@@ -81,7 +81,7 @@ internal sealed class QueuedUpload(string baseUrl, DeviceBoundClient client, str
             "upload accepted + transcribing",
             uploaded == 1 && status == "transcribing",
             $"status {status ?? "none"}, {elapsed.TotalSeconds:F0}s, "
-                + $"{MiB(recording.MicPath) + MiB(recording.SystemPath):F1} MiB"));
+                + $"{MiB(recording.MicPath) + MiB(recording.SystemPath):F1} MiB captured"));
         checks.Add(WireRecorder.SignedUrlCheck(
             backendWire.Exchanges, storageWire.Exchanges, new Uri(baseUrl).Host));
 

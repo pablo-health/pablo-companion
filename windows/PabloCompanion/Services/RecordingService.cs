@@ -486,8 +486,8 @@ public sealed class RecordingService : IDisposable
     private static string DefaultRecordingsRoot() => AppPaths.RecordingsRoot;
 
     /// <summary>
-    /// The rate to stamp into the uploaded WAV headers: the frame rate of the bytes
-    /// in the mic sidecar.
+    /// The rate the upload converts from: the frame rate of the bytes in the mic
+    /// sidecar.
     ///
     /// <para>The mic sidecar is the mic source's buffers written as delivered, so its
     /// bytes are at the mic's delivered format (<see cref="CaptureDiagnostics.MicSampleRate"/>).

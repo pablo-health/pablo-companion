@@ -17,6 +17,6 @@ public sealed record LocalRecording(
     string? SystemPcmFilePath,
     bool IsUploaded,
     // Frames per second of the sidecar PCM, as the capture reported it (see
-    // RecordingService.SidecarSampleRate); stamped into the uploaded WAV headers. Optional so recordings saved before
-    // it existed still load; null uploads as 48 kHz, as they always did.
+    // RecordingService.SidecarSampleRate); the rate the upload converts from. Optional so recordings saved before
+    // it existed still load; null is taken as 48 kHz, as it always was.
     int? SampleRate = null);

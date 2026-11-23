@@ -56,7 +56,7 @@ extension APIClient {
         therapistAudioURL: URL,
         clientAudioURL: URL?,
         sampleRate: Int,
-        onProgress: @Sendable @escaping (Double) -> Void
+        clientChannels: Int
     ) async throws -> AudioUploadResponse {
         do {
             return try await audioUploadClient.uploadWithSelfHeal(
@@ -64,7 +64,7 @@ extension APIClient {
                 therapistAudioURL: therapistAudioURL,
                 clientAudioURL: clientAudioURL,
                 sampleRate: sampleRate,
-                onProgress: onProgress
+                clientChannels: clientChannels
             )
         } catch let error as SessionUploadError {
             throw mapUploadError(error)

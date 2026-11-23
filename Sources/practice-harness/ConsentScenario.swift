@@ -126,9 +126,10 @@ private struct Driver {
         }
 
         let consent = RecordingConsentClient(baseURLString: baseURL, token: { token }, attachBinding: { _ in })
+        let opening = try await firstOpening()
 
         // ── Telehealth, nothing on file ─────────────────────────────────────
-        let remote = try await seedVisit(videoLink: "https://video.example/room", inHours: 0)
+        let remote = try await seedVisit(videoLink: "https://video.example/room", inHours: 0, after: opening)
         let read = try await consent.check(appointmentId: remote.appointmentId)
         check(
             "telehealth visit offers only asking on the recording",
@@ -172,7 +173,7 @@ private struct Driver {
         // The app stops and deletes the recording, saves the decline, and
         // returns the session to a hand-written note (scheduled, the state the
         // web starts one in with `recording: false`).
-        let declining = try await seedVisit(videoLink: "https://video.example/room2", inHours: 2)
+        let declining = try await seedVisit(videoLink: "https://video.example/room2", inHours: 2, after: opening)
         let declinedStart = try await start(declining.appointmentId, asking: true)
         let declinedSession = declinedStart.json?["id"] as? String ?? ""
         let running = try await send("PATCH", "/api/sessions/\(declinedSession)/status", ["status": "in_progress"])
@@ -187,7 +188,9 @@ private struct Driver {
             "in_progress HTTP \(running.status), then scheduled HTTP \(handWritten.status) "
                 + "status=\(handWritten.json?["status"] ?? "nil")"
         )
-        let later = try await seedVisit(videoLink: "https://video.example/room3", inHours: 3, patientId: declining.patientId)
+        let later = try await seedVisit(
+            videoLink: "https://video.example/room3", inHours: 3, after: opening, patientId: declining.patientId
+        )
         let laterStart = try await start(later.appointmentId, asking: true)
         check(
             "after a decline, a later recorded start is refused",
@@ -198,7 +201,7 @@ private struct Driver {
         // ── In person, nothing on file ─────────────────────────────────────
         // Same as telehealth on the app's side: ask once recording starts; the answer is
         // given on the recording and saved as given in person.
-        let office = try await seedVisit(videoLink: nil, inHours: 1)
+        let office = try await seedVisit(videoLink: nil, inHours: 1, after: opening)
         let inPerson = try await consent.check(appointmentId: office.appointmentId)
         check(
             "in-person visit offers asking on the recording",
@@ -247,9 +250,48 @@ private struct Driver {
         let appointmentId: String
     }
 
+    /// When this run's visits can start: now, or the end of the latest visit
+    /// already on the test clinician's calendar (six hours back to twelve
+    /// ahead), whichever is later.
+    ///
+    /// The record scenario runs first on the same account and books the
+    /// session it records. A long capture keeps that visit open past "now", so
+    /// a consent visit seeded at now + 5 minutes collided with it (409
+    /// "Conflicts with an existing appointment"). `rule_override` books past
+    /// availability rules, not past another appointment, and that is correct:
+    /// the fix is not to double-book.
+    private func firstOpening() async throws -> Date {
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        // From six hours back: a visit that started before now and is still
+        // open (the record scenario's) has to be in the list.
+        let start = iso.string(from: now.addingTimeInterval(-6 * 3600))
+        let end = iso.string(from: now.addingTimeInterval(12 * 3600))
+        let reply = try await send("GET", "/api/appointments?start=\(start)&end=\(end)")
+        guard let visits = reply.json?["data"] as? [[String: Any]] else {
+            throw Failure(description: "appointment list: HTTP \(reply.status) \(reply.text)")
+        }
+        let ends = visits
+            .filter { ($0["status"] as? String) != "cancelled" }
+            .compactMap { ($0["end_at"] as? String).flatMap(Self.parseInstant) }
+        return max(now, ends.max() ?? now)
+    }
+
+    /// Parses the API's ISO 8601 instants, with or without fractional seconds.
+    private static func parseInstant(_ text: String) -> Date? {
+        let plain = ISO8601DateFormatter()
+        if let date = plain.date(from: text) { return date }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: text)
+    }
+
     /// A client and a 50-minute visit starting `inHours` (plus five minutes)
-    /// from now, so visits seeded in one run do not overlap.
-    private func seedVisit(videoLink: String?, inHours: Double, patientId existing: String? = nil) async throws -> Visit {
+    /// after `opening`, so visits seeded in one run do not overlap each other
+    /// or anything already booked.
+    private func seedVisit(
+        videoLink: String?, inHours: Double, after opening: Date, patientId existing: String? = nil
+    ) async throws -> Visit {
         let patientId: String
         if let existing {
             patientId = existing
@@ -263,7 +305,7 @@ private struct Driver {
             }
             patientId = created
         }
-        let start = Date().addingTimeInterval(inHours * 3600 + 5 * 60)
+        let start = opening.addingTimeInterval(inHours * 3600 + 5 * 60)
         let iso = ISO8601DateFormatter()
         var body: [String: Any] = [
             "patient_id": patientId,
@@ -272,6 +314,12 @@ private struct Driver {
             "end_at": iso.string(from: start.addingTimeInterval(50 * 60)),
             "duration_minutes": 50,
             "session_type": "individual",
+            // Book past the test clinician's availability rules, as a clinician
+            // confirming "book it anyway" does. This scenario tests consent, not
+            // scheduling: when another suite blocked today on the shared test
+            // account, every visit was refused and the nightly run went red for
+            // a reason unrelated to anything it checks.
+            "rule_override": true,
         ]
         if let videoLink { body["video_link"] = videoLink }
         let appointment = try await send("POST", "/api/appointments", body)

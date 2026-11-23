@@ -263,12 +263,10 @@ final class TranscriptionViewModel {
             sessionId: entry.sessionId,
             therapistAudioURL: staged.micURL,
             clientAudioURL: staged.systemURL,
-            // The capture rate is negotiated at runtime (Bluetooth HFP can drop
-            // the mic to 8/16/24 kHz), so stamp the WAV with the rate the
-            // capture actually used, not a hardcoded 48 kHz. A joined session
-            // is at the rate every segment was brought to.
+            // Staging converts every channel to one upload format (16 kHz mono)
+            // whatever each segment was captured at, so stamp the WAV with that.
             sampleRate: Int(staged.sampleRate),
-            onProgress: { _ in }
+            clientChannels: SessionAudioStager.uploadChannels
         )
     }
 

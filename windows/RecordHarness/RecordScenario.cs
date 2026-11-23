@@ -9,7 +9,7 @@ namespace RecordHarness;
 ///   fixtures injected, separated / 48 kHz / raw-PCM sidecars — the exact
 ///   RecordingService config; see <see cref="FixtureRecorder"/>) → <b>queue, then
 ///   upload through signed URLs via the real client</b> (init, one PUT per channel
-///   straight to storage, finalize; observed on the wire) → poll the session to
+///   straight to storage as 16 kHz mono, finalize; observed on the wire) → poll the session to
 ///   <c>transcribing</c>, or to <c>pending_review</c> + a 4-section SOAP, then
 ///   delete the local audio and drain the queue (see <see cref="QueuedUpload"/>).
 ///
