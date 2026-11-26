@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace PabloCompanion.Core;
@@ -104,7 +103,7 @@ public abstract record RecordingConsent
     /// <c>403 CLIENT_AI_CONSENT_NEEDED</c>: a telehealth client nobody has asked.
     /// </summary>
     public static bool IsConsentNeeded(int statusCode, string body)
-        => statusCode == 403 && ReadError(body) is { Code: ConsentNeededErrorCode };
+        => statusCode == 403 && BackendError.ReadEnvelope(body) is { Code: ConsentNeededErrorCode };
 
     /// <summary>
     /// Reads a refused session start. Returns the day the client declined when the
@@ -116,42 +115,9 @@ public abstract record RecordingConsent
     public static string? DeclinedOn(int statusCode, string body)
     {
         if (statusCode != 403) return null;
-        var error = ReadError(body);
+        var error = BackendError.ReadEnvelope(body);
         if (error is not { Code: DeclinedErrorCode }) return null;
         return error.Value.Details.TryGetValue("declined_on", out var on) ? on : "";
-    }
-
-    /// <summary>
-    /// Parses the standard error envelope's code and its string-valued
-    /// <c>details</c>. Null for a body that is not the envelope.
-    /// </summary>
-    public static (string? Code, IReadOnlyDictionary<string, string> Details)? ReadError(string? body)
-    {
-        if (string.IsNullOrWhiteSpace(body)) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
-                !doc.RootElement.TryGetProperty("error", out var error) ||
-                error.ValueKind != JsonValueKind.Object) return null;
-
-            var code = error.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String
-                ? c.GetString() : null;
-            var details = new Dictionary<string, string>(StringComparer.Ordinal);
-            if (error.TryGetProperty("details", out var d) && d.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var property in d.EnumerateObject())
-                {
-                    if (property.Value.ValueKind == JsonValueKind.String)
-                        details[property.Name] = property.Value.GetString() ?? "";
-                }
-            }
-            return (code, details);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 
     /// <summary>

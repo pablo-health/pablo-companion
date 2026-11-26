@@ -74,8 +74,8 @@ public class APIClient
     /// <summary>
     /// Raised when any request comes back 426: the backend no longer supports this
     /// app version. The update gate listens and shows the update-required screen
-    /// (deferred while a recording is active). The argument is the server's message
-    /// when it sent one.
+    /// (deferred while a recording is active). The argument is the error's
+    /// PHI-safe description, when there is one.
     /// </summary>
     public event Action<string?>? UpdateRequiredDetected;
 
@@ -224,8 +224,7 @@ public class APIClient
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
             var body = await response.Content.ReadAsStringAsync();
-            var (_, errorCode) = TryParseErrorEnvelope(body);
-            UnauthenticatedDetected?.Invoke(errorCode);
+            UnauthenticatedDetected?.Invoke(BackendError.ReadCode(body));
         }
         await HandleErrorResponse(response);
     }
@@ -256,47 +255,30 @@ public class APIClient
     /// </summary>
     internal static PabloException MapError(ushort statusCode, string body)
     {
-        var (envelopeMessage, errorCode) = TryParseErrorEnvelope(body);
+        var envelope = BackendError.ReadEnvelope(body);
+        var errorCode = envelope?.Code;
         // details carries what a refusal needs to be shown properly, such as the
         // day a client declined AI-assisted notes (declined_on).
-        var details = RecordingConsent.ReadError(body)?.Details;
+        var details = envelope?.Details;
 
+        // The message is a short category plus status and code. Never the body or
+        // the envelope's free-text message: either can echo patient data, and the
+        // message reaches the crash log and some on-screen errors.
         return statusCode switch
         {
-            401 => new PabloException(statusCode, "Unauthenticated", errorCode, details),
-            403 => new PabloException(statusCode, "Forbidden", errorCode, details),
-            404 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Not found" : body), errorCode, details),
-            409 => new PabloException(statusCode, envelopeMessage ?? (string.IsNullOrWhiteSpace(body) ? "Conflict" : body), errorCode, details),
+            401 => new PabloException(statusCode, Describe("Unauthenticated", statusCode, errorCode), errorCode, details),
+            403 => new PabloException(statusCode, Describe("Forbidden", statusCode, errorCode), errorCode, details),
+            404 => new PabloException(statusCode, Describe("Not found", statusCode, errorCode), errorCode, details),
+            409 => new PabloException(statusCode, Describe("Conflict", statusCode, errorCode), errorCode, details),
             // One typed code whatever the body says, so callers and the update
             // gate branch on it rather than on the status number.
-            426 => new PabloException(statusCode, envelopeMessage ?? "Update required",
+            426 => new PabloException(statusCode, Describe("Update required", statusCode, null),
                 PabloException.UpdateRequiredCode, details),
-            _ => new PabloException(statusCode, envelopeMessage ?? $"HTTP {statusCode}: {body}", errorCode, details),
+            _ => new PabloException(statusCode, Describe("Request failed", statusCode, errorCode), errorCode, details),
         };
-    }
 
-    /// <summary>
-    /// Parses the standard backend error envelope (<c>{error: {code, message, details}}</c>)
-    /// into <c>(message, code)</c>. Returns (null, null) for non-JSON or unrecognized bodies.
-    /// Internal so the envelope shapes (including the idle-timeout code) are unit-testable.
-    /// </summary>
-    internal static (string? message, string? code) TryParseErrorEnvelope(string body)
-    {
-        if (string.IsNullOrWhiteSpace(body)) return (null, null);
-        try
-        {
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (null, null);
-            if (!doc.RootElement.TryGetProperty("error", out var err) ||
-                err.ValueKind != JsonValueKind.Object) return (null, null);
-
-            var msg = err.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String
-                ? m.GetString() : null;
-            var code = err.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String
-                ? c.GetString() : null;
-            return (msg, code);
-        }
-        catch (JsonException) { return (null, null); }
+        static string Describe(string category, int status, string? code) =>
+            $"{category}: {BackendError.Describe(status, code)}";
     }
 
     /// <summary>
