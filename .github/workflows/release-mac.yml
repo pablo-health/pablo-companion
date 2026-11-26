@@ -22,6 +22,12 @@ concurrency:
 
 jobs:
   release:
+    # The signing set (APPLE_*) and the appcast key (SPARKLE_EDDSA_KEY) live
+    # in the `release` environment, not at repository level. It admits the
+    # release tags this workflow builds from and main (for the dispatched
+    # sign-and-verify run), so a workflow pushed on any other branch cannot
+    # read them.
+    environment: release
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7.0.1
